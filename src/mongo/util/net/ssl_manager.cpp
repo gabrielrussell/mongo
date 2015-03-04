@@ -230,6 +230,7 @@ namespace mongo {
             bool _allowInvalidCertificates;
             bool _allowInvalidHostnames;
             SSLConfiguration _sslConfiguration;
+            int _rolesNid;
 
             /**
              * creates an SSL object to be used for this file descriptor.
@@ -267,6 +268,8 @@ namespace mongo {
             bool _parseAndValidateCertificate(const std::string& keyFile,
                                               std::string* subjectName,
                                               Date_t* serverNotAfter);
+
+            std::vector<std::string> _parsePeerRoles(X509* peerCert) const;
 
             /** @return true if was successful, otherwise false */
             bool _setupPEM(SSL_CTX* context,
@@ -478,6 +481,7 @@ namespace mongo {
             static CertificateExpirationMonitor task =
                 CertificateExpirationMonitor(_sslConfiguration.serverCertificateExpirationDate);
         }
+        _rolesNid = OBJ_create("1.3.6.1.4.1.34601.1", "MongoRoles", "Sequence of MongoDB Database Roles");
     }
 
     SSLManager::~SSLManager() {
@@ -955,6 +959,8 @@ namespace mongo {
         // TODO: check optional cipher restriction, using cert.
         std::string peerSubjectName = getCertificateSubjectName(peerCert);
 
+        auto roles = _parsePeerRoles(peerCert);
+
         // If this is an SSL client context (on a MongoDB server or client) 
         // perform hostname validation of the remote server 
         if (remoteHost.empty()) {
@@ -1011,6 +1017,32 @@ namespace mongo {
         }
 
         return peerSubjectName;
+    }
+
+    std::vector<std::string> SSLManager::_parsePeerRoles(X509* peerCert) const {
+        //STACK_OF(X509_EXTENSION) mongo_extension = X509_get_ext_d2i(peerCert, _rolesNid, NULL, NULL);
+        STACK_OF(X509_EXTENSION) *exts = peerCert->cert_info->extensions;
+
+        int extCount;
+        if (exts) {
+            extCount = sk_X509_EXTENSION_num(exts);
+        } else {
+            extCount = 0;
+        }
+        error() << "extCount: " << extCount;
+
+        ASN1_OBJECT* rolesObj;
+        rolesObj = OBJ_nid2obj(_rolesNid);
+
+        for (int i=0; i < extCount; i++) {
+            X509_EXTENSION *ex = sk_X509_EXTENSION_value(exts, i);
+            ASN1_OBJECT *obj = X509_EXTENSION_get_object(ex);
+            if (!OBJ_cmp(obj, rolesObj)) {
+                error() << "FOUND IT!";
+            }
+        }
+
+        return std::vector<std::string>();
     }
 
     void SSLManager::cleanupThreadLocals() {
