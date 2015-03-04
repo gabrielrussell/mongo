@@ -41,6 +41,7 @@
 
 #include "mongo/base/init.h"
 #include "mongo/bson/bsonobjbuilder.h"
+#include "mongo/db/auth/role_name.h"
 #include "mongo/platform/atomic_word.h"
 #include "mongo/util/concurrency/mutex.h"
 #include "mongo/util/exit.h"
@@ -1034,11 +1035,37 @@ namespace mongo {
         ASN1_OBJECT* rolesObj;
         rolesObj = OBJ_nid2obj(_rolesNid);
 
+        std::vector<RoleName> roles;
         for (int i=0; i < extCount; i++) {
             X509_EXTENSION *ex = sk_X509_EXTENSION_value(exts, i);
             ASN1_OBJECT *obj = X509_EXTENSION_get_object(ex);
             if (!OBJ_cmp(obj, rolesObj)) {
-                error() << "FOUND IT!";
+                error() << "FOUND ROLES!";
+                ASN1_OCTET_STRING* data = X509_EXTENSION_get_data(ex);
+                ASN1_SEQUENCE_ANY* rolesSequence = sk_ASN1_TYPE_new_null();
+                rolesSequence = d2i_ASN1_SEQUENCE_ANY(&rolesSequence, (const unsigned char**)&data->data, data->length);
+
+                ASN1_TYPE *roleAsn1Type = NULL;
+                ASN1_SEQUENCE_ANY* roleSequence = sk_ASN1_TYPE_new_null();
+                while ((roleAsn1Type = sk_ASN1_TYPE_pop(rolesSequence))) {
+                    if (roleAsn1Type->type == V_ASN1_SEQUENCE) {
+                        error() << "FOUND A ROLE!";
+                        unsigned char* roleData = ASN1_STRING_data(roleAsn1Type->value.sequence);
+                        int roleDataLength = ASN1_STRING_length(roleAsn1Type->value.sequence);
+                        roleSequence = d2i_ASN1_SEQUENCE_ANY(&roleSequence, (const unsigned char**)&roleData, roleDataLength);
+                        ASN1_TYPE *roleComponent = NULL;
+                        roleComponent = sk_ASN1_TYPE_pop(roleSequence); // RoleName
+                        std::string roleName(reinterpret_cast<char*>(ASN1_STRING_data(roleComponent->value.utf8string)));
+                        error() << "Role Name: " << roleName << " Type: " << roleComponent->type << " Size: " << ASN1_STRING_length(roleComponent->value.utf8string);
+                        roleComponent = sk_ASN1_TYPE_pop(roleSequence); // RoleDB
+                        std::string roleDB(reinterpret_cast<char*>(ASN1_STRING_data(roleComponent->value.utf8string)));
+                        roles.push_back(RoleName(roleName, roleDB));
+                    }
+                }
+
+                for (RoleName& role : roles) {
+                    error() << "Got role: " << role;
+                }
             }
         }
 

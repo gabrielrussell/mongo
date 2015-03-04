@@ -276,6 +276,7 @@ env.Library('network', [
             "util/net/listen.cpp" ],
             LIBDEPS=['$BUILD_DIR/mongo/util/concurrency/ticketholder',
                      '$BUILD_DIR/mongo/util/options_parser/options_parser',
+                     '$BUILD_DIR/mongo/db/auth/authRoleManipulation',
                      'background_job',
                      'fail_point',
                      'foundation',

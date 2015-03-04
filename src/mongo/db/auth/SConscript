@@ -7,6 +7,12 @@ env.Library('serverauth', ['mongo_authentication_session.cpp'])
 env.Command(['action_type.h', 'action_type.cpp'], ['generate_action_types.py', 'action_types.txt'],
             '$PYTHON $SOURCES $TARGETS')
 
+env.Library('authRoleManipulation',
+            [
+                'role_name.cpp',
+            ]
+)
+
 # Just the data structures used
 env.Library('authcore', ['action_set.cpp',
                          'action_type.cpp',
@@ -21,7 +27,6 @@ env.Library('authcore', ['action_set.cpp',
                          'resource_pattern.cpp',
                          'role_graph.cpp',
                          'role_graph_update.cpp',
-                         'role_name.cpp',
                          'role_graph_builtin_roles.cpp',
                          'user.cpp',
                          'user_document_parser.cpp',
@@ -36,7 +41,8 @@ env.Library('authcore', ['action_set.cpp',
                      '$BUILD_DIR/mongo/md5',
                      '$BUILD_DIR/mongo/namespace_string',
                      '$BUILD_DIR/mongo/signal_handlers_synchronous',
-                     '$BUILD_DIR/mongo/stringutils'])
+                     '$BUILD_DIR/mongo/stringutils',
+                     'authRoleManipulation'])
 
 env.Library('authcommon',
             ['internal_user_auth.cpp'],
