@@ -38,6 +38,7 @@
 #include "mongo/client/dbclientinterface.h"
 #include "mongo/db/auth/authorization_manager.h"
 #include "mongo/db/auth/user_name.h"
+#include "mongo/db/client.h"
 #include "mongo/db/jsobj.h"
 #include "mongo/s/cluster_write.h"
 #include "mongo/s/config.h"
@@ -102,7 +103,7 @@ namespace mongo {
             BSONObj cmdResult;
 
             BSONArrayBuilder overrideRolesBSON;
-            std::vector<RoleName> overrideRoles = txn->getClient().port().getClientProvidedRoles();
+            std::vector<RoleName> overrideRoles = txn->getClient()->port()->getClientProvidedRoles();
             for (const RoleName& orr : overrideRoles) {
                 overrideRolesBSON << BSON( "role" << orr.getRole() << "db" << orr.getDB() );
             }
