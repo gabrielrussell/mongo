@@ -50,6 +50,7 @@
 #include <vector>
 
 #include "mongo/base/disallow_copying.h"
+#include "mongo/db/auth/role_name.h"
 #include "mongo/logger/log_severity.h"
 #include "mongo/platform/compiler.h"
 #include "mongo/platform/cstdint.h"
@@ -276,7 +277,7 @@ namespace mongo {
          *
          * This function may throw SocketException.
          */
-        std::string doSSLHandshake(const char* firstBytes = NULL, int len = 0);
+        std::pair<std::string, std::vector<RoleName> > doSSLHandshake(const char* firstBytes = NULL, int len = 0);
         
         /**
          * @return the time when the socket was opened.

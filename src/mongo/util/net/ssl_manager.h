@@ -33,6 +33,7 @@
 
 #include "mongo/base/disallow_copying.h"
 #include "mongo/bson/bsonobj.h"
+#include "mongo/db/auth/role_name.h"
 #include "mongo/util/net/sock.h"
 #include "mongo/util/time_support.h"
 
@@ -106,8 +107,8 @@ namespace mongo {
          * Throws SocketException on failure
          * @return a std::string containing the certificate's subject name.
          */
-        virtual std::string parseAndValidatePeerCertificate(const SSLConnection* conn, 
-                                                    const std::string& remoteHost) = 0;
+        virtual std::pair<std::string, std::vector<RoleName> > parseAndValidatePeerCertificate(const SSLConnection* conn, 
+                                                                                               const std::string& remoteHost) = 0;
 
         /**
          * Cleans up SSL thread local memory; use at thread exit

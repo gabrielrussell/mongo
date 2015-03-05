@@ -41,7 +41,6 @@
 
 #include "mongo/base/init.h"
 #include "mongo/bson/bsonobjbuilder.h"
-#include "mongo/db/auth/role_name.h"
 #include "mongo/platform/atomic_word.h"
 #include "mongo/util/concurrency/mutex.h"
 #include "mongo/util/exit.h"
@@ -198,8 +197,9 @@ namespace mongo {
 
             virtual SSLConnection* accept(Socket* socket, const char* initialBytes, int len);
 
-            virtual std::string parseAndValidatePeerCertificate(const SSLConnection* conn,
-                                                                const std::string& remoteHost);
+            virtual std::pair<std::string, std::vector<RoleName> >
+                parseAndValidatePeerCertificate(const SSLConnection* conn,
+                                                const std::string& remoteHost);
 
             virtual void cleanupThreadLocals();
 
@@ -269,6 +269,7 @@ namespace mongo {
             bool _parseAndValidateCertificate(const std::string& keyFile,
                                               std::string* subjectName,
                                               Date_t* serverNotAfter);
+
 
             std::vector<RoleName> _parsePeerRoles(X509* peerCert) const;
 
@@ -924,10 +925,10 @@ namespace mongo {
         }
     }
 
-    std::string SSLManager::parseAndValidatePeerCertificate(const SSLConnection* conn, 
+    std::pair<std::string, std::vector<RoleName> > SSLManager::parseAndValidatePeerCertificate(const SSLConnection* conn, 
                                                     const std::string& remoteHost) {
         // only set if a CA cert has been provided
-        if (!_sslConfiguration.hasCA) return "";
+        if (!_sslConfiguration.hasCA) return std::make_pair("", std::vector<RoleName>());
 
         X509* peerCert = SSL_get_peer_certificate(conn->ssl);
 
@@ -939,9 +940,9 @@ namespace mongo {
                 error() << "no SSL certificate provided by peer; connection rejected" << endl;
                 throw SocketException(SocketException::CONNECT_ERROR, "");
             }
-            return "";
+            return std::make_pair("", std::vector<RoleName>());
         }
-        ON_BLOCK_EXIT(X509_free, peerCert);
+        //ON_BLOCK_EXIT(X509_free, peerCert);
 
         long result = SSL_get_verify_result(conn->ssl);
 
@@ -965,7 +966,7 @@ namespace mongo {
         // If this is an SSL client context (on a MongoDB server or client) 
         // perform hostname validation of the remote server 
         if (remoteHost.empty()) {
-            return peerSubjectName;
+            return std::make_pair(peerSubjectName, roles);
         }
 
         // Try to match using the Subject Alternate Name, if it exists.
@@ -1017,7 +1018,7 @@ namespace mongo {
             }
         }
 
-        return peerSubjectName;
+        return std::make_pair(peerSubjectName, std::vector<RoleName>());
     }
 
     std::vector<RoleName> SSLManager::_parsePeerRoles(X509* peerCert) const {
@@ -1035,7 +1036,7 @@ namespace mongo {
         ASN1_OBJECT* rolesObj;
         rolesObj = OBJ_nid2obj(_rolesNid);
 
-        std::vector<RoleName> roles;
+        std::vector<RoleName> roles{};
         for (int i=0; i < extCount; i++) {
             X509_EXTENSION *ex = sk_X509_EXTENSION_value(exts, i);
             ASN1_OBJECT *obj = X509_EXTENSION_get_object(ex);

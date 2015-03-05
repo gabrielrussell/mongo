@@ -213,8 +213,10 @@ again:
                     uassert(17132,
                             "SSL handshake received but server is started without SSL support",
                             sslGlobalParams.sslMode.load() != SSLGlobalParams::SSLMode_disabled);
-                    setX509SubjectName(psock->doSSLHandshake(
-                                       reinterpret_cast<const char*>(&header), sizeof(header)));
+                    std::pair<std::string, std::vector<RoleName> > peerResults = psock->doSSLHandshake(
+                                       reinterpret_cast<const char*>(&header), sizeof(header));
+                    setX509SubjectName(peerResults.first);
+                    setClientProvidedRoles(peerResults.second);
                     psock->setHandshakeReceived();
                     goto again;
                 }

@@ -61,6 +61,9 @@ namespace mongo {
             return _x509SubjectName;
         }
 
+        void setClientProvidedRoles(const std::vector<RoleName>& roles) {_clientProvidedRoles = roles;}
+        std::vector<RoleName> getClientProvidedRoles() const {return _clientProvidedRoles;}
+
         long long connectionId() const { return _connectionId; }
         void setConnectionId( long long connectionId );
 
@@ -73,6 +76,7 @@ namespace mongo {
     private:
         long long _connectionId;
         std::string _x509SubjectName;
+        std::vector<RoleName> _clientProvidedRoles;
     };
 
     class MessagingPort : public AbstractMessagingPort {

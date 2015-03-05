@@ -509,8 +509,8 @@ namespace mongo {
         _sslManager = ssl;
     }
 
-    std::string Socket::doSSLHandshake(const char* firstBytes, int len) {
-        if (!_sslManager) return "";
+    std::pair<std::string, std::vector<RoleName> > Socket::doSSLHandshake(const char* firstBytes, int len) {
+        if (!_sslManager) return std::make_pair("", std::vector<RoleName>());
         fassert(16506, _fd);
         if (_sslConnection.get()) {
             throw SocketException(SocketException::RECV_ERROR, 
