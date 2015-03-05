@@ -270,7 +270,7 @@ namespace mongo {
                                               std::string* subjectName,
                                               Date_t* serverNotAfter);
 
-            std::vector<std::string> _parsePeerRoles(X509* peerCert) const;
+            std::vector<RoleName> _parsePeerRoles(X509* peerCert) const;
 
             /** @return true if was successful, otherwise false */
             bool _setupPEM(SSL_CTX* context,
@@ -960,7 +960,7 @@ namespace mongo {
         // TODO: check optional cipher restriction, using cert.
         std::string peerSubjectName = getCertificateSubjectName(peerCert);
 
-        auto roles = _parsePeerRoles(peerCert);
+        std::vector<RoleName> roles = _parsePeerRoles(peerCert);
 
         // If this is an SSL client context (on a MongoDB server or client) 
         // perform hostname validation of the remote server 
@@ -1020,7 +1020,7 @@ namespace mongo {
         return peerSubjectName;
     }
 
-    std::vector<std::string> SSLManager::_parsePeerRoles(X509* peerCert) const {
+    std::vector<RoleName> SSLManager::_parsePeerRoles(X509* peerCert) const {
         //STACK_OF(X509_EXTENSION) mongo_extension = X509_get_ext_d2i(peerCert, _rolesNid, NULL, NULL);
         STACK_OF(X509_EXTENSION) *exts = peerCert->cert_info->extensions;
 
@@ -1063,13 +1063,13 @@ namespace mongo {
                     }
                 }
 
-                for (RoleName& role : roles) {
+                for (RoleName const& role : roles) {
                     error() << "Got role: " << role;
                 }
             }
         }
 
-        return std::vector<std::string>();
+        return roles;
     }
 
     void SSLManager::cleanupThreadLocals() {
