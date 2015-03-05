@@ -102,7 +102,7 @@ namespace mongo {
             BSONObj cmdResult;
 
             BSONArrayBuilder overrideRolesBSON;
-            std::vector<RoleName> overrideRoles = txn->getClient().overrideRoles;
+            std::vector<RoleName> overrideRoles = txn->getClient().port().getClientProvidedRoles();
             for (const RoleName& orr : overrideRoles) {
                 overrideRolesBSON << BSON( "role" << orr.getRole() << "db" << orr.getDB() );
             }
