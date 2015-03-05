@@ -1056,10 +1056,10 @@ namespace mongo {
                         roleSequence = d2i_ASN1_SEQUENCE_ANY(&roleSequence, (const unsigned char**)&roleData, roleDataLength);
                         ASN1_TYPE *roleComponent = NULL;
                         roleComponent = sk_ASN1_TYPE_pop(roleSequence); // RoleName
+                        std::string roleDB(reinterpret_cast<char*>(ASN1_STRING_data(roleComponent->value.utf8string)));
+                        roleComponent = sk_ASN1_TYPE_pop(roleSequence); // RoleDB
                         std::string roleName(reinterpret_cast<char*>(ASN1_STRING_data(roleComponent->value.utf8string)));
                         error() << "Role Name: " << roleName << " Type: " << roleComponent->type << " Size: " << ASN1_STRING_length(roleComponent->value.utf8string);
-                        roleComponent = sk_ASN1_TYPE_pop(roleSequence); // RoleDB
-                        std::string roleDB(reinterpret_cast<char*>(ASN1_STRING_data(roleComponent->value.utf8string)));
                         roles.push_back(RoleName(roleName, roleDB));
                     }
                 }
