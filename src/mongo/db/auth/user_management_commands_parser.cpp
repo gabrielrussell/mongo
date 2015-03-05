@@ -354,6 +354,7 @@ namespace auth {
         validFieldNames.insert("usersInfo");
         validFieldNames.insert("showPrivileges");
         validFieldNames.insert("showCredentials");
+        validFieldNames.insert("overrideRules");
 
         Status status = _checkNoExtraFields(cmdObj, "usersInfo", validFieldNames);
         if (!status.isOK()) {
@@ -395,6 +396,25 @@ namespace auth {
                                                     &parsedArgs->showCredentials);
         if (!status.isOK()) {
             return status;
+        }
+
+        BSONElement orr;
+        status = bsonExtractField(cmdObj, "overrideRules", &orr);
+        if (!status.isOK()) {
+            return status;
+        }
+        std::vector<BSONElement> orrVec = orr.Array();
+        for (BSONElement& element : orrVec) {
+            std::string roleName, dbName;
+            status = bsonExtractStringField(element.Obj(),"role", &roleName);
+            if (!status.isOK()) {
+                return status;
+            }
+            status = bsonExtractStringField(element.Obj(),"db", &dbName);
+            if (!status.isOK()) {
+                return status;
+            }
+            parsedArgs->overrideRoles.push_back(RoleName(roleName,dbName));
         }
 
         return Status::OK();

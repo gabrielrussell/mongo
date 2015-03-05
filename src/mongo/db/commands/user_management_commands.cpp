@@ -1124,7 +1124,7 @@ namespace mongo {
                 for (size_t i = 0; i < args.userNames.size(); ++i) {
                     BSONObj userDetails;
                     status = getGlobalAuthorizationManager()->getUserDescription(
-                            txn, args.userNames[i], &userDetails);
+                            txn, args.userNames[i], args.overrideRoles, &userDetails );
                     if (status.code() == ErrorCodes::UserNotFound) {
                         continue;
                     }

@@ -542,8 +542,9 @@ namespace mongo {
 
     Status AuthorizationManager::getUserDescription(OperationContext* txn,
                                                     const UserName& userName,
+                                                    std::vector<RoleName> overrideRoles,
                                                     BSONObj* result) {
-        return _externalState->getUserDescription(txn, userName, result);
+        return _externalState->getUserDescription(txn, userName, overrideRoles, result);
     }
 
     Status AuthorizationManager::getRoleDescription(const RoleName& roleName,
@@ -655,7 +656,7 @@ namespace mongo {
                                               const UserName& userName,
                                               std::auto_ptr<User>* acquiredUser) {
         BSONObj userObj;
-        Status status = getUserDescription(txn, userName, &userObj);
+        Status status = getUserDescription(txn, userName, std::vector<RoleName>(), &userObj);
         if (!status.isOK()) {
             return status;
         }

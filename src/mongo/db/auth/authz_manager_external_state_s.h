@@ -56,7 +56,9 @@ namespace mongo {
         virtual Status initialize(OperationContext* txn);
         virtual Status getStoredAuthorizationVersion(OperationContext* txn, int* outVersion);
         virtual Status getUserDescription(
-                            OperationContext* txn, const UserName& userName, BSONObj* result);
+                            OperationContext* txn, const UserName& userName, 
+                            std::vector<RoleName> overrideRoles,
+                            BSONObj* result);
         virtual Status getRoleDescription(const RoleName& roleName,
                                           bool showPrivileges,
                                           BSONObj* result);

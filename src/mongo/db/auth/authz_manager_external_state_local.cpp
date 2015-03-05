@@ -141,6 +141,7 @@ namespace {
     Status AuthzManagerExternalStateLocal::getUserDescription(
             OperationContext* txn,
             const UserName& userName,
+            std::vector<RoleName> overrideRoles,
             BSONObj* result) {
 
         BSONObj userDoc;
@@ -153,10 +154,14 @@ namespace {
         if (!status.isOK())
             return status;
         std::vector<RoleName> directRoles;
-        status = V2UserDocumentParser::parseRoleVector(BSONArray(directRolesElement.Obj()),
-                                                       &directRoles);
-        if (!status.isOK())
-            return status;
+        if (!overrideRoles.empty()) {
+            directRoles = overrideRoles;
+        } else {
+            status = V2UserDocumentParser::parseRoleVector(BSONArray(directRolesElement.Obj()),
+                                                           &directRoles);
+            if (!status.isOK())
+                return status;
+        }
 
         unordered_set<RoleName> indirectRoles;
         PrivilegeVector allPrivileges;
@@ -175,6 +180,7 @@ namespace {
                         indirectRoles.insert(subordinates.get());
                     }
                 }
+                //XXX
                 const PrivilegeVector& rolePrivileges(
                         isRoleGraphInconsistent ?
                         _roleGraph.getAllPrivileges(role) :

@@ -48,6 +48,7 @@
 #include "mongo/util/log.h"
 #include "mongo/util/mongoutils/str.h"
 
+#include "mongo/db/operation_context.h"
 namespace mongo {
 
     using boost::scoped_ptr;
@@ -92,11 +93,20 @@ namespace mongo {
     }
 
     Status AuthzManagerExternalStateMongos::getUserDescription(
-                    OperationContext* txn, const UserName& userName, BSONObj* result) {
+                    OperationContext* txn, const UserName& userName, 
+                            std::vector<RoleName> overrideRoles,
+                    BSONObj* result) {
         try {
             scoped_ptr<ScopedDbConnection> conn(getConnectionForAuthzCollection(
                     AuthorizationManager::usersCollectionNamespace));
             BSONObj cmdResult;
+
+            BSONArrayBuilder overrideRolesBSON;
+            std::vector<RoleName> overrideRoles = txn->getClient().overrideRoles;
+            for (const RoleName& orr : overrideRoles) {
+                overrideRolesBSON << BSON( "role" << orr.getRole() << "db" << orr.getDB() );
+            }
+
             conn->get()->runCommand(
                     "admin",
                     BSON("usersInfo" <<
@@ -105,7 +115,8 @@ namespace mongo {
                                          AuthorizationManager::USER_DB_FIELD_NAME <<
                                          userName.getDB())) <<
                          "showPrivileges" << true <<
-                         "showCredentials" << true),
+                         "showCredentials" << true <<
+                         "overrideRoles" << overrideRolesBSON.arr() ),
                     cmdResult);
             if (!cmdResult["ok"].trueValue()) {
                 int code = cmdResult["code"].numberInt();

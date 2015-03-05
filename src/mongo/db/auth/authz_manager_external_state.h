@@ -79,7 +79,9 @@ namespace mongo {
          * If the user does not exist, returns ErrorCodes::UserNotFound.
          */
         virtual Status getUserDescription(
-                            OperationContext* txn, const UserName& userName, BSONObj* result) = 0;
+                            OperationContext* txn, const UserName& userName,
+                            std::vector<RoleName> overrideRoles,
+                            BSONObj* result) = 0;
 
         /**
          * Writes into "result" a document describing the named role and returns Status::OK().  The

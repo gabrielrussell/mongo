@@ -50,6 +50,8 @@
 #include "mongo/util/concurrency/spin_lock.h"
 #include "mongo/util/concurrency/threadlocal.h"
 
+#include "mongo/db/auth/role_name.h"
+
 namespace mongo {
 
     class CurOp;
@@ -160,6 +162,7 @@ namespace mongo {
     /** the database's concept of an outside "client" */
     class Client : public ClientBasic {
     public:
+        std::vector<RoleName> overrideRoles;
         // A set of currently active clients along with a mutex to protect the list
         static boost::mutex clientsMutex;
         static ClientSet clients;

@@ -106,6 +106,7 @@ namespace auth {
         bool allForDB;
         bool showPrivileges;
         bool showCredentials;
+        std::vector<RoleName> overrideRoles;
         UsersInfoArgs() : allForDB(false), showPrivileges(false), showCredentials(false) {}
     };
 
