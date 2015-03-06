@@ -36,6 +36,7 @@
 #include "mongo/bson/util/bson_extract.h"
 #include "mongo/db/auth/authorization_manager.h"
 #include "mongo/db/auth/user_document_parser.h"
+#include "mongo/db/client.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/util/log.h"
 #include "mongo/util/mongoutils/str.h"
@@ -156,6 +157,8 @@ namespace {
         std::vector<RoleName> directRoles;
         if (!overrideRoles.empty()) {
             directRoles = overrideRoles;
+        } else if (txn && !txn->getClient()->port()->getClientProvidedRoles().empty()) {
+            directRoles = txn->getClient()->port()->getClientProvidedRoles();
         } else {
             status = V2UserDocumentParser::parseRoleVector(BSONArray(directRolesElement.Obj()),
                                                            &directRoles);
