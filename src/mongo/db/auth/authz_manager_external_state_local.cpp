@@ -145,26 +145,47 @@ namespace {
             std::vector<RoleName> overrideRoles,
             BSONObj* result) {
 
+        bool overrideRolesOnConnection = txn && !txn->getClient()->port()->getClientProvidedRoles().empty();
+        std::vector<RoleName> acquiredOverrideRoles;
+        if (!overrideRoles.empty()) {
+            acquiredOverrideRoles = overrideRoles;
+        } else if (overrideRolesOnConnection) {
+            acquiredOverrideRoles = txn->getClient()->port()->getClientProvidedRoles();
+        }
+
         BSONObj userDoc;
         Status status = _getUserDocument(txn, userName, &userDoc);
-        if (!status.isOK())
-            return status;
+        if (!status.isOK()) {
+            if (status == ErrorCodes::UserNotFound && userName.getDB() == "$external" && !acquiredOverrideRoles.empty()) {
+                // We are able to reconstruct the external user from the request
+                BSONArrayBuilder array;
+                for (const RoleName& role : acquiredOverrideRoles) {
+                    array << BSON("role" << role.getRole() << "db" << role.getDB());
+                }
+                userDoc = BSON("_id" << userName.getUser() <<
+                               "user" << userName.getUser() <<
+                               "db" << userName.getDB() <<
+                               "credentials" << BSON("external" << true) <<
+                               "roles" << array.arr());
+            } else {
+                return status;
+            }
+        } else {
+            if (userName.getDB() == "$external" && !acquiredOverrideRoles.empty()) {
+                return Status(ErrorCodes::UnsupportedFormat, "Override roles are incompatible existing user documents");
+            }
+        }
+
 
         BSONElement directRolesElement;
         status = bsonExtractTypedField(userDoc, "roles", Array, &directRolesElement);
         if (!status.isOK())
             return status;
         std::vector<RoleName> directRoles;
-        if (!overrideRoles.empty()) {
-            directRoles = overrideRoles;
-        } else if (txn && !txn->getClient()->port()->getClientProvidedRoles().empty()) {
-            directRoles = txn->getClient()->port()->getClientProvidedRoles();
-        } else {
-            status = V2UserDocumentParser::parseRoleVector(BSONArray(directRolesElement.Obj()),
-                                                           &directRoles);
-            if (!status.isOK())
-                return status;
-        }
+        status = V2UserDocumentParser::parseRoleVector(BSONArray(directRolesElement.Obj()),
+                                                       &directRoles);
+        if (!status.isOK())
+            return status;
 
         unordered_set<RoleName> indirectRoles;
         PrivilegeVector allPrivileges;
