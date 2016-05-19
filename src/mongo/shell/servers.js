@@ -828,7 +828,7 @@ var MongoRunner, _startMongod, startMongoProgram, runMongoProgram, startMongoPro
         // connecting for up to 30 seconds to handle when the tests are run on a
         // resource-constrained host machine.
         if (!opts.hasOwnProperty('dialTimeout') &&
-            MongoRunner.getBinVersionFor(opts.binVersion) === '') {
+            _toolVersionSupportsDialTimeout(opts.binVersion)) {
             opts['dialTimeout'] = '30';
         }
 
@@ -836,6 +836,29 @@ var MongoRunner, _startMongod, startMongoProgram, runMongoProgram, startMongoPro
 
         return runMongoProgram.apply(null, argsArray);
 
+    };
+
+    var _toolVersionSupportsDialTimeout = function(version) {
+        if (version === "latest" || version === "") {
+            return true;
+        }
+        var versionParts = convertVersionStringToArray(version);
+        if (versionParts.length < 3) {
+            return false;
+        }
+        if (versionParts[0] > 3 || (versionParts[0] === 3 && versionPargs[1] > 3)) {
+            return true;
+        }
+        var supportedVersions = ["3.3.4", "3.2.5", "3.0.12"];
+        for (var i in supportedVersions) {
+            var supportedVersionParts = convertVersionStringToArray(supportedVersions[i]);
+            if (versionParts[0] === supportedVersionParts[0] &&
+                versionParts[1] === supportedVersionParts[1] &&
+                versionParts[2] >= supportedVersionParts[2]) {
+                return true;
+            }
+        }
+        return false;
     };
 
     // Given a test name figures out a directory for that test to use for dump files and makes sure

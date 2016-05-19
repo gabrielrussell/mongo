@@ -46,16 +46,24 @@ ToolTest.prototype.runTool = function() {
     var a = ["mongo" + arguments[0]];
 
     var hasdbpath = false;
+    var hasdialTimeout = false;
 
     for (var i = 1; i < arguments.length; i++) {
         a.push(arguments[i]);
         if (arguments[i] == "--dbpath")
             hasdbpath = true;
+        if (arguments[i] == "--dialTimeout")
+            hasdialtimeout = true;
     }
 
     if (!hasdbpath) {
         a.push("--host");
         a.push("127.0.0.1:" + this.port);
+    }
+
+    if (!hasdialtimeout) {
+        a.push("--dialTimeout");
+        a.push("30");
     }
 
     return runMongoProgram.apply(null, a);
