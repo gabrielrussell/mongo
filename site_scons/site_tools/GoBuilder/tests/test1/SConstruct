@@ -1,0 +1,37 @@
+# -*- mode:python; coding:utf-8; -*-
+
+# to make editor happy. Not normally needed
+from SCons.Script import *
+
+env=Environment()
+
+env['GOPATH'] = ['vendor', Dir('.').abspath]
+env['GOFLAGS'] = ' -x '
+env['GO'] = '/usr/bin/go'
+env['GO'] = '/home/bdbaddog/tools/mongodbtoolchain/v2/bin/go'
+
+env['GOTAGS'] = ['bill','is','awesome']
+# env.AppendENVPath('PATH','/home/bdbaddog/tools/mongodbtoolchain/v2/bin')
+# print("1GOPATH:"+env['GOPATH'])
+env.Tool('GoBuilder',toolpath=['../../..'],)
+
+# print("2GOPATH:"+env['GOPATH'])
+
+# env.goObject('src/ex3/hello-world.go')
+
+env.goProgram('hello-world',['src/ex3/hello-world.go',],GOTAGS=['wolf'])
+# print("3GOPATH:"+env['GOPATH'])
+
+if False:
+    print(env.Dump('ENV'))
+    for f in env._dict.keys():
+        if f.find('GO') != -1:
+            print("%s->%s"%(f,env[f]))
+
+
+# x=FindPathDirs('GOPATH')
+#
+# for p in x(env):
+#     print("-->%s"%p)
+
+

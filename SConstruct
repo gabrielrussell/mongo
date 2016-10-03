@@ -564,9 +564,9 @@ def decide_platform_tools():
         # we only support MS toolchain on windows
         return ['msvc', 'mslink', 'mslib']
     elif is_running_os('linux', 'solaris'):
-        return ['gcc', 'g++', 'gnulink', 'ar']
+        return ['gcc', 'g++', 'gnulink', 'ar', 'GoBuilder']
     elif is_running_os('osx'):
-        return ['gcc', 'g++', 'applelink', 'ar']
+        return ['gcc', 'g++', 'applelink', 'ar', 'GoBuilder']
     else:
         return ["default"]
 
@@ -652,6 +652,12 @@ env_vars.Add('ENV',
 env_vars.Add('HOST_ARCH',
     help='Sets the native architecture of the compiler',
     converter=variable_arch_converter,
+    default=None)
+
+env_vars.Add('GOFLAGS',
+    default=None)
+
+env_vars.Add('GOPATH',
     default=None)
 
 env_vars.Add('LIBPATH',

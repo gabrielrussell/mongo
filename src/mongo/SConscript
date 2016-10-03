@@ -32,6 +32,7 @@ env.SConscript(
         'db',
         'dbtests',
         'executor',
+        'gotools',
         'installer',
         'logger',
         'platform',

@@ -1,0 +1,7 @@
+syntax: glob
+*.pyc
+.idea/*
+*/pkg/*
+tests/test1/hello-world
+*.sconsign*
+

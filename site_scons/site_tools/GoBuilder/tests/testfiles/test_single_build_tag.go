@@ -1,0 +1,3 @@
+package testfiles
+
+// +build wolf

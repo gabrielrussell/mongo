@@ -1,0 +1,20 @@
+Import("env")
+print "XXX gotools Sconscript\n"
+
+env=env.Clone()
+
+tool_list = ['bsondump', 'mongostat', 'mongofiles', 'mongoexport',
+             'mongoimport', 'mongorestore', 'mongodump', 'mongotop', 'mongooplog',
+             ]
+
+# XXX fix paths
+env['GOPATH'] = ['/home/gabriel/git/mongo/src/mongo/gotools/src/github.com/mongodb/mongo-tools/vendor','/home/gabriel/git/mongo/src/mongo/gotools']
+env['GOFLAGS'] = ' -x '
+env['GO'] = '/usr/local/go/bin/go'
+
+binaries = []
+for tool in tool_list:
+    bin = env.goProgram('bin/%s'%tool,['src/github.com/mongodb/mongo-tools/%s/main/%s.go'%(tool,tool),])
+    binaries.append(bin)
+
+env.Alias('gotools',binaries)
