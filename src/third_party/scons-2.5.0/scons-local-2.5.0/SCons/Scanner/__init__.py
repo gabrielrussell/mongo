@@ -74,9 +74,22 @@ class FindPathDirs(object):
             return ()
 
         dir = dir or env.fs._cwd
-        path = SCons.PathList.PathList(path).subst_path(env, target, source)
-        return tuple(dir.Rfindalldirs(path))
-
+        try:
+            _mpd = env["_memoize_path_dirs"]
+        except KeyError:
+            env["_memoize_path_dirs"]={}
+            _mpd = env["_memoize_path_dirs"]
+        mpd_key = "%r+%r+%r" % (path,target,source)
+        try:
+            npath = _mpd[mpd_key]
+            #print("CACHED FindPathDirs %s %s" % (npath,mpd_key))
+        except KeyError:
+            npath = SCons.PathList.PathList(path).subst_path(env, target, source)
+            print("NEW FindPathDirs %s %s" % (npath,mpd_key))
+            _mpd[mpd_key] = npath
+#        path = SCons.PathList.PathList(path).subst_path(env, target, source)
+#        return tuple(dir.Rfindalldirs(path))
+        return tuple(dir.Rfindalldirs(npath))
 
 
 class Base(object):
