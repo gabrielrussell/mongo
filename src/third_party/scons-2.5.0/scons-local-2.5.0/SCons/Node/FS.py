@@ -1500,7 +1500,9 @@ class DirNodeInfo(SCons.Node.NodeInfoBase):
                 root = self.fs.get_root(drive)
         if not os.path.isabs(s):
             s = top.get_labspath() + '/' + s
-        return root._lookup_abs(s, Entry)
+        n = root._lookup_abs(s, Entry)
+        #print("str_to_node DirNodeInfo",str(n),id(n))
+        return n
 
 class DirBuildInfo(SCons.Node.BuildInfoBase):
     __slots__ = ()
@@ -2460,7 +2462,9 @@ class FileNodeInfo(SCons.Node.NodeInfoBase):
                 root = self.fs.get_root(drive)
         if not os.path.isabs(s):
             s = top.get_labspath() + '/' + s
-        return root._lookup_abs(s, Entry)
+        n = root._lookup_abs(s, Entry)
+        #print("str_to_node FileNodeInfo",str(n),id(n))
+        return n
 
     def __getstate__(self):
         """
@@ -3230,7 +3234,7 @@ class File(Base):
              
             self.scanner_paths = None
 
-    def changed(self, node=None, allowcache=False):
+    def changed(self, node=None, allowcache=True):
         """
         Returns if the node is up-to-date with respect to the BuildInfo
         stored last time it was built. 
@@ -3243,8 +3247,11 @@ class File(Base):
         """
         if node is None:
             try:
-                return self._memo['changed']
+                r = self._memo['changed']
+                #print("changed memod",str(node),str(self),r)
+                return r
             except KeyError:
+                #print("changed not memod",str(node),str(self))
                 pass
         
         has_changed = SCons.Node.Node.changed(self, node)
