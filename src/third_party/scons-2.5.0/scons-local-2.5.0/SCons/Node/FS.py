@@ -3150,12 +3150,16 @@ class File(Base):
                 try:
                     n = old.ninfo
                     if n.timestamp and n.csig and n.timestamp == mtime:
-                        return n.csig
+                        sys.stdout.write("get_max_drift_csig time - mtime > max_drift\n")
+                        r = n.csig
+                        return r
                 except AttributeError:
                     pass
         elif max_drift == 0:
             try:
-                return old.ninfo.csig
+                r = old.ninfo.csig
+                sys.stdout.write("get_max_drift_csig max_drift==0\n")
+                return r
             except AttributeError:
                 pass
 
@@ -3170,14 +3174,18 @@ class File(Base):
         cache - alternate node to use for the signature cache
         returns - the content signature
         """
+        sys.stdout.write("get_csig %s\n" % (self.get_internal_path()))
         ninfo = self.get_ninfo()
         try:
-            return ninfo.csig
+            nics = ninfo.csig
+            sys.stdout.write("get_csig ninfo.csig %s\n" % (nics))
+            return nics
         except AttributeError:
             pass
 
         csig = self.get_max_drift_csig()
         if csig is None:
+            sys.stdout.write("get_csig get_max_drift_csig None\n")
 
             try:
                 if self.get_size() < SCons.Node.FS.File.md5_chunksize:
@@ -3193,6 +3201,9 @@ class File(Base):
             else:
                 if not csig:
                     csig = SCons.Util.MD5signature(contents)
+        else:
+            sys.stdout.write("get_csig get_max_drift_csig %s\n" % (csig))
+
 
         ninfo.csig = csig
 
@@ -3361,16 +3372,21 @@ class File(Base):
         But since the file *does* actually exist in the cachedir, we
         can use its contents for the csig.
         """
+        sys.stdout.write("get_cachedir_csig %s\n" % (self.get_internal_path()))
         try:
-            return self.cachedir_csig
+            r = self.cachedir_csig
+            sys.stdout.write("get_cachedir_csig cachedir_csig\n")
+            return r
         except AttributeError:
             pass
 
         cachedir, cachefile = self.get_build_env().get_CacheDir().cachepath(self)
         if not self.exists() and cachefile and os.path.exists(cachefile):
+            sys.stdout.write("get_cachedir_csig calculating hash of %s\n" % (cachefile))
             self.cachedir_csig = SCons.Util.MD5filesignature(cachefile, \
                 SCons.Node.FS.File.md5_chunksize * 1024)
         else:
+            sys.stdout.write("get_cachedir_csig get_csig\n")
             self.cachedir_csig = self.get_csig()
         return self.cachedir_csig
 
@@ -3403,16 +3419,24 @@ class File(Base):
         them somehow.
         """
         try:
-            return self.cachesig
+            cs = self.cachesig
+            sys.stdout.write("self.cachesig %s\n" % (cs))
+            return cs
         except AttributeError:
+            sys.stdout.write("!self.cachesig\n")
             pass
         
         # Collect signatures for all children
         children = self.children()
+        for n in children:
+            sys.stdout.write("child %s %s\n" % (n,n.get_cachedir_csig()))
+
         sigs = [n.get_cachedir_csig() for n in children]
         # Append this node's signature...
+        sys.stdout.write("self.get_contents_sig %s\n" % (self.get_contents_sig()))
         sigs.append(self.get_contents_sig())
         # ...and it's path
+        sys.stdout.write("self.get_internal_path %s\n" % (self.get_internal_path()))
         sigs.append(self.get_internal_path())
         # Merge this all into a single signature
         result = self.cachesig = SCons.Util.MD5collect(sigs)
