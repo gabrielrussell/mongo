@@ -26,50 +26,42 @@
  *    it in the license file.
  */
 
-#include "mongo/platform/basic.h"
-
-#include <memory>
-#include <stdio.h>
-
-#include "mongo/db/logical_session_cache_factory_mongod.h"
-
-#include "mongo/db/service_liason_mongod.h"
-#include "mongo/db/sessions_collection_mock.h"
+#include "mongo/client/dbclientinterface.h"
+#include "mongo/client/query.h"
+#include "mongo/db/dbdirectclient.h"
+#include "mongo/db/clientcursor.h"
+#include "mongo/db/operation_context.h"
 #include "mongo/db/sessions_collection_standalone.h"
-#include "mongo/stdx/memory.h"
+#include "mongo/platform/basic.h"
+#include "mongo/stdx/functional.h"
 
 namespace mongo {
 
-namespace {
-
-std::unique_ptr<SessionsCollection> makeSessionsCollection(LogicalSessionCacheServer state) {
-    fprintf(stderr,"makeSessionsCollection\n");
-    switch (state) {
-        case LogicalSessionCacheServer::kSharded:
-            // TODO SERVER-29203, replace with SessionsCollectionSharded
-            return stdx::make_unique<MockSessionsCollection>(
-                std::make_shared<MockSessionsCollectionImpl>());
-        case LogicalSessionCacheServer::kReplicaSet:
-            // TODO SERVER-29202, replace with SessionsCollectionRS
-            return stdx::make_unique<MockSessionsCollection>(
-                std::make_shared<MockSessionsCollectionImpl>());
-        case LogicalSessionCacheServer::kStandalone:
-            // TODO SERVER-29201, replace with SessionsCollectionStandalone
-            return stdx::make_unique<StandaloneSessionsCollection>();
-        default:
-            MONGO_UNREACHABLE;
+StatusWith<LogicalSessionRecord> StandaloneSessionsCollection::fetchRecord(LogicalSessionId lsid) {
+    OperationContext* opCtx = cc().getOperationContext();
+    DBDirectClient client(opCtx);
+    Query lsidQuery(BSON("Id" << lsid.toString()));
+    std::unique_ptr<DBClientCursor> cursor = client.query("admin.system.sessions", lsidQuery, 1);
+    if (!cursor->more()) {
+        return {ErrorCodes::NoSuchSession, "No matching record in the sessions collection"};
     }
+    return LogicalSessionRecord::parse(cursor->next());
 }
 
-}  // namespace
+Status StandaloneSessionsCollection::insertRecord(LogicalSessionRecord record) {
+    OperationContext* opCtx = cc().getOperationContext();
+    DBDirectClient client(opCtx);
+    client.insert("admin.system.sessions", record.toBSON());
+    auto result = client.getLastError();
+    return Status::OK();
+}
 
-std::unique_ptr<LogicalSessionCache> makeLogicalSessionCacheD(LogicalSessionCacheServer state) {
-    auto liason = stdx::make_unique<ServiceLiasonMongod>();
+LogicalSessionIdSet StandaloneSessionsCollection::refreshSessions(LogicalSessionIdSet sessions) {
+    return sessions;
+}
 
-    // Set up the logical session cache
-    auto sessionsColl = makeSessionsCollection(state);
-    return stdx::make_unique<LogicalSessionCache>(
-        std::move(liason), std::move(sessionsColl), LogicalSessionCache::Options{});
+void StandaloneSessionsCollection::removeRecords(LogicalSessionIdSet sessions) {
+    return;
 }
 
 }  // namespace mongo

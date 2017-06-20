@@ -919,143 +919,157 @@ env.CppUnitTest(
 )
 
 env.Library(
-    target='logical_session_record',
-    source=[
+        target='logical_session_record',
+        source=[
         'logical_session_record.cpp',
         env.Idlc('logical_session_record.idl')[0],
-    ],
-    LIBDEPS=[
+        ],
+        LIBDEPS=[
         '$BUILD_DIR/mongo/base',
         '$BUILD_DIR/mongo/db/auth/user_name',
         '$BUILD_DIR/mongo/idl/idl_parser',
         'logical_session_id',
         'signed_logical_session_id',
-    ],
-)
+        ],
+        )
 
 env.CppUnitTest(
-    target='logical_session_record_test',
-    source=[
+        target='logical_session_record_test',
+        source=[
         'logical_session_record_test.cpp',
-    ],
-    LIBDEPS=[
+        ],
+        LIBDEPS=[
         '$BUILD_DIR/mongo/base',
         'logical_session_id',
         'logical_session_record',
-    ],
-)
+        ],
+        )
 
 env.Library(
-    target='service_liason',
-    source=[
+        target='service_liason',
+        source=[
         'service_liason.cpp',
-    ],
-    LIBDEPS=[
+        ],
+        LIBDEPS=[
         '$BUILD_DIR/mongo/crypto/sha1_block',
         'keys_collection_document',
         'keys_collection_manager',
         'keys_collection_manager_zero',
         'logical_clock',
         'signed_logical_session_id',
-    ],
-)
+        ],
+        )
 
 envWithAsio = env.Clone()
-envWithAsio.InjectThirdPartyIncludePaths(libraries=['asio'])
+    envWithAsio.InjectThirdPartyIncludePaths(libraries=['asio'])
 
-envWithAsio.Library(
-    target='service_liason_mock',
-    source=[
-        'service_liason_mock.cpp',
-    ],
-    LIBDEPS=[
-        '$BUILD_DIR/mongo/executor/async_timer_mock',
-        '$BUILD_DIR/mongo/util/periodic_runner_asio',
-        'service_liason',
-    ],
-)
+    envWithAsio.Library(
+            target='service_liason_mock',
+            source=[
+            'service_liason_mock.cpp',
+            ],
+            LIBDEPS=[
+            '$BUILD_DIR/mongo/executor/async_timer_mock',
+            '$BUILD_DIR/mongo/util/periodic_runner_asio',
+            'service_liason',
+            ],
+            )
 
-env.Library(
-    target='service_liason_mongod',
-    source=[
-        'service_liason_mongod.cpp',
-    ],
-    LIBDEPS=[
-        '$BUILD_DIR/mongo/db/logical_session_id',
-        '$BUILD_DIR/mongo/util/clock_sources',
-        '$BUILD_DIR/mongo/util/periodic_runner',
-        'clientcursor',
-        'service_context',
-        'service_liason',
-    ],
-)
+    env.Library(
+            target='service_liason_mongod',
+            source=[
+            'service_liason_mongod.cpp',
+            ],
+            LIBDEPS=[
+            '$BUILD_DIR/mongo/db/logical_session_id',
+            '$BUILD_DIR/mongo/util/clock_sources',
+            '$BUILD_DIR/mongo/util/periodic_runner',
+            'clientcursor',
+            'service_context',
+            'service_liason',
+            ],
+            )
 
-env.Library(
-    target='service_liason_mongos',
-    source=[
-        'service_liason_mongos.cpp',
-    ],
-    LIBDEPS=[
-        '$BUILD_DIR/mongo/db/logical_session_id',
-        '$BUILD_DIR/mongo/util/clock_sources',
-        '$BUILD_DIR/mongo/util/periodic_runner',
-        '$BUILD_DIR/mongo/s/coreshard',
-        '$BUILD_DIR/mongo/s/query/cluster_cursor_manager',
-        'service_context',
-        'service_liason',
-    ],
-)
+    env.Library(
+            target='service_liason_mongos',
+            source=[
+            'service_liason_mongos.cpp',
+            ],
+            LIBDEPS=[
+            '$BUILD_DIR/mongo/db/logical_session_id',
+            '$BUILD_DIR/mongo/util/clock_sources',
+            '$BUILD_DIR/mongo/util/periodic_runner',
+            '$BUILD_DIR/mongo/s/coreshard',
+            '$BUILD_DIR/mongo/s/query/cluster_cursor_manager',
+            'service_context',
+            'service_liason',
+            ],
+            )
 
-env.Library(
-    target='sessions_collection',
-    source=[
-        'sessions_collection.cpp',
-    ],
-    LIBDEPS=[
-    ],
-)
+    env.Library(
+            target='sessions_collection',
+            source=[
+            'sessions_collection.cpp',
+            ],
+            LIBDEPS=[
+            ],
+            )
 
-env.Library(
-    target='sessions_collection_mock',
-    source=[
-        'sessions_collection_mock.cpp',
-    ],
-    LIBDEPS=[
-        '$BUILD_DIR/mongo/base',
-        '$BUILD_DIR/mongo/db/logical_session_id',
-        'sessions_collection',
-    ],
-)
+    env.Library(
+            target='sessions_collection_mock',
+            source=[
+            'sessions_collection_mock.cpp',
+            ],
+            LIBDEPS=[
+            '$BUILD_DIR/mongo/base',
+            '$BUILD_DIR/mongo/db/logical_session_id',
+            'sessions_collection',
+            ],
+            )
 
-env.Library(
-    target='logical_session_cache',
-    source=[
-        'logical_session_cache.cpp',
-    ],
-    LIBDEPS=[
-        'logical_session_id',
-        'logical_session_record',
-        'sessions_collection',
-        'server_parameters',
-        'service_liason',
-    ],
-)
+    env.Library(
+            target='sessions_collection_standalone',
+            source=[
+            'sessions_collection_standalone.cpp',
+            ],
+            LIBDEPS=[
+            '$BUILD_DIR/mongo/base',
+            '$BUILD_DIR/mongo/db/logical_session_id',
+            'sessions_collection',
+            ],
+            )
 
-envWithAsio.CppUnitTest(
-    target='logical_session_cache_test',
-    source=[
-        'logical_session_cache_test.cpp',
-    ],
-    LIBDEPS=[
-        '$BUILD_DIR/mongo/db/service_context_noop_init',
-        '$BUILD_DIR/mongo/executor/async_timer_mock',
-        'keys_collection_manager',
-        'keys_collection_document',
-        'logical_clock',
-        'logical_session_cache',
-        'service_liason_mock',
-        'sessions_collection_mock',
-        'signed_logical_session_id',
+
+    env.Library(
+            target='logical_session_cache',
+            source=[
+            'logical_session_cache.cpp',
+            ],
+            LIBDEPS=[
+            'logical_session_id',
+            'logical_session_record',
+            'sessions_collection',
+            'server_parameters',
+            'service_liason',
+            ],
+            )
+
+    envWithAsio.CppUnitTest(
+            target='logical_session_cache_test',
+            source=[
+            'logical_session_cache_test.cpp',
+            ],
+            LIBDEPS=[
+            '$BUILD_DIR/mongo/db/service_context_noop_init',
+            '$BUILD_DIR/mongo/executor/async_timer_mock',
+            'keys_collection_manager',
+            'keys_collection_document',
+            'logical_clock',
+            'logical_session_cache',
+            'service_liason_mock',
+            'sessions_collection_mock',
+            'signed_logical_session_id',
+            'sessions_collection_standalone',
     ],
 )
 
@@ -1068,6 +1082,7 @@ envWithAsio.Library(
         'logical_session_cache',
         'service_liason_mongod',
         'sessions_collection_mock', # TODO SERVER-29201, SERVER-29202, SERVER-29203
+        'sessions_collection_standalone',
     ],
 )
 
@@ -1080,6 +1095,7 @@ envWithAsio.Library(
         'logical_session_cache',
         'service_liason_mongos',
         'sessions_collection_mock', # TODO SERVER-29203 replace with sessions_collection_sharded
+        'sessions_collection_standalone',
     ],
 )
 
