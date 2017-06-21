@@ -112,19 +112,19 @@ public:
     explicit MockSessionsCollection(std::shared_ptr<MockSessionsCollectionImpl> impl)
         : _impl(std::move(impl)) {}
 
-    StatusWith<LogicalSessionRecord> fetchRecord(LogicalSessionId lsid) override {
+    StatusWith<LogicalSessionRecord> fetchRecord(OperationContext* opCtx, LogicalSessionId lsid) override {
         return _impl->fetchRecord(std::move(lsid));
     }
 
-    Status insertRecord(LogicalSessionRecord record) override {
+    Status insertRecord(OperationContext*, LogicalSessionRecord record) override {
         return _impl->insertRecord(std::move(record));
     }
 
-    LogicalSessionIdSet refreshSessions(LogicalSessionIdSet sessions) override {
+    LogicalSessionIdSet refreshSessions(OperationContext*, LogicalSessionIdSet sessions) override {
         return _impl->refreshSessions(std::move(sessions));
     }
 
-    void removeRecords(LogicalSessionIdSet sessions) override {
+    void removeRecords(OperationContext*, LogicalSessionIdSet sessions) override {
         return _impl->removeRecords(std::move(sessions));
     }
 

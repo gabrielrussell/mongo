@@ -30,6 +30,7 @@
 
 #include "mongo/db/logical_session_id.h"
 #include "mongo/db/logical_session_record.h"
+#include "mongo/db/operation_context.h"
 
 namespace mongo {
 
@@ -47,8 +48,7 @@ public:
      * Returns a LogicalSessionRecord for the given LogicalSessionId. This method
      * may run networking operations on the calling thread.
      */
-    virtual StatusWith<LogicalSessionRecord> fetchRecord(LogicalSessionId lsid) = 0;
-
+    virtual StatusWith<LogicalSessionRecord> fetchRecord(OperationContext* opCtx, LogicalSessionId lsid) = 0;
     /**
      * Inserts the given record into the sessions collection. This method may run
      * networking operations on the calling thread.
@@ -56,7 +56,7 @@ public:
      * Returns a DuplicateSession error if the session already exists in the
      * sessions collection.
      */
-    virtual Status insertRecord(LogicalSessionRecord record) = 0;
+    virtual Status insertRecord(OperationContext* opCtx, LogicalSessionRecord record) = 0;
 
     /**
      * Updates the last-use times on the given sessions to be greater than
@@ -65,7 +65,7 @@ public:
      * Returns a list of sessions for which no authoritative record was found,
      * and hence were not refreshed.
      */
-    virtual LogicalSessionIdSet refreshSessions(LogicalSessionIdSet sessions) = 0;
+    virtual LogicalSessionIdSet refreshSessions(OperationContext* opCtx, LogicalSessionIdSet sessions) = 0;
 
     /**
      * Removes the authoritative records for the specified sessions.
@@ -73,7 +73,7 @@ public:
      * Implementations should perform authentication checks to ensure that
      * session records may only be removed if their owner is logged in.
      */
-    virtual void removeRecords(LogicalSessionIdSet sessions) = 0;
+    virtual void removeRecords(OperationContext* opCtx, LogicalSessionIdSet sessions) = 0;
 };
 
 }  // namespace mongo
