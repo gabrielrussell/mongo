@@ -121,7 +121,8 @@ MONGO_INITIALIZER(AuthorizationBuiltinRoles)(InitializerContext* context) {
         << ActionType::killCursors
         << ActionType::listCollections
         << ActionType::listIndexes
-        << ActionType::planCacheRead;
+        << ActionType::planCacheRead
+        << ActionType::startSession;
 
     // Read-write role
     readWriteRoleActions += readRoleActions;

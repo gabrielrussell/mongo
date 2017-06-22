@@ -164,6 +164,7 @@ env.Library(
         "run_aggregate.cpp",
         "set_feature_compatibility_version_command.cpp",
         "snapshot_management.cpp",
+        "start_session_command.cpp",
         "test_commands.cpp",
         "top_command.cpp",
         "touch.cpp",
