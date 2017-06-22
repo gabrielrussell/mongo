@@ -26,6 +26,11 @@
  *    it in the license file.
  */
 
+#include "mongo/client/dbclientinterface.h"
+#include "mongo/client/query.h"
+#include "mongo/db/dbdirectclient.h"
+#include "mongo/db/clientcursor.h"
+#include "mongo/db/operation_context.h"
 #include "mongo/db/sessions_collection_standalone.h"
 #include "mongo/platform/basic.h"
 #include "mongo/stdx/functional.h"
@@ -33,10 +38,21 @@
 namespace mongo {
 
 StatusWith<LogicalSessionRecord> StandaloneSessionsCollection::fetchRecord(LogicalSessionId lsid) {
+    OperationContext* opCtx = cc().getOperationContext();
+    DBDirectClient client(opCtx);
+    Query lsidQuery(BSON("Id" << lsid.toString()));
+    std::unique_ptr<DBClientCursor> cursor = client.query("admin.system.sessions", lsidQuery, 1);
+    if (!cursor->more()) {
         return {ErrorCodes::NoSuchSession, "No matching record in the sessions collection"};
+    }
+    return LogicalSessionRecord::parse(cursor->next());
 }
 
 Status StandaloneSessionsCollection::insertRecord(LogicalSessionRecord record) {
+    OperationContext* opCtx = cc().getOperationContext();
+    DBDirectClient client(opCtx);
+    client.insert("admin.system.sessions", record.toBSON());
+    auto result = client.getLastError();
     return Status::OK();
 }
 
