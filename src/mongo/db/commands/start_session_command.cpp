@@ -61,61 +61,58 @@ public:
     virtual void help(std::stringstream& help) const {
         help << "start a logical session";
     }
-    virtual void addRequiredPrivileges(const std::string& dbname,
-                                       const BSONObj& cmdObj,
-                                       std::vector<Privilege>* out) {
-        ActionSet actions;
-        actions.addAction(ActionType::startSession);
-        out->push_back(Privilege(ResourcePattern::forClusterResource(), actions));
+    virtual Status checkAuthForOperation(OperationContext* opCtx,
+                                         const std::string& dbname,
+                                         const BSONObj& cmdObj) {
+        AuthorizationSession* authSession = AuthorizationSession::get(opCtx->getClient());
+        if (!authSession->isAuthorizedForActionsOnResource(ResourcePattern::forClusterResource(),ActionType::startSession)) {
+            return Status(ErrorCodes::Unauthorized, "Unauthorized");
+        }
+        return Status::OK();
     }
+
     virtual bool run(OperationContext* opCtx,
                      const std::string& db,
                      const BSONObj& cmdObj,
                      std::string& errmsg,
                      BSONObjBuilder& result) {
         {
-            try {  // XXX should I leave this try catch std::terminate() stuff?
-                // XXX remove the Username once it leaves the makeAuthoritativeRecord api
-                UserName userName("", "");
-                boost::optional<OID> uid;
-                auto client = opCtx->getClient();
+            // XXX remove the Username once it leaves the makeAuthoritativeRecord api
+            UserName userName("", "");
+            boost::optional<OID> uid;
+            auto client = opCtx->getClient();
 
-                ServiceContext* serviceContext = opCtx->getClient()->getServiceContext();
-                if (AuthorizationManager::get(serviceContext)->isAuthEnabled()) {
+            ServiceContext* serviceContext = opCtx->getClient()->getServiceContext();
+            if (AuthorizationManager::get(serviceContext)->isAuthEnabled()) {
 
-                    auto userNameItr =
-                        AuthorizationSession::get(client)->getAuthenticatedUserNames();
+                auto userNameItr = AuthorizationSession::get(client)->getAuthenticatedUserNames();
+                if (userNameItr.more()) {
+                    userName = userNameItr.next();
                     if (userNameItr.more()) {
-                        userName = userNameItr.next();
-                        if (userNameItr.more()) {
-                            return appendCommandStatus(
-                                result,
-                                Status(ErrorCodes::AuthenticationFailed,
-                                       "must only be authenticated as one user "
-                                       "to create a logical session"));
-                        }
-                    } else {
-                        // This shoud really never be reached.
-                        // It means that while auth is on, we're not authenticated as any users.
-                        // XXX Should we actually assert here or fail more spectacularly
                         return appendCommandStatus(result,
-                                                   Status(ErrorCodes::AuthenticationFailed,
+                                                   Status(ErrorCodes::Unauthorized,
                                                           "must only be authenticated as one user "
                                                           "to create a logical session"));
                     }
+                } else {
+                    // This shoud really never be reached.
+                    // It means that while auth is on, we're not authenticated as any users.
+                    // XXX Should we actually assert here or fail more spectacularly
+                    return appendCommandStatus(result,
+                                               Status(ErrorCodes::Unauthorized,
+                                                      "must only be authenticated as one user "
+                                                      "to create a logical session"));
                 }
-                auto serviceCtx = client->getServiceContext();
-
-                auto lsRecord = LogicalSessionRecord::makeAuthoritativeRecord(
-                    LogicalSessionId::gen(),
-                    std::move(userName),
-                    uid,
-                    serviceCtx->getFastClockSource()->now());
-                return appendCommandStatus(
-                    result, serviceCtx->getLogicalSessionCache()->startSession(lsRecord));
-            } catch (...) {
-                std::terminate();
             }
+            auto serviceCtx = client->getServiceContext();
+
+            auto lsRecord = LogicalSessionRecord::makeAuthoritativeRecord(
+                LogicalSessionId::gen(),
+                std::move(userName),
+                uid,
+                serviceCtx->getFastClockSource()->now());
+            return appendCommandStatus(
+                result, serviceCtx->getLogicalSessionCache()->startSession(lsRecord));
         }
     }
 };
