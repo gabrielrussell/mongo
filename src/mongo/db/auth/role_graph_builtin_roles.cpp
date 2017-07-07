@@ -697,6 +697,7 @@ bool RoleGraph::addPrivilegesForBuiltinRole(const RoleName& roleName, PrivilegeV
     } else {
         return false;
     }
+    // One of the roles has matched, otherwise we would have returned already.
     addAnyBuiltinRolePrivileges(result);
     return true;
 }

@@ -79,13 +79,15 @@ public:
         {
             // XXX remove the Username once it leaves the makeAuthoritativeRecord api
             UserName userName("", "");
+            User *user;
             boost::optional<OID> uid;
             auto client = opCtx->getClient();
 
-            ServiceContext* serviceContext = opCtx->getClient()->getServiceContext();
+            ServiceContext* serviceContext = client->getServiceContext();
             if (AuthorizationManager::get(serviceContext)->isAuthEnabled()) {
 
-                auto userNameItr = AuthorizationSession::get(client)->getAuthenticatedUserNames();
+                auto authzSession = AuthorizationSession::get(client);
+                auto userNameItr = authzSession->getAuthenticatedUserNames();
                 if (userNameItr.more()) {
                     userName = userNameItr.next();
                     if (userNameItr.more()) {
@@ -103,16 +105,18 @@ public:
                                                       "must only be authenticated as one user "
                                                       "to create a logical session"));
                 }
+                user = authzSession->lookupUser(userName);
+                fassert(40513, user);
+                uid = user->getID();
             }
-            auto serviceCtx = client->getServiceContext();
 
             auto lsRecord = LogicalSessionRecord::makeAuthoritativeRecord(
                 LogicalSessionId::gen(),
                 std::move(userName),
                 uid,
-                serviceCtx->getFastClockSource()->now());
+                serviceContext->getFastClockSource()->now());
             return appendCommandStatus(
-                result, serviceCtx->getLogicalSessionCache()->startSession(lsRecord));
+                result, serviceContext->getLogicalSessionCache()->startSession(std::move(lsRecord)));
         }
     }
 };
