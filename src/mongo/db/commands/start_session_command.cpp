@@ -74,10 +74,10 @@ public:
     }
 
     virtual bool run(OperationContext* opCtx,
-             const std::string& db,
-             const BSONObj& cmdObj,
-             std::string& errmsg,
-             BSONObjBuilder& result) {
+                     const std::string& db,
+                     const BSONObj& cmdObj,
+                     std::string& errmsg,
+                     BSONObjBuilder& result) {
         // XXX remove the Username once it leaves the makeAuthoritativeRecord api
         UserName userName("", "");
         User* user;
@@ -92,15 +92,16 @@ public:
             if (userNameItr.more()) {
                 userName = userNameItr.next();
                 if (userNameItr.more()) {
-                    return appendCommandStatus(result,
-                                               Status(ErrorCodes::Unauthorized,
-                                                      "must only be authenticated as one user "
-                                                      "to create a logical session"));
+                    return appendCommandStatus(
+                        result,
+                        Status(ErrorCodes::Unauthorized,
+                               "must only be authenticated as exactly one user "
+                               "to create a logical session"));
                 }
             } else {
                 return appendCommandStatus(result,
                                            Status(ErrorCodes::Unauthorized,
-                                                  "must only be authenticated as one user "
+                                                  "must only be authenticated as exactly one user "
                                                   "to create a logical session"));
             }
             user = authzSession->lookupUser(userName);
