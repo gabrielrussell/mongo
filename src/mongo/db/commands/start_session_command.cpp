@@ -26,6 +26,8 @@
  *    it in the license file.
  */
 
+#include "mongo/platform/basic.h"
+
 #include "mongo/base/init.h"
 #include "mongo/db/auth/action_set.h"
 #include "mongo/db/auth/action_type.h"
@@ -39,7 +41,6 @@
 #include "mongo/db/logical_session_record.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/stats/top.h"
-#include "mongo/platform/basic.h"
 
 namespace {
 
@@ -49,75 +50,71 @@ class StartSessionCommand : public Command {
 public:
     StartSessionCommand() : Command("startSession") {}
 
-    virtual bool slaveOk() const {
+    bool slaveOk() const final {
         return true;
     }
-    virtual bool adminOnly() const {
+    bool adminOnly() const final {
         return false;
     }
-    virtual bool supportsWriteConcern(const BSONObj& cmd) const override {
+    bool supportsWriteConcern(const BSONObj& cmd) const final {
         return false;
     }
-    virtual void help(std::stringstream& help) const {
+    void help(std::stringstream& help) const final {
         help << "start a logical session";
     }
-    virtual Status checkAuthForOperation(OperationContext* opCtx,
-                                         const std::string& dbname,
-                                         const BSONObj& cmdObj) {
+    Status checkAuthForOperation(OperationContext* opCtx,
+                                 const std::string& dbname,
+                                 const BSONObj& cmdObj) {
         AuthorizationSession* authSession = AuthorizationSession::get(opCtx->getClient());
-        if (!authSession->isAuthorizedForActionsOnResource(ResourcePattern::forClusterResource(),ActionType::startSession)) {
+        if (!authSession->isAuthorizedForActionsOnResource(ResourcePattern::forClusterResource(),
+                                                           ActionType::startSession)) {
             return Status(ErrorCodes::Unauthorized, "Unauthorized");
         }
         return Status::OK();
     }
 
     virtual bool run(OperationContext* opCtx,
-                     const std::string& db,
-                     const BSONObj& cmdObj,
-                     std::string& errmsg,
-                     BSONObjBuilder& result) {
-        {
-            // XXX remove the Username once it leaves the makeAuthoritativeRecord api
-            UserName userName("", "");
-            User *user;
-            boost::optional<OID> uid;
-            auto client = opCtx->getClient();
+             const std::string& db,
+             const BSONObj& cmdObj,
+             std::string& errmsg,
+             BSONObjBuilder& result) {
+        // XXX remove the Username once it leaves the makeAuthoritativeRecord api
+        UserName userName("", "");
+        User* user;
+        boost::optional<OID> uid;
+        auto client = opCtx->getClient();
 
-            ServiceContext* serviceContext = client->getServiceContext();
-            if (AuthorizationManager::get(serviceContext)->isAuthEnabled()) {
+        ServiceContext* serviceContext = client->getServiceContext();
+        if (AuthorizationManager::get(serviceContext)->isAuthEnabled()) {
 
-                auto authzSession = AuthorizationSession::get(client);
-                auto userNameItr = authzSession->getAuthenticatedUserNames();
+            auto authzSession = AuthorizationSession::get(client);
+            auto userNameItr = authzSession->getAuthenticatedUserNames();
+            if (userNameItr.more()) {
+                userName = userNameItr.next();
                 if (userNameItr.more()) {
-                    userName = userNameItr.next();
-                    if (userNameItr.more()) {
-                        return appendCommandStatus(result,
-                                                   Status(ErrorCodes::Unauthorized,
-                                                          "must only be authenticated as one user "
-                                                          "to create a logical session"));
-                    }
-                } else {
-                    // This shoud really never be reached.
-                    // It means that while auth is on, we're not authenticated as any users.
-                    // XXX Should we actually assert here or fail more spectacularly
                     return appendCommandStatus(result,
                                                Status(ErrorCodes::Unauthorized,
                                                       "must only be authenticated as one user "
                                                       "to create a logical session"));
                 }
-                user = authzSession->lookupUser(userName);
-                fassert(40513, user);
-                uid = user->getID();
+            } else {
+                return appendCommandStatus(result,
+                                           Status(ErrorCodes::Unauthorized,
+                                                  "must only be authenticated as one user "
+                                                  "to create a logical session"));
             }
-
-            auto lsRecord = LogicalSessionRecord::makeAuthoritativeRecord(
-                LogicalSessionId::gen(),
-                std::move(userName),
-                uid,
-                serviceContext->getFastClockSource()->now());
-            return appendCommandStatus(
-                result, serviceContext->getLogicalSessionCache()->startSession(std::move(lsRecord)));
+            user = authzSession->lookupUser(userName);
+            invariant(user);
+            uid = user->getID();
         }
+
+        auto lsRecord = LogicalSessionRecord::makeAuthoritativeRecord(
+            LogicalSessionId::gen(),
+            std::move(userName),
+            uid,
+            serviceContext->getFastClockSource()->now());
+        return appendCommandStatus(
+            result, serviceContext->getLogicalSessionCache()->startSession(std::move(lsRecord)));
     }
 };
 

@@ -1,85 +1,74 @@
-var result;
-var conn;
-var admin;
-var foo;
+(function() {
+    'use strict';
+    var conn;
+    var admin;
+    var foo;
+    var request = {startSession: 1};
 
-function resultOK(result) {
-    return result.ok && !('code' in result) && !('errmsg' in result) && !('errInfo' in result) &&
-        !('writeErrors' in result);
-}
+    conn = MongoRunner.runMongod({nojournal: ""});
+    admin = conn.getDB("admin");
 
-function resultNOK(result) {
-    return !result.ok && typeof(result.code) == 'number' && typeof(result.errmsg) == 'string';
-}
+    // test that we can run startSession unauthenticated when the server is running without --auth
 
-var request = {
-    startSession: 1,
-};
+    assert.commandWorked(
+        admin.runCommand(request),
+        "failed test that we can run startSession unauthenticated when the server is running without --auth");
 
+    // test that we can run startSession authenticated when the server is running without --auth
 
-conn = MongoRunner.runMongod({nojournal: ""});
-admin = conn.getDB("admin");
+    admin.createUser({user: 'user0', pwd: 'password', roles: jsTest.basicUserRoles});
+    admin.auth("user0", "password");
 
-// test that we can run startSession unauthenticated when the server is running without --auth
+    assert.commandWorked(
+        admin.runCommand(request),
+        "failed test that we can run startSession authenticated when the server is running without --auth");
 
-result = admin.runCommand(request);
-print(tojson(result));
-assert(resultOK(result), tojson(result));
+    MongoRunner.stopMongod(conn);
 
-// test that we can run startSession authenticated when the server is running without --auth
+    //
 
-admin.createUser({user: 'user0', pwd: 'password', roles: jsTest.basicUserRoles});
-admin.auth("user0","password");
+    conn = MongoRunner.runMongod({auth: "", nojournal: ""});
+    admin = conn.getDB("admin");
+    foo = conn.getDB("foo");
 
-result = admin.runCommand(request);
-print(tojson(result));
-assert(resultOK(result), tojson(result));
+    // test that we can't run startSession unauthenticated when the server is running with --auth
 
-MongoRunner.stopMongod(conn);
+    assert.commandFailed(
+        admin.runCommand(request),
+        "failed test that we can't run startSession unauthenticated when the server is running with --auth");
 
-//
+    //
 
-conn = MongoRunner.runMongod({auth: "", nojournal: ""});
-admin = conn.getDB("admin");
-foo = conn.getDB("foo");
+    admin.createUser({user: 'admin', pwd: 'admin', roles: jsTest.adminUserRoles});
+    admin.auth("admin", "admin");
+    admin.createUser({user: 'user0', pwd: 'password', roles: jsTest.basicUserRoles});
+    foo.createUser({user: 'user1', pwd: 'password', roles: jsTest.basicUserRoles});
+    admin.createUser({user: 'user2', pwd: 'password', roles: []});
+    admin.logout();
 
-// test that we can't run startSession unauthenticated when the server is running with --auth
+    // test that we can run startSession authenticated as one user with proper permissions
 
-result = admin.runCommand(request);
-print(tojson(result));
-assert(resultNOK(result), tojson(result));
+    admin.auth("user0", "password");
+    assert.commandWorked(
+        admin.runCommand(request),
+        "failed test that we can run startSession authenticated as one user with proper permissions");
 
-//
+    // test that we cant run startSession authenticated as two users with proper permissions
 
-admin.createUser({user: 'admin', pwd: 'admin', roles: jsTest.adminUserRoles});
-admin.auth("admin", "admin");
-admin.createUser({user: 'user0', pwd: 'password', roles: jsTest.basicUserRoles});
-foo.createUser({user: 'user1', pwd: 'password', roles: jsTest.basicUserRoles});
-admin.createUser({user: 'user2', pwd: 'password', roles: []});
-admin.logout();
+    foo.auth("user1", "password");
+    assert.commandFailed(
+        admin.runCommand(request),
+        "failed test that we cant run startSession authenticated as two users with proper permissions");
 
-// test that we can run startSession authenticated as one user with proper permissions
+    // test that we cant run startSession authenticated as one user without proper permissions
 
-admin.auth("user0","password");
-result = admin.runCommand(request);
-print(tojson(result));
-assert(resultOK(result), tojson(result));
+    admin.logout();
+    admin.auth("user2", "password");
+    assert.commandFailed(
+        admin.runCommand(request),
+        "failed test that we cant run startSession authenticated as one user without proper permissions");
 
-// test that we cant run startSession authenticated as two users with proper permissions
+    //
 
-foo.auth("user1","password");
-result = admin.runCommand(request);
-print(tojson(result));
-assert(resultNOK(result), tojson(result));
-
-// test that we cant run startSession authenticated as one user without proper permissions
-
-admin.logout();
-admin.auth("user2","password");
-result = admin.runCommand(request);
-print(tojson(result));
-assert(resultNOK(result), tojson(result));
-
-//
-
-MongoRunner.stopMongod(conn);
+    MongoRunner.stopMongod(conn);
+})();
