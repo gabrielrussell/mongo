@@ -3,6 +3,7 @@
     var conn;
     var admin;
     var foo;
+    var result;
     var request = {startSession: 1};
 
     conn = MongoRunner.runMongod({nojournal: ""});
@@ -10,18 +11,26 @@
 
     // test that we can run startSession unauthenticated when the server is running without --auth
 
+    result = admin.runCommand(request);
     assert.commandWorked(
-        admin.runCommand(request),
+        result,
         "failed test that we can run startSession unauthenticated when the server is running without --auth");
+    assert.gt(result.id.length, 0, "failed test that our session response has an id");
+    assert.eq(
+        result.timeoutMinutes, 30, "failed test that our session record has the correct timeout");
 
     // test that we can run startSession authenticated when the server is running without --auth
 
     admin.createUser({user: 'user0', pwd: 'password', roles: jsTest.basicUserRoles});
     admin.auth("user0", "password");
 
+    result = admin.runCommand(request);
     assert.commandWorked(
-        admin.runCommand(request),
+        result,
         "failed test that we can run startSession authenticated when the server is running without --auth");
+    assert.gt(result.id.length, 0, "failed test that our session response has an id");
+    assert.eq(
+        result.timeoutMinutes, 30, "failed test that our session record has the correct timeout");
 
     MongoRunner.stopMongod(conn);
 
@@ -49,9 +58,13 @@
     // test that we can run startSession authenticated as one user with proper permissions
 
     admin.auth("user0", "password");
+    result = admin.runCommand(request);
     assert.commandWorked(
-        admin.runCommand(request),
+        result,
         "failed test that we can run startSession authenticated as one user with proper permissions");
+    assert.gt(result.id.length, 0, "failed test that our session response has an id");
+    assert.eq(
+        result.timeoutMinutes, 30, "failed test that our session record has the correct timeout");
 
     // test that we cant run startSession authenticated as two users with proper permissions
 

@@ -109,13 +109,25 @@ public:
             uid = user->getID();
         }
 
+        int logicalSessionTimeout = 30;  // TODO JIRA-XXX optionally override with value of
+                                         // localLogicalSessionTimeoutMinutes startup parameter
+
         auto lsRecord = LogicalSessionRecord::makeAuthoritativeRecord(
             LogicalSessionId::gen(),
             std::move(userName),
             uid,
             serviceContext->getFastClockSource()->now());
-        return appendCommandStatus(
-            result, serviceContext->getLogicalSessionCache()->startSession(std::move(lsRecord)));
+        Status startSessionStatus =
+            serviceContext->getLogicalSessionCache()->startSession(std::move(lsRecord));
+
+        appendCommandStatus(result, startSessionStatus);
+
+        if (startSessionStatus.isOK()) {
+            result.append("id", lsRecord.toString());
+            result.append("timeoutMinutes", logicalSessionTimeout);
+            return true;
+        }
+        return false;
     }
 } startSessionCommand;
 
