@@ -1,4 +1,4 @@
-/*
+/**
  *    Copyright (C) 2017 MongoDB Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
@@ -44,22 +44,22 @@
 
 namespace mongo {
 
-class StartSessionCommand : public Command {
+class StartSessionCommand final : public Command {
     MONGO_DISALLOW_COPYING(StartSessionCommand);
 
 public:
     StartSessionCommand() : Command("startSession") {}
 
-    bool slaveOk() const final {
+    bool slaveOk() const {
         return true;
     }
-    bool adminOnly() const final {
+    bool adminOnly() const {
         return false;
     }
-    bool supportsWriteConcern(const BSONObj& cmd) const final {
+    bool supportsWriteConcern(const BSONObj& cmd) const {
         return false;
     }
-    void help(std::stringstream& help) const final {
+    void help(std::stringstream& help) const {
         help << "start a logical session";
     }
     Status checkAuthForOperation(OperationContext* opCtx,
