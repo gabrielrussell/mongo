@@ -63,6 +63,7 @@ env.Library(
         "mr_common.cpp",
         "parameters.cpp",
         "rename_collection_common.cpp",
+        "start_session_command.cpp",
         "user_management_commands_common.cpp",
     ],
     LIBDEPS=[
@@ -176,7 +177,6 @@ env.Library(
         "run_aggregate.cpp",
         "set_feature_compatibility_version_command.cpp",
         "snapshot_management.cpp",
-        "start_session_command.cpp",
         "test_commands.cpp",
         "top_command.cpp",
         "touch.cpp",

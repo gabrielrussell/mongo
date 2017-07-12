@@ -42,11 +42,11 @@
 #include "mongo/db/operation_context.h"
 #include "mongo/db/stats/top.h"
 
-namespace {
-
-using namespace mongo;
+namespace mongo {
 
 class StartSessionCommand : public Command {
+    MONGO_DISALLOW_COPYING(StartSessionCommand);
+
 public:
     StartSessionCommand() : Command("startSession") {}
 
@@ -117,17 +117,6 @@ public:
         return appendCommandStatus(
             result, serviceContext->getLogicalSessionCache()->startSession(std::move(lsRecord)));
     }
-};
+} startSessionCommand;
 
-//
-// Command instance.
-// Registers command with the command system and make command
-// available to the client.
-//
-
-MONGO_INITIALIZER(RegisterStartSessionCommand)(InitializerContext* context) {
-    new StartSessionCommand();
-
-    return Status::OK();
-}
-}  // namespace
+}  // namespace mongo
