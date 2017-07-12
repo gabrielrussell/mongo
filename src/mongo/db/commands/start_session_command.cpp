@@ -104,13 +104,11 @@ public:
                                                   "must only be authenticated as exactly one user "
                                                   "to create a logical session"));
             }
+
             user = authzSession->lookupUser(userName);
             invariant(user);
             uid = user->getID();
         }
-
-        int logicalSessionTimeout = 30;  // TODO JIRA-XXX optionally override with value of
-                                         // localLogicalSessionTimeoutMinutes startup parameter
 
         auto lsRecord = LogicalSessionRecord::makeAuthoritativeRecord(
             LogicalSessionId::gen(),
@@ -124,9 +122,10 @@ public:
 
         if (startSessionStatus.isOK()) {
             result.append("id", lsRecord.toString());
-            result.append("timeoutMinutes", logicalSessionTimeout);
+            result.append("timeoutMinutes", localLogicalSessionTimeoutMinutes);
             return true;
         }
+
         return false;
     }
 } startSessionCommand;
