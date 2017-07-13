@@ -121,7 +121,7 @@ public:
         appendCommandStatus(result, startSessionStatus);
 
         if (startSessionStatus.isOK()) {
-            result.append("id", lsRecord.toString());
+            result.append("id", lsRecord.toBSON());
             result.append("timeoutMinutes", localLogicalSessionTimeoutMinutes);
             return true;
         }
