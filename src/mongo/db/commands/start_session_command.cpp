@@ -38,17 +38,18 @@
 #include "mongo/db/commands.h"
 #include "mongo/db/jsobj.h"
 #include "mongo/db/logical_session_id.h"
+#include "mongo/db/logical_session_cache.h"
 #include "mongo/db/logical_session_record.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/stats/top.h"
 
 namespace mongo {
 
-class StartSessionCommand final : public Command {
+class StartSessionCommand final : public BasicCommand {
     MONGO_DISALLOW_COPYING(StartSessionCommand);
 
 public:
-    StartSessionCommand() : Command("startSession") {}
+    StartSessionCommand() : BasicCommand("startSession") {}
 
     bool slaveOk() const {
         return true;
@@ -76,16 +77,15 @@ public:
     virtual bool run(OperationContext* opCtx,
                      const std::string& db,
                      const BSONObj& cmdObj,
-                     std::string& errmsg,
                      BSONObjBuilder& result) {
-        // XXX remove the Username once it leaves the makeAuthoritativeRecord api
-        UserName userName("", "");
-        User* user;
+
         boost::optional<OID> uid;
         auto client = opCtx->getClient();
 
         ServiceContext* serviceContext = client->getServiceContext();
         if (AuthorizationManager::get(serviceContext)->isAuthEnabled()) {
+
+            UserName userName("", "");
 
             auto authzSession = AuthorizationSession::get(client);
             auto userNameItr = authzSession->getAuthenticatedUserNames();
@@ -105,18 +105,21 @@ public:
                                                   "to create a logical session"));
             }
 
-            user = authzSession->lookupUser(userName);
+            User* user = authzSession->lookupUser(userName);
             invariant(user);
             uid = user->getID();
         }
 
-        auto lsRecord = LogicalSessionRecord::makeAuthoritativeRecord(
-            LogicalSessionId::gen(),
-            std::move(userName),
-            uid,
-            serviceContext->getFastClockSource()->now());
-        Status startSessionStatus =
-            serviceContext->getLogicalSessionCache()->startSession(std::move(lsRecord));
+        auto lsCache = LogicalSessionCache::get(serviceContext);
+
+        auto lsid = LogicalSessionId::gen();
+        auto statusWithSlsid = lsCache->signLsid(opCtx, &lsid, uid);
+        if (!statusWithSlsid.isOK()) {
+            return appendCommandStatus(result, statusWithSlsid.getStatus());
+        }
+        auto slsid = statusWithSlsid.getValue();
+        auto lsRecord = LogicalSessionRecord::makeAuthoritativeRecord( slsid, serviceContext->getFastClockSource()->now() );
+        Status startSessionStatus = lsCache->startSession(std::move(slsid));
 
         appendCommandStatus(result, startSessionStatus);
 
