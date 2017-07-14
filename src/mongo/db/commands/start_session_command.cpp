@@ -37,8 +37,8 @@
 #include "mongo/db/client.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/jsobj.h"
-#include "mongo/db/logical_session_id.h"
 #include "mongo/db/logical_session_cache.h"
+#include "mongo/db/logical_session_id.h"
 #include "mongo/db/logical_session_record.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/stats/top.h"
@@ -112,13 +112,13 @@ public:
 
         auto lsCache = LogicalSessionCache::get(serviceContext);
 
-        auto lsid = LogicalSessionId::gen();
-        auto statusWithSlsid = lsCache->signLsid(opCtx, &lsid, uid);
+        auto statusWithSlsid = lsCache->signLsid(opCtx, LogicalSessionId::gen(), uid);
         if (!statusWithSlsid.isOK()) {
             return appendCommandStatus(result, statusWithSlsid.getStatus());
         }
         auto slsid = statusWithSlsid.getValue();
-        auto lsRecord = LogicalSessionRecord::makeAuthoritativeRecord( slsid, serviceContext->getFastClockSource()->now() );
+        auto lsRecord = LogicalSessionRecord::makeAuthoritativeRecord(
+            slsid, serviceContext->getFastClockSource()->now());
         Status startSessionStatus = lsCache->startSession(std::move(slsid));
 
         appendCommandStatus(result, startSessionStatus);

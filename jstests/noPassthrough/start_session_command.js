@@ -15,7 +15,7 @@
     assert.commandWorked(
         result,
         "failed test that we can run startSession unauthenticated when the server is running without --auth");
-    assert.gt(result.id.length, 0, "failed test that our session response has an id");
+    assert(result.id, "failed test that our session response has an id");
     assert.eq(
         result.timeoutMinutes, 30, "failed test that our session record has the correct timeout");
 
@@ -28,7 +28,7 @@
     assert.commandWorked(
         result,
         "failed test that we can run startSession authenticated when the server is running without --auth");
-    assert.gt(result.id.length, 0, "failed test that our session response has an id");
+    assert(result.id, "failed test that our session response has an id");
     assert.eq(
         result.timeoutMinutes, 30, "failed test that our session record has the correct timeout");
 
@@ -62,7 +62,7 @@
     assert.commandWorked(
         result,
         "failed test that we can run startSession authenticated as one user with proper permissions");
-    assert.gt(result.id.length, 0, "failed test that our session response has an id");
+    assert(result.id, "failed test that our session response has an id");
     assert.eq(
         result.timeoutMinutes, 30, "failed test that our session record has the correct timeout");
 
