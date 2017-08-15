@@ -33,6 +33,7 @@
 #include "mongo/db/logical_session_cache.h"
 #include "mongo/db/logical_session_id_helpers.h"
 #include "mongo/db/operation_context.h"
+#include "mongo/db/server_options.h"
 
 namespace mongo {
 
@@ -43,28 +44,32 @@ void initializeOperationSessionInfo(OperationContext* opCtx,
         return;
     }
 
-    auto osi = OperationSessionInfoFromClient::parse("OperationSessionInfo"_sd, requestBody);
+    if (serverGlobalParams.featureCompatibility.version.load() !=
+        ServerGlobalParams::FeatureCompatibility::Version::k34) {
 
-    if (osi.getSessionId()) {
-        stdx::lock_guard<Client> lk(*opCtx->getClient());
+        auto osi = OperationSessionInfoFromClient::parse("OperationSessionInfo"_sd, requestBody);
 
-        opCtx->setLogicalSessionId(makeLogicalSessionId(osi.getSessionId().get(), opCtx));
+        if (osi.getSessionId()) {
+            stdx::lock_guard<Client> lk(*opCtx->getClient());
 
-        LogicalSessionCache* lsc = LogicalSessionCache::get(opCtx->getServiceContext());
-        lsc->vivify(opCtx, opCtx->getLogicalSessionId().get());
-    }
+            opCtx->setLogicalSessionId(makeLogicalSessionId(osi.getSessionId().get(), opCtx));
 
-    if (osi.getTxnNumber()) {
-        stdx::lock_guard<Client> lk(*opCtx->getClient());
+            LogicalSessionCache* lsc = LogicalSessionCache::get(opCtx->getServiceContext());
+            lsc->vivify(opCtx, opCtx->getLogicalSessionId().get());
+        }
 
-        uassert(ErrorCodes::IllegalOperation,
-                "Transaction number requires a sessionId to be specified",
-                opCtx->getLogicalSessionId());
-        uassert(ErrorCodes::BadValue,
-                "Transaction number cannot be negative",
-                *osi.getTxnNumber() >= 0);
+        if (osi.getTxnNumber()) {
+            stdx::lock_guard<Client> lk(*opCtx->getClient());
 
-        opCtx->setTxnNumber(*osi.getTxnNumber());
+            uassert(ErrorCodes::IllegalOperation,
+                    "Transaction number requires a sessionId to be specified",
+                    opCtx->getLogicalSessionId());
+            uassert(ErrorCodes::BadValue,
+                    "Transaction number cannot be negative",
+                    *osi.getTxnNumber() >= 0);
+
+            opCtx->setTxnNumber(*osi.getTxnNumber());
+        }
     }
 }
 

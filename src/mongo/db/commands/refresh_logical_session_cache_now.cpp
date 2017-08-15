@@ -64,6 +64,14 @@ public:
     Status checkAuthForOperation(OperationContext* opCtx,
                                  const std::string& dbname,
                                  const BSONObj& cmdObj) override {
+
+        if (serverGlobalParams.featureCompatibility.version.load() ==
+            ServerGlobalParams::FeatureCompatibility::Version::k34) {
+            return {ErrorCodes::InvalidOptions,
+                    "refreshLogicalSessionCacheNow is not available in featureCompatibilityVersion "
+                    "3.4"};
+        }
+
         return Status::OK();
     }
 
@@ -71,6 +79,15 @@ public:
                      const std::string& db,
                      const BSONObj& cmdObj,
                      BSONObjBuilder& result) override {
+
+        if (serverGlobalParams.featureCompatibility.version.load() ==
+            ServerGlobalParams::FeatureCompatibility::Version::k34) {
+            return appendCommandStatus(
+                result,
+                Status(ErrorCodes::InvalidOptions,
+                       "startSession is not available in featureCompatibilityVersion 3.4"));
+        }
+
         auto cache = LogicalSessionCache::get(opCtx);
         auto client = opCtx->getClient();
 

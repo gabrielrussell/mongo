@@ -60,6 +60,12 @@ public:
                                  const std::string& dbname,
                                  const BSONObj& cmdObj) override {
 
+        if (serverGlobalParams.featureCompatibility.version.load() ==
+            ServerGlobalParams::FeatureCompatibility::Version::k34) {
+            return {ErrorCodes::InvalidOptions,
+                    "endSession is not available in featureCompatibilityVersion 3.4"};
+        }
+
         // It is always ok to run this command, as long as you are authenticated
         // as some user, if auth is enabled.
         AuthorizationSession* authSession = AuthorizationSession::get(opCtx->getClient());
@@ -76,6 +82,14 @@ public:
                      const std::string& db,
                      const BSONObj& cmdObj,
                      BSONObjBuilder& result) override {
+
+        if (serverGlobalParams.featureCompatibility.version.load() ==
+            ServerGlobalParams::FeatureCompatibility::Version::k34) {
+            return appendCommandStatus(
+                result,
+                Status(ErrorCodes::InvalidOptions,
+                       "endSessions is not available in featureCompatibilityVersion 3.4"));
+        }
 
         auto lsCache = LogicalSessionCache::get(opCtx);
 

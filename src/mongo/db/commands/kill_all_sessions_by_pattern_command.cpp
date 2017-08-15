@@ -72,11 +72,19 @@ public:
     Status checkAuthForOperation(OperationContext* opCtx,
                                  const std::string& dbname,
                                  const BSONObj& cmdObj) override {
+
+        if (serverGlobalParams.featureCompatibility.version.load() ==
+            ServerGlobalParams::FeatureCompatibility::Version::k34) {
+            return {ErrorCodes::InvalidOptions,
+                    "killAllSessionsByPattern is not available in featureCompatibilityVersion 3.4"};
+        }
+
         AuthorizationSession* authSession = AuthorizationSession::get(opCtx->getClient());
         if (!authSession->isAuthorizedForPrivilege(
                 Privilege{ResourcePattern::forClusterResource(), ActionType::killAnySession})) {
             return Status(ErrorCodes::Unauthorized, "Unauthorized");
         }
+
         return Status::OK();
     }
 
@@ -84,6 +92,15 @@ public:
                      const std::string& db,
                      const BSONObj& cmdObj,
                      BSONObjBuilder& result) override {
+
+        if (serverGlobalParams.featureCompatibility.version.load() ==
+            ServerGlobalParams::FeatureCompatibility::Version::k34) {
+            return appendCommandStatus(result,
+                                       Status(ErrorCodes::InvalidOptions,
+                                              "killAllSessionsByPattern is not available in "
+                                              "featureCompatibilityVersion 3.4"));
+        }
+
         IDLParserErrorContext ctx("KillAllSessionsByPatternCmd");
         auto ksc = KillAllSessionsByPatternCmd::parse(ctx, cmdObj);
 
