@@ -35,6 +35,7 @@
 #include "mongo/db/auth/user_name.h"
 #include "mongo/db/logical_session_cache.h"
 #include "mongo/db/operation_context.h"
+#include "mongo/db/server_options.h"
 
 namespace mongo {
 
