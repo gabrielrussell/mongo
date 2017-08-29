@@ -134,9 +134,11 @@ public:
             mongo::BSONObjBuilder statsBSON;
             std::fstream statsFile;
             statsFile.open(shardConnPoolStatsFile, std::ios::out | std::ios::app);
+            // Connection information
             stats.appendToBSON(statsBSON);
+            // Thread connection information
             activeClientConnections.appendInfo(statsBSON);
-            statsFile << tojson(statsBSON.obj());
+            statsFile << tojson(statsBSON.obj()) << "\n";
             statsFile.close();
         } else {
             // Connection information
