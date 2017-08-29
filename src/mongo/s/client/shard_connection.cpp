@@ -30,7 +30,6 @@
 
 #include <iostream>
 #include <fstream>
-#include "mongo/db/server_parameters.h"
 
 #include "mongo/platform/basic.h"
 
@@ -40,6 +39,7 @@
 
 #include "mongo/db/commands.h"
 #include "mongo/db/lasterror.h"
+#include "mongo/db/server_parameters.h"
 #include "mongo/executor/connection_pool_stats.h"
 #include "mongo/s/chunk_manager.h"
 #include "mongo/s/client/shard.h"
@@ -52,9 +52,6 @@
 #include "mongo/util/log.h"
 #include "mongo/util/stacktrace.h"
 
-
-//MONGO_EXPORT_STARTUP_SERVER_PARAMETER(shardConnPoolStatsFile, std::string, "/tmp/shardConnPoolStats.txt");
-
 namespace mongo {
 
 using std::unique_ptr;
@@ -64,7 +61,13 @@ using std::string;
 using std::stringstream;
 using std::vector;
 
-const string shardConnPoolStatsFile("/tmp/shardConnPoolStats.txt");
+string shardConnPoolStatsFile("/tmp/shardConnPoolStats.txt");
+
+ExportedServerParameter<string, ServerParameterType::kStartupOnly> ShardConnPoolStatsFile(
+    ServerParameterSet::getGlobal(),
+    "shardConnPoolStatsFile",
+    &shardConnPoolStatsFile);
+
 
 namespace {
 
@@ -125,7 +128,6 @@ public:
                      int options,
                      std::string& errmsg,
                      mongo::BSONObjBuilder& result) {
-        // Connection information
         executor::ConnectionPoolStats stats{};
         shardConnectionPool.appendConnectionStats(&stats);
         if (cmdObj.getBoolField("writeToFile")) {
@@ -133,14 +135,16 @@ public:
             std::fstream statsFile;
             statsFile.open(shardConnPoolStatsFile, std::ios::out | std::ios::app);
             stats.appendToBSON(statsBSON);
+            activeClientConnections.appendInfo(statsBSON);
             statsFile << tojson(statsBSON.obj());
             statsFile.close();
         } else {
+            // Connection information
             stats.appendToBSON(result);
+            // Thread connection information
+            activeClientConnections.appendInfo(result);
         }
 
-        // Thread connection information
-        activeClientConnections.appendInfo(result);
 
         return true;
     }
