@@ -28,6 +28,10 @@
 
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kSharding
 
+#include <iostream>
+#include <fstream>
+#include "mongo/db/server_parameters.h"
+
 #include "mongo/platform/basic.h"
 
 #include "mongo/s/client/shard_connection.h"
@@ -48,6 +52,9 @@
 #include "mongo/util/log.h"
 #include "mongo/util/stacktrace.h"
 
+
+//MONGO_EXPORT_STARTUP_SERVER_PARAMETER(shardConnPoolStatsFile, std::string, "/tmp/shardConnPoolStats.txt");
+
 namespace mongo {
 
 using std::unique_ptr;
@@ -56,6 +63,8 @@ using std::set;
 using std::string;
 using std::stringstream;
 using std::vector;
+
+const string shardConnPoolStatsFile("/tmp/shardConnPoolStats.txt");
 
 namespace {
 
@@ -119,7 +128,16 @@ public:
         // Connection information
         executor::ConnectionPoolStats stats{};
         shardConnectionPool.appendConnectionStats(&stats);
-        stats.appendToBSON(result);
+        if (cmdObj.getBoolField("writeToFile")) {
+            mongo::BSONObjBuilder statsBSON;
+            std::fstream statsFile;
+            statsFile.open(shardConnPoolStatsFile, std::ios::out | std::ios::app);
+            stats.appendToBSON(statsBSON);
+            statsFile << tojson(statsBSON.obj());
+            statsFile.close();
+        } else {
+            stats.appendToBSON(result);
+        }
 
         // Thread connection information
         activeClientConnections.appendInfo(result);
