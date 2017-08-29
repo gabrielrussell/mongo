@@ -28,8 +28,8 @@
 
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kSharding
 
-#include <iostream>
 #include <fstream>
+#include <iostream>
 
 #include "mongo/platform/basic.h"
 
@@ -64,9 +64,7 @@ using std::vector;
 string shardConnPoolStatsFile("/tmp/shardConnPoolStats.txt");
 
 ExportedServerParameter<string, ServerParameterType::kStartupOnly> ShardConnPoolStatsFile(
-    ServerParameterSet::getGlobal(),
-    "shardConnPoolStatsFile",
-    &shardConnPoolStatsFile);
+    ServerParameterSet::getGlobal(), "shardConnPoolStatsFile", &shardConnPoolStatsFile);
 
 
 namespace {
@@ -136,7 +134,8 @@ public:
             statsFile.open(shardConnPoolStatsFile, std::ios::out | std::ios::app);
             if (!statsFile.is_open()) {
                 return appendCommandStatus(
-                    result, Status(ErrorCodes::InvalidOptions, "invalid shardConnPoolStatsFile value"));
+                    result,
+                    Status(ErrorCodes::InvalidOptions, "invalid shardConnPoolStatsFile value"));
             }
             // Connection information
             stats.appendToBSON(statsBSON);
