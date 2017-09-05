@@ -29,6 +29,7 @@
 #pragma once
 
 #include "mongo/db/logical_session_id.h"
+#include "mongo/db/session_killer.h"
 #include "mongo/stdx/functional.h"
 #include "mongo/util/periodic_runner.h"
 #include "mongo/util/time_support.h"
@@ -75,6 +76,12 @@ public:
      * Return the current time.
      */
     virtual Date_t now() const = 0;
+
+    /**
+     * deligaes to a similarly named function on a cursormanager
+     */
+    virtual Status killCursorsWithMatchingSessions(OperationContext* opCtx,
+                                                   const SessionKiller::Matcher& matcher) = 0;
 
 protected:
     /**

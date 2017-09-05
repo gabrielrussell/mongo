@@ -103,6 +103,11 @@ public:
         return _impl->join();
     }
 
+    Status killCursorsWithMatchingSessions(OperationContext* opCtx,
+                                           const SessionKiller::Matcher& matcher) {
+        return Status::OK();
+    }
+
 protected:
     ServiceContext* _context() override {
         return _serviceContext.get();

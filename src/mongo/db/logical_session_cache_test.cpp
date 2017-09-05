@@ -28,6 +28,11 @@
 
 #include "mongo/platform/basic.h"
 
+#include "mongo/db/auth/authorization_manager.h"
+#include "mongo/db/auth/authorization_session_for_test.h"
+#include "mongo/db/auth/authz_manager_external_state_mock.h"
+#include "mongo/db/auth/authz_session_external_state_mock.h"
+
 #include "mongo/bson/oid.h"
 #include "mongo/db/auth/user_name.h"
 #include "mongo/db/logical_session_cache.h"
@@ -62,6 +67,13 @@ public:
           _sessions(std::make_shared<MockSessionsCollectionImpl>()) {}
 
     void setUp() override {
+        auto localManagerState = stdx::make_unique<AuthzManagerExternalStateMock>();
+        auto managerState = localManagerState.get();
+        managerState->setAuthzVersion(AuthorizationManager::schemaVersion26Final);
+        auto uniqueAuthzManager =
+            stdx::make_unique<AuthorizationManager>(std::move(localManagerState));
+        AuthorizationManager::set(&serviceContext, std::move(uniqueAuthzManager));
+
         auto client = serviceContext.makeClient("testClient");
         _opCtx = client->makeOperationContext();
         _client = client.get();
@@ -385,7 +397,7 @@ TEST_F(LogicalSessionCacheTest, ManyLongRunningSessionsRefresh) {
 
 // Test larger mixed sets of cache/service active sessions
 TEST_F(LogicalSessionCacheTest, ManySessionsRefreshComboDeluxe) {
-    int count = LogicalSessionCacheImpl::kLogicalSessionCacheDefaultCapacity;
+    int count = (LogicalSessionCacheImpl::kLogicalSessionCacheDefaultCapacity / 2);
     for (int i = 0; i < count; i++) {
         auto lsid = makeLogicalSessionIdForTest();
         service()->add(lsid);
@@ -426,9 +438,108 @@ TEST_F(LogicalSessionCacheTest, ManySessionsRefreshComboDeluxe) {
     service()->fastForward(kForceRefresh);
     ASSERT(cache()->refreshNow(client()).isOK());
 
-    // Again, we should have only refreshed sessions from the cache
-    ASSERT_EQ(nRefreshed, count);
+    // None of the sessions in the cache will have been recently used
+    ASSERT_EQ(nRefreshed, 0);
 }
+
+// Test that the lru cache overflows are probably propagated.
+TEST_F(LogicalSessionCacheTest, LRUCacheOverflow) {
+    int count = (LogicalSessionCacheImpl::kLogicalSessionCacheDefaultCapacity * 2);
+    int nOverflowed = 0;
+    for (int i = 0; i < count; i++) {
+        auto record = makeLogicalSessionRecordForTest();
+
+        auto status = cache()->startSession(opCtx(), record);
+        if (!status.isOK()) {
+            nOverflowed++;
+        }
+    }
+
+    ASSERT_EQ(nOverflowed, count / 2);
+    int nRefreshed = 0;
+
+    // Check that all lsids refresh successfully
+    sessions()->setRefreshHook([&nRefreshed](const LogicalSessionRecordSet& sessions) {
+        nRefreshed = sessions.size();
+        return Status::OK();
+    });
+
+    // Force a refresh
+    clearOpCtx();
+    service()->fastForward(kForceRefresh);
+    ASSERT(cache()->refreshNow(client()).isOK());
+    ASSERT_EQ(nRefreshed, count / 2);
+}
+
+//
+TEST_F(LogicalSessionCacheTest, RefreshMatrixSessionState) {
+    bool matrix[16][6] = {
+        // active, locally expired, remotely expired, ended, in-cache-after-refresh,
+        // in-collection-after-refresh
+        {true, true, true, true, false, false},     // ended
+        {true, true, true, false, true, true},      // active
+        {true, true, false, true, false, false},    // ended
+        {true, true, false, false, true, true},     // active
+        {true, false, true, true, false, false},    // ended
+        {true, false, true, false, true, true},     // active
+        {true, false, false, true, false, false},   // ended
+        {true, false, false, false, true, true},    // active
+        {false, true, true, true, false, false},    // ended
+        {false, true, true, false, false, false},   // inactive and expired, cleaned up
+        {false, true, false, true, false, false},   // ended
+        {false, true, false, false, true, true},    // cache refreshed from collection
+        {false, false, true, true, false, false},   // ended
+        {false, false, true, false, true, true},    // collection refreshed from cache
+        {false, false, false, true, false, false},  // ended
+        {false, false, false, false, true, true},   // unexpired, left alone
+    };
+
+    std::vector<LogicalSessionId> ids;
+    for (int i = 0; i < 16; i++) {
+        bool active = matrix[i][0];
+        bool locallyExpired = matrix[i][1];
+        bool remotelyExpired = matrix[i][2];
+        bool ended = matrix[i][3];
+        auto lsid = makeLogicalSessionIdForTest();
+        ids.push_back(lsid);
+
+        if (active) {
+            service()->add(lsid);
+        }
+
+        auto cacheTimeout = service()->now() + Milliseconds(500);
+        if (locallyExpired) {
+            cacheTimeout -= kSessionTimeout;
+        }
+        auto res = cache()->startSession(opCtx(), makeLogicalSessionRecord(lsid, cacheTimeout));
+
+        if (!remotelyExpired) {
+            sessions()->add(makeLogicalSessionRecord(lsid, service()->now() + Milliseconds(500)));
+        }
+        if (ended) {
+            cache()->endSession(lsid);
+        }
+    }
+
+    // Force a refresh
+    clearOpCtx();
+    service()->fastForward(kForceRefresh);
+    ASSERT(cache()->refreshNow(client()).isOK());
+
+    LogicalSessionIdSet allSessions;
+    for (int i = 0; i < 16; i++) {
+        allSessions.emplace(ids[i]);
+    }
+    auto statusAndRemovedSessions = sessions()->findRemovedSessions(opCtx(), allSessions);
+    ASSERT(statusAndRemovedSessions.isOK());
+    auto removedSessions = statusAndRemovedSessions.getValue();
+
+    for (int i = 0; i < 16; i++) {
+        ASSERT((removedSessions.count(ids[i]) == 0) == matrix[i][4]);
+        ASSERT(sessions()->has(ids[i]) == matrix[i][5]);
+    }
+}
+
 
 }  // namespace
 }  // namespace mongo

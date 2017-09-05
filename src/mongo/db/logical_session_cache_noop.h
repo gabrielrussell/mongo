@@ -86,6 +86,14 @@ public:
     boost::optional<LogicalSessionRecord> peekCached(const LogicalSessionId& id) const override {
         return boost::none;
     }
+
+    void endSessions(OperationContext* opCtx, const EndSessionsCmdFromClient& cmd) override {
+        return;
+    }
+
+    void endSession(LogicalSessionId lsid) override {
+        return;
+    }
 };
 
 }  // namespace mongo

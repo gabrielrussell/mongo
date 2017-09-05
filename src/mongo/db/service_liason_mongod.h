@@ -58,6 +58,9 @@ public:
 
     Date_t now() const override;
 
+    Status killCursorsWithMatchingSessions(OperationContext* opCtx,
+                                           const SessionKiller::Matcher& matcher) override;
+
 protected:
     /**
      * Returns the service context.

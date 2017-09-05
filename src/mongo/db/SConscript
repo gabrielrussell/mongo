@@ -1065,6 +1065,7 @@ env.Library(
         'initialize_operation_session_info.cpp',
         'logical_session_cache_impl.cpp',
         'logical_session_server_status_section.cpp',
+        env.Idlc('end_sessions.idl')[0],
     ],
     LIBDEPS=[
         '$BUILD_DIR/mongo/db/commands/server_status',
@@ -1074,6 +1075,7 @@ env.Library(
         'sessions_collection',
         'server_parameters',
         'service_liason',
+        'kill_sessions',
     ],
 )
 
@@ -1085,6 +1087,7 @@ envWithAsio.CppUnitTest(
     LIBDEPS=[
         '$BUILD_DIR/mongo/db/service_context_noop_init',
         '$BUILD_DIR/mongo/executor/async_timer_mock',
+        'auth/authmocks',
         'keys_collection_manager',
         'keys_collection_document',
         'logical_clock',

@@ -130,6 +130,9 @@ public:
 
     boost::optional<LogicalSessionRecord> peekCached(const LogicalSessionId& id) const override;
 
+    void endSessions(OperationContext* opCtx, const EndSessionsCmdFromClient& cmd) override;
+    void endSession(LogicalSessionId lsid) override;
+
 private:
     /**
      * Internal methods to handle scheduling and perform refreshes for active
@@ -141,8 +144,12 @@ private:
     /**
      * Returns true if a record has passed its given expiration.
      */
-    bool _isDead(const LogicalSessionRecord& record, Date_t now) const;
+    bool _isStale(const LogicalSessionRecord& record, Date_t now) const;
 
+    /**
+     * Returns true if a record has been active since the last refresh.
+     */
+    bool _isRecientlyActive(const LogicalSessionRecord& record) const;
     /**
      * Takes the lock and inserts the given record into the cache.
      */
@@ -156,6 +163,10 @@ private:
 
     mutable stdx::mutex _cacheMutex;
     LRUCache<LogicalSessionId, LogicalSessionRecord, LogicalSessionIdHash> _cache;
+
+    LogicalSessionIdSet _endingSessions;
+
+    Date_t lastRefreshTime;
 };
 
 }  // namespace mongo

@@ -31,6 +31,7 @@
 #include <boost/optional.hpp>
 
 #include "mongo/base/status.h"
+#include "mongo/db/end_sessions_gen.h"
 #include "mongo/db/logical_session_id.h"
 #include "mongo/db/refresh_sessions_gen.h"
 
@@ -83,6 +84,17 @@ public:
      * is.
      */
     virtual void vivify(OperationContext* opCtx, const LogicalSessionId& lsid) = 0;
+
+    /**
+     * Makes LogicalSessionIds from the EndSessionsCmdFromClient and then enqueues
+     * them for removal during the next _refresh()
+     */
+    virtual void endSessions(OperationContext* opCtx, const EndSessionsCmdFromClient& cmd) = 0;
+
+    /**
+     * enqueues a single lsid for removal during the next _refresh()
+     */
+    virtual void endSession(LogicalSessionId lsid) = 0;
 
     /**
      * Removes all local records in this cache. Does not remove the corresponding
