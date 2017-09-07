@@ -64,8 +64,7 @@ LogicalSessionCacheImpl::LogicalSessionCacheImpl(std::unique_ptr<ServiceLiason> 
     : _refreshInterval(options.refreshInterval),
       _sessionTimeout(options.sessionTimeout),
       _service(std::move(service)),
-      _sessionsColl(std::move(collection)),
-      _cache(options.capacity) {
+      _sessionsColl(std::move(collection)) {
     PeriodicRunner::PeriodicJob job{[this](Client* client) { _periodicRefresh(client); },
                                     duration_cast<Milliseconds>(_refreshInterval)};
     _service->scheduleJob(std::move(job));
@@ -83,13 +82,13 @@ LogicalSessionCacheImpl::~LogicalSessionCacheImpl() {
 
 Status LogicalSessionCacheImpl::promote(LogicalSessionId lsid) {
     stdx::unique_lock<stdx::mutex> lk(_cacheMutex);
-    auto it = _cache.find(lsid);
-    if (it == _cache.end()) {
+    auto it = _activeSessions.find(lsid);
+    if (it == _activeSessions.end()) {
         return {ErrorCodes::NoSuchSession, "no matching session record found in the cache"};
     }
 
     // Update the last use time before returning.
-    it->second.setLastUse(now());
+    // it->setLastUse(now()); // XXX REMOVE THIS ?
     return Status::OK();
 }
 
@@ -97,27 +96,19 @@ Status LogicalSessionCacheImpl::startSession(OperationContext* opCtx, LogicalSes
     // Add the new record to our local cache. We will insert it into the sessions collection
     // the next time _refresh is called. If there is already a record in the cache for this
     // session, we'll just write over it with our newer, more recent one.
-    if (_addToCache(record)) {
-        return Status{ErrorCodes::CacheEviction, "cache eviction"};
-    }
+    _addToCache(record);
     return Status::OK();
 }
 
 Status LogicalSessionCacheImpl::refreshSessions(OperationContext* opCtx,
                                                 const RefreshSessionsCmdFromClient& cmd) {
-    bool evictionOccured = false;
     // Update the timestamps of all these records in our cache.
     auto sessions = makeLogicalSessionIds(cmd.getRefreshSessions(), opCtx);
     for (auto& lsid : sessions) {
         if (!promote(lsid).isOK()) {
             // This is a new record, insert it.
-            if (_addToCache(makeLogicalSessionRecord(opCtx, lsid, now()))) {
-                evictionOccured = true;
-            }
+            _addToCache(makeLogicalSessionRecord(opCtx, lsid, now()));
         }
-    }
-    if (evictionOccured) {
-        return Status{ErrorCodes::CacheEviction, "cache eviction"};
     }
     return Status::OK();
 }
@@ -156,7 +147,7 @@ Date_t LogicalSessionCacheImpl::now() {
 
 size_t LogicalSessionCacheImpl::size() {
     stdx::lock_guard<stdx::mutex> lock(_cacheMutex);
-    return _cache.size();
+    return _activeSessions.size();
 }
 
 void LogicalSessionCacheImpl::_periodicRefresh(Client* client) {
@@ -169,11 +160,18 @@ void LogicalSessionCacheImpl::_periodicRefresh(Client* client) {
 }
 
 Status LogicalSessionCacheImpl::_refresh(Client* client) {
-    LogicalSessionRecordSet activeSessions;
     LogicalSessionIdSet staleSessions;
-    LogicalSessionIdSet deadSessions;
+    LogicalSessionIdSet endingSessions;
+    LogicalSessionIdMap<LogicalSessionRecord> activeSessions;
 
     auto time = now();
+
+    {
+        using std::swap;
+        stdx::unique_lock<stdx::mutex> lk(_cacheMutex);
+        swap(endingSessions, _endingSessions);
+        swap(activeSessions, _activeSessions);
+    }
 
     // get or make an opCtx
 
@@ -187,94 +185,55 @@ Status LogicalSessionCacheImpl::_refresh(Client* client) {
         return uniqueCtx->get();
     }();
 
-    // Promote our cached entries for all active service sessions to be recently used
-
-    auto serviceSessions = _service->getActiveSessions();
-    for (auto lsid : serviceSessions) {
-        vivify(opCtx, lsid);
+    // remove all endingSessions from activeSessions
+    for (const auto& lsid : endingSessions) {
+        activeSessions.erase(lsid);
     }
-
-    // grab the sessions that have been requested to end
-    {
-        using std::swap;
-        stdx::unique_lock<stdx::mutex> lk(_cacheMutex);
-        swap(deadSessions, _endingSessions);
-    }
-
-    // remove the requested-to-end sessions from the sessions collection
-
-    if (!_sessionsColl->removeRecords(opCtx, deadSessions).isOK()) {
-        // if we've failed to remove records, then replace _endingSessions
-        // and add any sessions to end that may have queued while the lock was not held
-        using std::swap;
-        stdx::unique_lock<stdx::mutex> lk(_cacheMutex);
-        swap(deadSessions, _endingSessions);
-        for (auto& lsid : deadSessions) {
-            _endingSessions.emplace(lsid);
-        }
-    }
-
-    // find both stale and active records
-
-    std::vector<decltype(_cache)::ListEntry> cacheCopy;
-    {
-        stdx::unique_lock<stdx::mutex> lk(_cacheMutex);
-        cacheCopy.assign(_cache.begin(), _cache.end());
-    }
-    for (const auto& it : cacheCopy) {
-        // std::cerr << "checking cache entry " << it.first.getId() << " ... ";
-        const auto& record = it.second;
-        if (_isStale(record, time)) {
-            // std::cerr << "stale\n";
-            staleSessions.insert(record.getId());
-        } else if (deadSessions.count(record.getId()) > 0) {
-            // std::cerr << "dead\n";
-            // noop
-        } else if (_isRecientlyActive(record)) {
-            // std::cerr << "active\n";
-            activeSessions.insert(record);
-        } else {
-            // std::cerr << "nothing\n";
-        }
-    }
-
-    // find which locally stale sessions are also externally expired
-
-    auto statusAndRemovedSessions = _sessionsColl->findRemovedSessions(opCtx, staleSessions);
-    if (statusAndRemovedSessions.isOK()) {
-        auto removedSessions = statusAndRemovedSessions.getValue();
-        deadSessions.insert(removedSessions.begin(), removedSessions.end());
-    } else {
-    }
-
-    // erase the truelyDeadSessions sessions from the cache
-    // and prepare to kill their cursors
-    KillAllSessionsByPatternSet patterns;
-    {
-        stdx::unique_lock<stdx::mutex> lk(_cacheMutex);
-        for (auto& lsid : deadSessions) {
-            _cache.erase(lsid);
-            patterns.emplace(makeKillAllSessionsByPattern(opCtx, lsid));
-        }
-    }
-
-    // kill cursors owned by deadSessions
-
-    SessionKiller::Matcher matcher(std::move(patterns));
-    _service->killCursorsWithMatchingSessions(opCtx, std::move(matcher)).ignore();
 
     // refresh all reciently active sessions
-    auto refreshRes = _sessionsColl->refreshSessions(opCtx, std::move(activeSessions), time);
-
+    LogicalSessionRecordSet activeSessionRecords{};
+    for (auto it : activeSessions) {
+        activeSessionRecords.insert(it.second);
+    }
+    auto refreshRes = _sessionsColl->refreshSessions(opCtx, std::move(activeSessionRecords), time);
     if (!refreshRes.isOK()) {
         // TODO SERVER-29709: handle network errors here.
         return Status::OK();
     }
 
-    {
+    // remove the ending sessions from the sessions collection
+
+    if (!_sessionsColl->removeRecords(opCtx, endingSessions).isOK()) {
+        // if we've failed to remove records, then replace _endingSessions
+        // and add any sessions to end that may have queued while the lock was not held
+        using std::swap;
         stdx::unique_lock<stdx::mutex> lk(_cacheMutex);
-        lastRefreshTime = time;
+        swap(endingSessions, _endingSessions);
+        for (auto& lsid : endingSessions) {
+            _endingSessions.emplace(lsid);
+        }
     }
+
+    // Find which running, but not-reciently active sessions, are expired
+    auto runningSessions = _service->getActiveSessions();
+
+    auto statusAndRemovedSessions = _sessionsColl->findRemovedSessions(opCtx, runningSessions);
+
+    if (statusAndRemovedSessions.isOK()) {
+        auto removedSessions = statusAndRemovedSessions.getValue();
+        endingSessions.insert(removedSessions.begin(), removedSessions.end());
+    } else {
+        // XXX
+    }
+
+    // kill cursors owned by endingSessions which now includes expired running cursor sessions
+
+    KillAllSessionsByPatternSet patterns;
+    for (auto& lsid : endingSessions) {
+        patterns.emplace(makeKillAllSessionsByPattern(opCtx, lsid));
+    }
+    SessionKiller::Matcher matcher(std::move(patterns));
+    _service->killCursorsWithMatchingSessions(opCtx, std::move(matcher)).ignore();
 
     return Status::OK();
 }
@@ -300,17 +259,16 @@ bool LogicalSessionCacheImpl::_isRecientlyActive(const LogicalSessionRecord& rec
     return record.getLastUse() >= lastRefreshTime;
 }
 
-boost::optional<LogicalSessionRecord> LogicalSessionCacheImpl::_addToCache(
-    LogicalSessionRecord record) {
+void LogicalSessionCacheImpl::_addToCache(LogicalSessionRecord record) {
     stdx::unique_lock<stdx::mutex> lk(_cacheMutex);
-    return _cache.add(record.getId(), std::move(record));
+    _activeSessions.insert(std::make_pair(record.getId(), record));
 }
 
 std::vector<LogicalSessionId> LogicalSessionCacheImpl::listIds() const {
     stdx::lock_guard<stdx::mutex> lk(_cacheMutex);
     std::vector<LogicalSessionId> ret;
-    ret.reserve(_cache.size());
-    for (const auto& id : _cache) {
+    ret.reserve(_activeSessions.size());
+    for (const auto& id : _activeSessions) {
         ret.push_back(id.first);
     }
     return ret;
@@ -320,7 +278,7 @@ std::vector<LogicalSessionId> LogicalSessionCacheImpl::listIds(
     const std::vector<SHA256Block>& userDigests) const {
     stdx::lock_guard<stdx::mutex> lk(_cacheMutex);
     std::vector<LogicalSessionId> ret;
-    for (const auto& it : _cache) {
+    for (const auto& it : _activeSessions) {
         if (std::find(userDigests.cbegin(), userDigests.cend(), it.first.getUid()) !=
             userDigests.cend()) {
             ret.push_back(it.first);
@@ -332,8 +290,8 @@ std::vector<LogicalSessionId> LogicalSessionCacheImpl::listIds(
 boost::optional<LogicalSessionRecord> LogicalSessionCacheImpl::peekCached(
     const LogicalSessionId& id) const {
     stdx::lock_guard<stdx::mutex> lk(_cacheMutex);
-    const auto it = _cache.cfind(id);
-    if (it == _cache.cend()) {
+    const auto it = _activeSessions.find(id);
+    if (it == _activeSessions.end()) {
         return boost::none;
     }
     return it->second;
