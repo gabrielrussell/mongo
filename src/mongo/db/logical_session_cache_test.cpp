@@ -517,7 +517,9 @@ TEST_F(LogicalSessionCacheTest, RefreshMatrixSessionState) {
             sessions()->add(makeLogicalSessionRecord(lsid, service()->now() + Milliseconds(500)));
         }
         if (ended) {
-            cache()->endSession(lsid);
+            LogicalSessionIdSet lsidSet;
+            lsidSet.emplace(lsid);
+            cache()->endSessions(lsidSet);
         }
     }
 

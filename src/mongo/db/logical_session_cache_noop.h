@@ -87,13 +87,10 @@ public:
         return boost::none;
     }
 
-    void endSessions(OperationContext* opCtx, const EndSessionsCmdFromClient& cmd) override {
+    void endSessions(const LogicalSessionIdSet& lsids) override {
         return;
     }
 
-    void endSession(LogicalSessionId lsid) override {
-        return;
-    }
 };
 
 }  // namespace mongo

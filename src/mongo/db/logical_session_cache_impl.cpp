@@ -284,14 +284,7 @@ void LogicalSessionCacheImpl::clear() {
     MONGO_UNREACHABLE;
 }
 
-void LogicalSessionCacheImpl::endSession(LogicalSessionId lsid) {
-    stdx::unique_lock<stdx::mutex> lk(_cacheMutex);
-    _endingSessions.emplace(lsid);
-}
-
-void LogicalSessionCacheImpl::endSessions(OperationContext* opCtx,
-                                          const EndSessionsCmdFromClient& cmd) {
-    auto sessions = makeLogicalSessionIds(cmd.getEndSessions(), opCtx);
+void LogicalSessionCacheImpl::endSessions(const LogicalSessionIdSet& sessions) {
     stdx::unique_lock<stdx::mutex> lk(_cacheMutex);
     _endingSessions.reserve(_endingSessions.size() + sessions.size());
     for (auto& lsid : sessions) {

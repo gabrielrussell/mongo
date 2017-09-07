@@ -89,12 +89,7 @@ public:
      * Makes LogicalSessionIds from the EndSessionsCmdFromClient and then enqueues
      * them for removal during the next _refresh()
      */
-    virtual void endSessions(OperationContext* opCtx, const EndSessionsCmdFromClient& cmd) = 0;
-
-    /**
-     * enqueues a single lsid for removal during the next _refresh()
-     */
-    virtual void endSession(LogicalSessionId lsid) = 0;
+    virtual void endSessions(const LogicalSessionIdSet& lsids ) = 0;
 
     /**
      * Removes all local records in this cache. Does not remove the corresponding

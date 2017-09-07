@@ -130,8 +130,7 @@ public:
 
     boost::optional<LogicalSessionRecord> peekCached(const LogicalSessionId& id) const override;
 
-    void endSessions(OperationContext* opCtx, const EndSessionsCmdFromClient& cmd) override;
-    void endSession(LogicalSessionId lsid) override;
+    void endSessions(const LogicalSessionIdSet& sessions) override;
 
 private:
     /**

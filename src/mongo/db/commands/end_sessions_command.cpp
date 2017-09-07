@@ -33,6 +33,7 @@
 #include "mongo/db/client.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/logical_session_cache.h"
+#include "mongo/db/logical_session_id_helpers.h"
 #include "mongo/db/operation_context.h"
 
 namespace mongo {
@@ -81,7 +82,7 @@ public:
         IDLParserErrorContext ctx("EndSessionsCmdFromClient");
         auto cmd = EndSessionsCmdFromClient::parse(ctx, cmdObj);
 
-        lsCache->endSessions(opCtx, cmd);
+        lsCache->endSessions(makeLogicalSessionIds(cmd.getEndSessions(), opCtx));
         return true;
     }
 } endSessionsCommand;
