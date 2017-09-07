@@ -1065,7 +1065,7 @@ env.Library(
         'initialize_operation_session_info.cpp',
         'logical_session_cache_impl.cpp',
         'logical_session_server_status_section.cpp',
-        env.Idlc('end_sessions.idl')[0],
+        env.Idlc('commands/end_sessions.idl')[0],
     ],
     LIBDEPS=[
         '$BUILD_DIR/mongo/db/commands/server_status',
