@@ -473,9 +473,17 @@ TEST_F(LogicalSessionCacheTest, LRUCacheOverflow) {
 
 //
 TEST_F(LogicalSessionCacheTest, RefreshMatrixSessionState) {
-    bool matrix[16][6] = {
-        // active, locally expired, remotely expired, ended, in-cache-after-refresh,
-        // in-collection-after-refresh
+    struct {
+        // different states the lsid can be in before the _refresh
+        bool active;
+        bool locallyExpired;
+        bool remotelyExpired;
+        bool ended;
+        // results that we test for after the _refresh
+        bool inCacheAfterRefresh;
+        bool inCollectionAfterRefresh;
+    } testCases[16] = {
+        //                                             ultimate reason for result
         {true, true, true, true, false, false},     // ended
         {true, true, true, false, true, true},      // active
         {true, true, false, true, false, false},    // ended
@@ -487,36 +495,33 @@ TEST_F(LogicalSessionCacheTest, RefreshMatrixSessionState) {
         {false, true, true, true, false, false},    // ended
         {false, true, true, false, false, false},   // inactive and expired, cleaned up
         {false, true, false, true, false, false},   // ended
-        {false, true, false, false, true, true},    // cache refreshed from collection
+        {false, true, false, false, true, true},    // cache stale, refreshed from collection
         {false, false, true, true, false, false},   // ended
-        {false, false, true, false, true, true},    // collection refreshed from cache
+        {false, false, true, false, true, true},    // collection stale, refreshed from cache
         {false, false, false, true, false, false},  // ended
         {false, false, false, false, true, true},   // unexpired, left alone
     };
 
     std::vector<LogicalSessionId> ids;
     for (int i = 0; i < 16; i++) {
-        bool active = matrix[i][0];
-        bool locallyExpired = matrix[i][1];
-        bool remotelyExpired = matrix[i][2];
-        bool ended = matrix[i][3];
+        auto testCase = testCases[i];
         auto lsid = makeLogicalSessionIdForTest();
         ids.push_back(lsid);
 
-        if (active) {
+        if (testCase.active) {
             service()->add(lsid);
         }
 
         auto cacheTimeout = service()->now() + Milliseconds(500);
-        if (locallyExpired) {
+        if (testCase.locallyExpired) {
             cacheTimeout -= kSessionTimeout;
         }
         auto res = cache()->startSession(opCtx(), makeLogicalSessionRecord(lsid, cacheTimeout));
 
-        if (!remotelyExpired) {
+        if (!testCase.remotelyExpired) {
             sessions()->add(makeLogicalSessionRecord(lsid, service()->now() + Milliseconds(500)));
         }
-        if (ended) {
+        if (testCase.ended) {
             LogicalSessionIdSet lsidSet;
             lsidSet.emplace(lsid);
             cache()->endSessions(lsidSet);
@@ -537,8 +542,8 @@ TEST_F(LogicalSessionCacheTest, RefreshMatrixSessionState) {
     auto removedSessions = statusAndRemovedSessions.getValue();
 
     for (int i = 0; i < 16; i++) {
-        ASSERT((removedSessions.count(ids[i]) == 0) == matrix[i][4]);
-        ASSERT(sessions()->has(ids[i]) == matrix[i][5]);
+        ASSERT((removedSessions.count(ids[i]) == 0) == testCases[i].inCacheAfterRefresh);
+        ASSERT(sessions()->has(ids[i]) == testCases[i].inCollectionAfterRefresh);
     }
 }
 
