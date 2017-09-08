@@ -304,8 +304,8 @@ CursorManager* CursorManager::getGlobalCursorManager() {
     return globalCursorManager.get();
 }
 
-void CursorManager::appendAllActiveSessions(OperationContext* opCtx, LogicalSessionIdSet* lsids) {
-    auto visitor = [&](CursorManager& mgr) { mgr.appendActiveSessions(lsids); };
+void CursorManager::appendAllActiveSessions(OperationContext* opCtx, LogicalSessionIdSet* lsids, bool isPinned) {
+    auto visitor = [&](CursorManager& mgr) { mgr.appendActiveSessions(lsids, isPinned); };
     globalCursorIdCache->visitAllCursorManagers(opCtx, &visitor);
 }
 
@@ -543,13 +543,15 @@ void CursorManager::getCursorIds(std::set<CursorId>* openCursors) const {
     }
 }
 
-void CursorManager::appendActiveSessions(LogicalSessionIdSet* lsids) const {
+void CursorManager::appendActiveSessions(LogicalSessionIdSet* lsids, bool isPpinned) const {
     auto allPartitions = _cursorMap->lockAllPartitions();
     for (auto&& partition : allPartitions) {
         for (auto&& entry : partition) {
             auto cursor = entry.second;
-            if (auto id = cursor->getSessionId()) {
-                lsids->insert(id.value());
+            if (cursor->_isPinned) {
+                if (auto id = cursor->getSessionId()) {
+                    lsids->insert(id.value());
+                }
             }
         }
     }

@@ -189,8 +189,6 @@ Status LogicalSessionCacheImpl::_refresh(Client* client) {
 
     // Promote our cached entries for all active service sessions to be recently used
 
-    auto serviceSessions = _service->getActiveSessions();
-    for (auto lsid : serviceSessions) {
         vivify(opCtx, lsid);
     }
 

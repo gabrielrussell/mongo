@@ -83,7 +83,7 @@ public:
      * Appends the sessions that have open cursors on the global cursor manager and across
      * all collection-level cursor managers to the given set of lsids.
      */
-    static void appendAllActiveSessions(OperationContext* opCtx, LogicalSessionIdSet* lsids);
+    static void appendAllActiveSessions(OperationContext* opCtx, LogicalSessionIdSet* lsids, bool isPinned);
 
     /**
      * Kills cursors with matching logical sessions.
