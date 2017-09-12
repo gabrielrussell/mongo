@@ -26,6 +26,8 @@
  *    it in the license file.
  */
 
+#include <sstream>
+
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/auth/authorization_manager.h"
@@ -232,57 +234,6 @@ TEST_F(LogicalSessionCacheTest, StartSession) {
     ASSERT(res.isOK());
 }
 
-// Test that records in the cache are properly refreshed until they expire
-TEST_F(LogicalSessionCacheTest, CacheRefreshesOwnRecords) {
-    // Insert two records into the cache
-    auto record1 = makeLogicalSessionRecordForTest();
-    auto record2 = makeLogicalSessionRecordForTest();
-    cache()->startSession(opCtx(), record1).transitional_ignore();
-    cache()->startSession(opCtx(), record2).transitional_ignore();
-
-    stdx::promise<int> hitRefresh;
-    auto refreshFuture = hitRefresh.get_future();
-
-    // Advance time to first refresh point, check that refresh happens, and
-    // that it includes both our records
-    sessions()->setRefreshHook([&hitRefresh](const LogicalSessionRecordSet& sessions) {
-        hitRefresh.set_value(sessions.size());
-        return Status::OK();
-    });
-
-    // Wait for the refresh to happen
-    clearOpCtx();
-    service()->fastForward(kForceRefresh);
-    ASSERT(cache()->refreshNow(client()).isOK());
-    refreshFuture.wait();
-    ASSERT_EQ(refreshFuture.get(), 2);
-
-    sessions()->clearHooks();
-
-    stdx::promise<LogicalSessionId> refresh2;
-    auto refresh2Future = refresh2.get_future();
-
-    // Use one of the records
-    setOpCtx();
-    auto res = cache()->promote(record1.getId());
-    ASSERT(res.isOK());
-
-    // Advance time so that one record expires
-    // Ensure that first record was refreshed, and second was thrown away
-    sessions()->setRefreshHook([&refresh2](const LogicalSessionRecordSet& sessions) {
-        // We should only have one record here, the other should have expired
-        ASSERT_EQ(sessions.size(), size_t(1));
-        refresh2.set_value(sessions.begin()->getId());
-        return Status::OK();
-    });
-
-    clearOpCtx();
-    service()->fastForward(kSessionTimeout - kForceRefresh + Milliseconds(1));
-    ASSERT(cache()->refreshNow(client()).isOK());
-    refresh2Future.wait();
-    ASSERT_EQ(refresh2Future.get(), record1.getId());
-}
-
 // Test that session cache properly expires lsids after 30 minutes of no use
 TEST_F(LogicalSessionCacheTest, BasicSessionExpiration) {
     // Insert a lsid
@@ -299,60 +250,6 @@ TEST_F(LogicalSessionCacheTest, BasicSessionExpiration) {
     res = cache()->promote(record.getId());
     // TODO SERVER-29709
     // ASSERT(!res.isOK());
-}
-
-// Test that we keep refreshing sessions that are active on the service
-TEST_F(LogicalSessionCacheTest, LongRunningQueriesAreRefreshed) {
-    auto lsid = makeLogicalSessionIdForTest();
-
-    // Insert one active lsid on the service, none in the cache
-    service()->add(lsid);
-
-    int count = 0;
-
-    sessions()->setRefreshHook([&count, &lsid](const LogicalSessionRecordSet& sessions) {
-        ASSERT_EQ(sessions.size(), size_t(1));
-        ASSERT_EQ(sessions.begin()->getId(), lsid);
-        count++;
-        return Status::OK();
-    });
-
-    clearOpCtx();
-
-    // Force a refresh, it should refresh our active session
-    service()->fastForward(kForceRefresh);
-    ASSERT(cache()->refreshNow(client()).isOK());
-    ASSERT_EQ(count, 1);
-
-    // Force a session timeout, session is still on the service
-    service()->fastForward(kSessionTimeout);
-    ASSERT(cache()->refreshNow(client()).isOK());
-    ASSERT_EQ(count, 2);
-
-    // Force another refresh, check that it refreshes that active lsid again
-    service()->fastForward(kForceRefresh);
-    ASSERT(cache()->refreshNow(client()).isOK());
-    ASSERT_EQ(count, 3);
-}
-
-// Test that the set of lsids we refresh is a sum of cached + active lsids
-TEST_F(LogicalSessionCacheTest, RefreshCachedAndServiceSignedLsidsTogether) {
-    // Put one session into the cache, one into the service
-    auto lsid1 = makeLogicalSessionIdForTest();
-    service()->add(lsid1);
-    auto record2 = makeLogicalSessionRecordForTest();
-    cache()->startSession(opCtx(), record2).transitional_ignore();
-
-    // Both signedLsids refresh
-    sessions()->setRefreshHook([](const LogicalSessionRecordSet& sessions) {
-        ASSERT_EQ(sessions.size(), size_t(2));
-        return Status::OK();
-    });
-
-    // Force a refresh
-    clearOpCtx();
-    service()->fastForward(kForceRefresh);
-    ASSERT(cache()->refreshNow(client()).isOK());
 }
 
 // Test large sets of cache-only session lsids
@@ -375,153 +272,75 @@ TEST_F(LogicalSessionCacheTest, ManySignedLsidsInCacheRefresh) {
     ASSERT(cache()->refreshNow(client()).isOK());
 }
 
-// Test larger sets of service-only session lsids
-TEST_F(LogicalSessionCacheTest, ManyLongRunningSessionsRefresh) {
-    int count = LogicalSessionCacheImpl::kLogicalSessionCacheDefaultCapacity;
-    for (int i = 0; i < count; i++) {
-        auto lsid = makeLogicalSessionIdForTest();
-        service()->add(lsid);
-    }
-
-    // Check that all signedLsids refresh
-    sessions()->setRefreshHook([&count](const LogicalSessionRecordSet& sessions) {
-        ASSERT_EQ(sessions.size(), size_t(count));
-        return Status::OK();
-    });
-
-    // Force a refresh
-    clearOpCtx();
-    service()->fastForward(kForceRefresh);
-    ASSERT(cache()->refreshNow(client()).isOK());
-}
-
-// Test larger mixed sets of cache/service active sessions
-TEST_F(LogicalSessionCacheTest, ManySessionsRefreshComboDeluxe) {
-    int count = (LogicalSessionCacheImpl::kLogicalSessionCacheDefaultCapacity / 2);
-    for (int i = 0; i < count; i++) {
-        auto lsid = makeLogicalSessionIdForTest();
-        service()->add(lsid);
-
-        auto record2 = makeLogicalSessionRecordForTest();
-        cache()->startSession(opCtx(), record2).transitional_ignore();
-    }
-
-    int nRefreshed = 0;
-
-    // Check that all lsids refresh successfully
-    sessions()->setRefreshHook([&nRefreshed](const LogicalSessionRecordSet& sessions) {
-        nRefreshed = sessions.size();
-        return Status::OK();
-    });
-
-    // Force a refresh
-    clearOpCtx();
-    service()->fastForward(kForceRefresh);
-    ASSERT(cache()->refreshNow(client()).isOK());
-    ASSERT_EQ(nRefreshed, count * 2);
-
-    // Remove all of the service sessions, should just refresh the cache entries
-    service()->clear();
-    sessions()->setRefreshHook([&nRefreshed](const LogicalSessionRecordSet& sessions) {
-        nRefreshed = sessions.size();
-        return Status::OK();
-    });
-
-    // Force another refresh
-    service()->fastForward(kForceRefresh);
-    ASSERT(cache()->refreshNow(client()).isOK());
-
-    // We should not have refreshed any sessions from the service, only the cache
-    ASSERT_EQ(nRefreshed, count);
-
-    // Force a third refresh
-    service()->fastForward(kForceRefresh);
-    ASSERT(cache()->refreshNow(client()).isOK());
-
-    // None of the sessions in the cache will have been recently used
-    ASSERT_EQ(nRefreshed, 0);
-}
-
-// Test that the lru cache overflows are probably propagated.
-TEST_F(LogicalSessionCacheTest, LRUCacheOverflow) {
-    int count = (LogicalSessionCacheImpl::kLogicalSessionCacheDefaultCapacity * 2);
-    int nOverflowed = 0;
-    for (int i = 0; i < count; i++) {
-        auto record = makeLogicalSessionRecordForTest();
-
-        auto status = cache()->startSession(opCtx(), record);
-        if (!status.isOK()) {
-            nOverflowed++;
-        }
-    }
-
-    ASSERT_EQ(nOverflowed, count / 2);
-    int nRefreshed = 0;
-
-    // Check that all lsids refresh successfully
-    sessions()->setRefreshHook([&nRefreshed](const LogicalSessionRecordSet& sessions) {
-        nRefreshed = sessions.size();
-        return Status::OK();
-    });
-
-    // Force a refresh
-    clearOpCtx();
-    service()->fastForward(kForceRefresh);
-    ASSERT(cache()->refreshNow(client()).isOK());
-    ASSERT_EQ(nRefreshed, count / 2);
-}
-
 //
 TEST_F(LogicalSessionCacheTest, RefreshMatrixSessionState) {
+    std::string stateNames[4][2] = {
+        {"active", "inactive"},
+        {"running", "not running"},
+        {"expired", "unexpired"},
+        {"ended", "not ended"},
+    };
     struct {
-        // different states the lsid can be in before the _refresh
-        bool active;
-        bool locallyExpired;
-        bool remotelyExpired;
-        bool ended;
         // results that we test for after the _refresh
-        bool inCacheAfterRefresh;
-        bool inCollectionAfterRefresh;
+        bool inCollection;
+        bool killed;
     } testCases[16] = {
-        //                                             ultimate reason for result
-        {true, true, true, true, false, false},     // ended
-        {true, true, true, false, true, true},      // active
-        {true, true, false, true, false, false},    // ended
-        {true, true, false, false, true, true},     // active
-        {true, false, true, true, false, false},    // ended
-        {true, false, true, false, true, true},     // active
-        {true, false, false, true, false, false},   // ended
-        {true, false, false, false, true, true},    // active
-        {false, true, true, true, false, false},    // ended
-        {false, true, true, false, false, false},   // inactive and expired, cleaned up
-        {false, true, false, true, false, false},   // ended
-        {false, true, false, false, true, true},    // cache stale, refreshed from collection
-        {false, false, true, true, false, false},   // ended
-        {false, false, true, false, true, true},    // collection stale, refreshed from cache
-        {false, false, false, true, false, false},  // ended
-        {false, false, false, false, true, true},   // unexpired, left alone
+        // 0, active, running, expired, ended,
+        {false, true},
+        // 1, inactive, running, expired, ended,
+        {false, true},
+        // 2, active, not running, expired, ended,
+        {false, true},
+        // 3, inactive, not running, expired, ended,
+        {false, true},
+        // 4, active, running, unexpired, ended,
+        {false, true},
+        // 5, inactive, running, unexpired, ended,
+        {false, true},
+        // 6, active, not running, unexpired, ended,
+        {false, true},
+        // 7, inactive, not running, unexpired, ended,
+        {false, true},
+        // 8, active, running, expired, not ended,
+        {true, false},
+        // 9, inactive, running, expired, not ended,
+        {false, true},
+        // 10, active, not running, expired, not ended,
+        {true, false},
+        // 11, inactive, not running, expired, not ended,
+        {false, false},
+        // 12, active, running, unexpired, not ended,
+        {true, false},
+        // 13, inactive, running, unexpired, not ended,
+        {true, false},
+        // 14, active, not running, unexpired, not ended,
+        {true, false},
+        // 15, inactive, not running, unexpired, not ended,
+        {true, false},
     };
 
     std::vector<LogicalSessionId> ids;
     for (int i = 0; i < 16; i++) {
-        auto testCase = testCases[i];
+
+        bool active = !(i & 1);
+        bool running = !(i & 2);
+        bool expired = !(i & 4);
+        bool ended = !(i & 8);
+
         auto lsid = makeLogicalSessionIdForTest();
         ids.push_back(lsid);
+        auto lsRecord = makeLogicalSessionRecord(lsid, service()->now() + Milliseconds(500));
 
-        if (testCase.active) {
+        if (running) {
             service()->add(lsid);
         }
-
-        auto cacheTimeout = service()->now() + Milliseconds(500);
-        if (testCase.locallyExpired) {
-            cacheTimeout -= kSessionTimeout;
+        if (active) {
+            cache()->startSession(opCtx(), lsRecord);
         }
-        auto res = cache()->startSession(opCtx(), makeLogicalSessionRecord(lsid, cacheTimeout));
-
-        if (!testCase.remotelyExpired) {
-            sessions()->add(makeLogicalSessionRecord(lsid, service()->now() + Milliseconds(500)));
+        if (!expired) {
+            sessions()->add(lsRecord);
         }
-        if (testCase.ended) {
+        if (ended) {
             LogicalSessionIdSet lsidSet;
             lsidSet.emplace(lsid);
             cache()->endSessions(lsidSet);
@@ -533,17 +352,37 @@ TEST_F(LogicalSessionCacheTest, RefreshMatrixSessionState) {
     service()->fastForward(kForceRefresh);
     ASSERT(cache()->refreshNow(client()).isOK());
 
-    LogicalSessionIdSet allSessions;
     for (int i = 0; i < 16; i++) {
-        allSessions.emplace(ids[i]);
-    }
-    auto statusAndRemovedSessions = sessions()->findRemovedSessions(opCtx(), allSessions);
-    ASSERT(statusAndRemovedSessions.isOK());
-    auto removedSessions = statusAndRemovedSessions.getValue();
-
-    for (int i = 0; i < 16; i++) {
-        ASSERT((removedSessions.count(ids[i]) == 0) == testCases[i].inCacheAfterRefresh);
-        ASSERT(sessions()->has(ids[i]) == testCases[i].inCollectionAfterRefresh);
+        bool failed = false;
+        std::stringstream failCauseText;
+        if (sessions()->has(ids[i]) != testCases[i].inCollection) {
+            failed = true;
+            if (testCases[i].inCollection) {
+                failCauseText << "session wasn't in collection";
+            } else {
+                failCauseText << "session was in collection";
+            }
+        }
+        if ((service()->matchKilled(ids[i]) != nullptr) != testCases[i].killed) {
+            failed = true;
+            if (failCauseText.str() != "") {
+                failCauseText << " and ";
+            }
+            if (testCases[i].killed) {
+                failCauseText << "session wasn't killed";
+            } else {
+                failCauseText << "session was killed";
+            }
+        }
+        if (failed) {
+            std::stringstream failText;
+            failText << "case " << i << " : ";
+            for (int j = 0; j < 4; j++) {
+                failText << stateNames[j][i >> j & 1] << " ";
+            }
+            failText << " session case failed: " << failCauseText.str();
+            FAIL(failText.str());
+        }
     }
 }
 

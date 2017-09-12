@@ -214,7 +214,7 @@ Status LogicalSessionCacheImpl::_refresh(Client* client) {
         }
     }
 
-    // Find which running, but not-reciently active sessions, are expired
+    // Find which running, but not reciently active sessions, are expired
     auto runningSessions = _service->getActiveSessions();
 
     auto statusAndRemovedSessions = _sessionsColl->findRemovedSessions(opCtx, runningSessions);

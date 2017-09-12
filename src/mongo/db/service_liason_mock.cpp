@@ -83,5 +83,15 @@ int MockServiceLiasonImpl::jobs() {
     return _timerFactory->jobs();
 }
 
+const KillAllSessionsByPattern* MockServiceLiasonImpl::matchKilled(const LogicalSessionId& lsid) {
+    return _matcher->match(lsid);
+}
+
+Status MockServiceLiasonImpl::killCursorsWithMatchingSessions(
+    OperationContext* opCtx, const SessionKiller::Matcher& matcher) {
+
+    _matcher = matcher;
+    return Status::OK();
+}
 
 }  // namespace mongo
