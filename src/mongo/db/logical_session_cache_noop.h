@@ -90,7 +90,6 @@ public:
     void endSessions(const LogicalSessionIdSet& lsids) override {
         return;
     }
-
 };
 
 }  // namespace mongo

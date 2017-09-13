@@ -71,9 +71,15 @@ public:
     void fastForward(Milliseconds time);
     int jobs();
 
+    const KillAllSessionsByPattern* matchKilled(const LogicalSessionId& lsid);
+    Status killCursorsWithMatchingSessions(OperationContext* opCtx,
+                                           const SessionKiller::Matcher& matcher);
+
 private:
     executor::AsyncTimerFactoryMock* _timerFactory;
     std::unique_ptr<PeriodicRunnerASIO> _runner;
+
+    boost::optional<SessionKiller::Matcher> _matcher;
 
     mutable stdx::mutex _mutex;
     LogicalSessionIdSet _activeSessions;
@@ -105,7 +111,7 @@ public:
 
     Status killCursorsWithMatchingSessions(OperationContext* opCtx,
                                            const SessionKiller::Matcher& matcher) {
-        return Status::OK();
+        return _impl->killCursorsWithMatchingSessions(opCtx, matcher);
     }
 
 protected:

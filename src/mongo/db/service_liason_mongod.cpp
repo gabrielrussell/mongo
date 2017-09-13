@@ -77,15 +77,9 @@ LogicalSessionIdSet ServiceLiasonMongod::getActiveSessions() const {
             return uniqueCtx->get();
         }();
 
-        CursorManager::appendAllActiveSessions(opCtx, &activeSessions, true);
+        CursorManager::appendAllActiveSessions(opCtx, &activeSessions);
     }
 
-    return activeSessions;
-}
-
-LogicalSessionIdSet ServiceLiasonMongod::getInactiveCursorSessions() const {
-    LogicalSessionIdSet inactiveCursorSessions;
-    CursorManager::appendAllActiveSessions(opCtx, &activeSessions, false);
     return activeSessions;
 }
 

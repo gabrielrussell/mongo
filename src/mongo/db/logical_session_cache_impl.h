@@ -152,7 +152,7 @@ private:
     /**
      * Takes the lock and inserts the given record into the cache.
      */
-    boost::optional<LogicalSessionRecord> _addToCache(LogicalSessionRecord record);
+    void _addToCache(LogicalSessionRecord record);
 
     const Minutes _refreshInterval;
     const Minutes _sessionTimeout;
@@ -161,7 +161,8 @@ private:
     std::unique_ptr<SessionsCollection> _sessionsColl;
 
     mutable stdx::mutex _cacheMutex;
-    LRUCache<LogicalSessionId, LogicalSessionRecord, LogicalSessionIdHash> _cache;
+
+    LogicalSessionIdMap<LogicalSessionRecord> _activeSessions;
 
     LogicalSessionIdSet _endingSessions;
 

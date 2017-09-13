@@ -54,13 +54,6 @@ public:
      * on this service.
      */
     virtual LogicalSessionIdSet getActiveSessions() const = 0;
-    virtual LogicalSessionIdSet getInactiveCursorSessions() const = 0;
-
-    /**
-     * Return a list of sessions that are not currenting being run operation
-     * and are attached to cursors
-     */
-    virtual LogicalSessionIdSet getCursorSessions() const = 0;
 
     /**
      * Schedule a job to be run at regular intervals until the server shuts down.

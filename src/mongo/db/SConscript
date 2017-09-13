@@ -944,6 +944,7 @@ envWithAsio.Library(
         '$BUILD_DIR/mongo/executor/async_timer_mock',
         '$BUILD_DIR/mongo/util/periodic_runner_asio',
         'service_liason',
+        'kill_sessions',
     ],
 )
 
