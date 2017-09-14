@@ -39,4 +39,32 @@
               10,
               "endSessions and refresh should result in 10 remaining sessions");
 
+    // double delete the remaining 10
+    endSessionsIds = [];
+    for (var i = 10; i < 20; i++) {
+        endSessionsIds.push(sessions[i].id);
+        endSessionsIds.push(sessions[i].id);
+    }
+
+    res = admin.runCommand({endSessions: endSessionsIds});
+    assert.commandWorked(res, "failed to end sessions");
+
+    res = admin.runCommand(refresh);
+    assert.commandWorked(res, "failed to refresh");
+
+    assert.eq(admin.system.sessions.count(),
+              0,
+              "endSessions and refresh should result in 0 remaining sessions");
+
+    // delete some sessions that were never created
+    res = admin.runCommand({
+        endSessions: [
+            {"id": UUID("bacb219c-214c-47f9-a94a-6c7f434b3bae")},
+            {"id": UUID("bacb219c-214c-47f9-a94a-6c7f434b3baf")}
+        ]
+    });
+
+    res = admin.runCommand(refresh);
+    assert.commandWorked(res, "failed to refresh");
+
 }());

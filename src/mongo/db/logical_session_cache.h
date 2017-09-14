@@ -31,7 +31,7 @@
 #include <boost/optional.hpp>
 
 #include "mongo/base/status.h"
-#include "mongo/db/end_sessions_gen.h"
+#include "mongo/db/commands/end_sessions_gen.h"
 #include "mongo/db/logical_session_id.h"
 #include "mongo/db/refresh_sessions_gen.h"
 
@@ -86,8 +86,7 @@ public:
     virtual void vivify(OperationContext* opCtx, const LogicalSessionId& lsid) = 0;
 
     /**
-     * Makes LogicalSessionIds from the EndSessionsCmdFromClient and then enqueues
-     * them for removal during the next _refresh()
+     * enqueues LogicalSessionIds for removal during the next _refresh()
      */
     virtual void endSessions(const LogicalSessionIdSet& lsids) = 0;
 

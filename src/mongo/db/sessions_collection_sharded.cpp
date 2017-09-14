@@ -52,8 +52,7 @@ BSONObj lsidQuery(const LogicalSessionId& lsid) {
 }  // namespace
 
 Status SessionsCollectionSharded::refreshSessions(OperationContext* opCtx,
-                                                  const LogicalSessionRecordSet& sessions,
-                                                  Date_t refreshTime) {
+                                                  const LogicalSessionRecordSet& sessions) {
     auto send = [&](BSONObj toSend) {
         auto opMsg = OpMsgRequest::fromDBAndBody(SessionsCollection::kSessionsDb, toSend);
         auto request = BatchedCommandRequest::parseUpdate(opMsg);
@@ -71,7 +70,7 @@ Status SessionsCollectionSharded::refreshSessions(OperationContext* opCtx,
         return Status(error, response.getErrMessage());
     };
 
-    return doRefresh(sessions, refreshTime, send);
+    return doRefresh(sessions, send);
 }
 
 Status SessionsCollectionSharded::removeRecords(OperationContext* opCtx,

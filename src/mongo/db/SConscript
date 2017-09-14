@@ -943,12 +943,12 @@ envWithAsio.Library(
     LIBDEPS=[
         '$BUILD_DIR/mongo/executor/async_timer_mock',
         '$BUILD_DIR/mongo/util/periodic_runner_asio',
-        'service_liason',
         'kill_sessions',
+        'service_liason',
     ],
 )
 
-env.Library(
+envWithAsio.Library(
     target='service_liason_mongod',
     source=[
         'service_liason_mongod.cpp',

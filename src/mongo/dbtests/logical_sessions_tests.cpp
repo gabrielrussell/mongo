@@ -153,14 +153,14 @@ public:
         auto thePast = now - Minutes(5);
 
         // Attempt to refresh with no active records, should succeed (and do nothing).
-        auto resRefresh = collection()->refreshSessions(opCtx(), LogicalSessionRecordSet{}, now);
+        auto resRefresh = collection()->refreshSessions(opCtx(), LogicalSessionRecordSet{});
         ASSERT(resRefresh.isOK());
 
         // Attempt to refresh one active record, should succeed.
         auto record1 = makeRecord(thePast);
         auto res = insertRecord(opCtx(), record1);
         ASSERT_OK(res);
-        resRefresh = collection()->refreshSessions(opCtx(), {record1}, now);
+        resRefresh = collection()->refreshSessions(opCtx(), {record1});
         ASSERT(resRefresh.isOK());
 
         // The timestamp on the refreshed record should be updated.
@@ -173,7 +173,7 @@ public:
 
         // Attempt to refresh a record that is not present, should upsert it.
         auto record2 = makeRecord(thePast);
-        resRefresh = collection()->refreshSessions(opCtx(), {record2}, now);
+        resRefresh = collection()->refreshSessions(opCtx(), {record2});
         ASSERT(resRefresh.isOK());
 
         swRecord = fetchRecord(opCtx(), record2.getId());
@@ -196,7 +196,7 @@ public:
         }
 
         // Run the refresh, should succeed.
-        resRefresh = collection()->refreshSessions(opCtx(), toRefresh, now);
+        resRefresh = collection()->refreshSessions(opCtx(), toRefresh);
         ASSERT(resRefresh.isOK());
 
         // Ensure that the right number of timestamps were updated.

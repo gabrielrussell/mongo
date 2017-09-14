@@ -105,8 +105,7 @@ public:
         : _impl(std::move(impl)) {}
 
     Status refreshSessions(OperationContext* opCtx,
-                           const LogicalSessionRecordSet& sessions,
-                           Date_t refreshTime) override {
+                           const LogicalSessionRecordSet& sessions) override {
         return _impl->refreshSessions(sessions);
     }
 

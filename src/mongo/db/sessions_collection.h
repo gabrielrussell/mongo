@@ -58,8 +58,7 @@ public:
      * or equal to the given time. Returns an error if a networking issue occurred.
      */
     virtual Status refreshSessions(OperationContext* opCtx,
-                                   const LogicalSessionRecordSet& sessions,
-                                   Date_t refreshTime) = 0;
+                                   const LogicalSessionRecordSet& sessions) = 0;
 
     /**
      * Removes the authoritative records for the specified sessions.
@@ -92,10 +91,8 @@ protected:
     /**
      * Formats and sends batches of refreshes for the given set of sessions.
      */
-    Status doRefresh(const LogicalSessionRecordSet& sessions, Date_t refreshTime, SendBatchFn send);
-    Status doRefreshExternal(const LogicalSessionRecordSet& sessions,
-                             Date_t refreshTime,
-                             SendBatchFn send);
+    Status doRefresh(const LogicalSessionRecordSet& sessions, SendBatchFn send);
+    Status doRefreshExternal(const LogicalSessionRecordSet& sessions, SendBatchFn send);
 
     /**
      * Formats and sends batches of deletes for the given set of sessions.

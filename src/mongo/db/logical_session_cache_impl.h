@@ -44,7 +44,6 @@ class Client;
 class OperationContext;
 class ServiceContext;
 
-extern int logicalSessionRecordCacheSize;
 extern int logicalSessionRefreshMinutes;
 
 /**
@@ -63,13 +62,6 @@ public:
      */
     struct Options {
         Options(){};
-
-        /**
-         * The number of session records to keep in the cache.
-         *
-         * May be set with --setParameter logicalSessionRecordCacheSize=X.
-         */
-        int capacity = logicalSessionRecordCacheSize;
 
         /**
          * A timeout value to use for sessions in the cache, in minutes.
@@ -140,15 +132,6 @@ private:
     void _periodicRefresh(Client* client);
     Status _refresh(Client* client);
 
-    /**
-     * Returns true if a record has passed its given expiration.
-     */
-    bool _isStale(const LogicalSessionRecord& record, Date_t now) const;
-
-    /**
-     * Returns true if a record has been active since the last refresh.
-     */
-    bool _isRecientlyActive(const LogicalSessionRecord& record) const;
     /**
      * Takes the lock and inserts the given record into the cache.
      */

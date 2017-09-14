@@ -87,9 +87,7 @@ public:
         return boost::none;
     }
 
-    void endSessions(const LogicalSessionIdSet& lsids) override {
-        return;
-    }
+    void endSessions(const LogicalSessionIdSet& lsids) override {}
 };
 
 }  // namespace mongo

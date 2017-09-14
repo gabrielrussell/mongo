@@ -79,8 +79,7 @@ public:
 
         auto lsCache = LogicalSessionCache::get(opCtx);
 
-        IDLParserErrorContext ctx("EndSessionsCmdFromClient");
-        auto cmd = EndSessionsCmdFromClient::parse(ctx, cmdObj);
+        auto cmd = EndSessionsCmdFromClient::parse("EndSessionsCmdFromClient"_sd, cmdObj);
 
         lsCache->endSessions(makeLogicalSessionIds(cmd.getEndSessions(), opCtx));
         return true;

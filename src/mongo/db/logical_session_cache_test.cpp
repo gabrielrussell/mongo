@@ -26,6 +26,7 @@
  *    it in the license file.
  */
 
+#include <iterator>
 #include <sstream>
 
 #include "mongo/platform/basic.h"
@@ -70,8 +71,7 @@ public:
 
     void setUp() override {
         auto localManagerState = stdx::make_unique<AuthzManagerExternalStateMock>();
-        auto managerState = localManagerState.get();
-        managerState->setAuthzVersion(AuthorizationManager::schemaVersion26Final);
+        localManagerState.get()->setAuthzVersion(AuthorizationManager::schemaVersion28SCRAM);
         auto uniqueAuthzManager =
             stdx::make_unique<AuthorizationManager>(std::move(localManagerState));
         AuthorizationManager::set(&serviceContext, std::move(uniqueAuthzManager));
@@ -274,58 +274,92 @@ TEST_F(LogicalSessionCacheTest, ManySignedLsidsInCacheRefresh) {
 
 //
 TEST_F(LogicalSessionCacheTest, RefreshMatrixSessionState) {
-    std::string stateNames[4][2] = {
+    const std::vector<std::vector<std::string>> stateNames = {
         {"active", "inactive"},
         {"running", "not running"},
         {"expired", "unexpired"},
         {"ended", "not ended"},
+        {"cursor", "no cursor"},
     };
     struct {
         // results that we test for after the _refresh
         bool inCollection;
         bool killed;
-    } testCases[16] = {
-        // 0, active, running, expired, ended,
+    } testCases[] = {
+        // 0, active, running, expired, ended, cursor
         {false, true},
-        // 1, inactive, running, expired, ended,
+        // 1, inactive, running, expired, ended, cursor
         {false, true},
-        // 2, active, not running, expired, ended,
+        // 2, active, not running, expired, ended, cursor
         {false, true},
-        // 3, inactive, not running, expired, ended,
+        // 3, inactive, not running, expired, ended, cursor
         {false, true},
-        // 4, active, running, unexpired, ended,
+        // 4, active, running, unexpired, ended, cursor
         {false, true},
-        // 5, inactive, running, unexpired, ended,
+        // 5, inactive, running, unexpired, ended, cursor
         {false, true},
-        // 6, active, not running, unexpired, ended,
+        // 6, active, not running, unexpired, ended, cursor
         {false, true},
-        // 7, inactive, not running, unexpired, ended,
+        // 7, inactive, not running, unexpired, ended, cursor
         {false, true},
-        // 8, active, running, expired, not ended,
+        // 8, active, running, expired, not ended, cursor
         {true, false},
-        // 9, inactive, running, expired, not ended,
+        // 9, inactive, running, expired, not ended, cursor
         {false, true},
-        // 10, active, not running, expired, not ended,
+        // 10, active, not running, expired, not ended, cursor
         {true, false},
-        // 11, inactive, not running, expired, not ended,
+        // 11, inactive, not running, expired, not ended, cursor
+        {false, true},
+        // 12, active, running, unexpired, not ended, cursor
+        {true, false},
+        // 13, inactive, running, unexpired, not ended, cursor
+        {true, false},
+        // 14, active, not running, unexpired, not ended, cursor
+        {true, false},
+        // 15, inactive, not running, unexpired, not ended, cursor
+        {true, false},
+        // 16, active, running, expired, ended, no cursor
+        {false, true},
+        // 17, inactive, running, expired, ended, no cursor
+        {false, true},
+        // 18, active, not running, expired, ended, no cursor
+        {false, true},
+        // 19, inactive, not running, expired, ended, no cursor
+        {false, true},
+        // 20, active, running, unexpired, ended, no cursor
+        {false, true},
+        // 21, inactive, running, unexpired, ended, no cursor
+        {false, true},
+        // 22, active, not running, unexpired, ended, no cursor
+        {false, true},
+        // 23, inactive, not running, unexpired, ended, no cursor
+        {false, true},
+        // 24, active, running, expired, not ended, no cursor
+        {true, false},
+        // 25, inactive, running, expired, not ended, no cursor
+        {false, true},
+        // 26, active, not running, expired, not ended, no cursor
+        {true, false},
+        // 27, inactive, not running, expired, not ended, no cursor
         {false, false},
-        // 12, active, running, unexpired, not ended,
+        // 28, active, running, unexpired, not ended, no cursor
         {true, false},
-        // 13, inactive, running, unexpired, not ended,
+        // 29, inactive, running, unexpired, not ended, no cursor
         {true, false},
-        // 14, active, not running, unexpired, not ended,
+        // 30, active, not running, unexpired, not ended, no cursor
         {true, false},
-        // 15, inactive, not running, unexpired, not ended,
+        // 31, inactive, not running, unexpired, not ended, no cursor
         {true, false},
     };
 
     std::vector<LogicalSessionId> ids;
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 32; i++) {
 
         bool active = !(i & 1);
         bool running = !(i & 2);
         bool expired = !(i & 4);
         bool ended = !(i & 8);
+        bool cursor = !(i & 16);
 
         auto lsid = makeLogicalSessionIdForTest();
         ids.push_back(lsid);
@@ -345,6 +379,9 @@ TEST_F(LogicalSessionCacheTest, RefreshMatrixSessionState) {
             lsidSet.emplace(lsid);
             cache()->endSessions(lsidSet);
         }
+        if (cursor) {
+            service()->addCursorSession(lsid);
+        }
     }
 
     // Force a refresh
@@ -352,37 +389,20 @@ TEST_F(LogicalSessionCacheTest, RefreshMatrixSessionState) {
     service()->fastForward(kForceRefresh);
     ASSERT(cache()->refreshNow(client()).isOK());
 
-    for (int i = 0; i < 16; i++) {
-        bool failed = false;
-        std::stringstream failCauseText;
-        if (sessions()->has(ids[i]) != testCases[i].inCollection) {
-            failed = true;
-            if (testCases[i].inCollection) {
-                failCauseText << "session wasn't in collection";
-            } else {
-                failCauseText << "session was in collection";
-            }
+    for (int i = 0; i < 32; i++) {
+        std::stringstream failText;
+        failText << "case " << i << " : ";
+        for (int j = 0; j < 4; j++) {
+            failText << stateNames[j][i >> j & 1] << " ";
         }
-        if ((service()->matchKilled(ids[i]) != nullptr) != testCases[i].killed) {
-            failed = true;
-            if (failCauseText.str() != "") {
-                failCauseText << " and ";
-            }
-            if (testCases[i].killed) {
-                failCauseText << "session wasn't killed";
-            } else {
-                failCauseText << "session was killed";
-            }
-        }
-        if (failed) {
-            std::stringstream failText;
-            failText << "case " << i << " : ";
-            for (int j = 0; j < 4; j++) {
-                failText << stateNames[j][i >> j & 1] << " ";
-            }
-            failText << " session case failed: " << failCauseText.str();
-            FAIL(failText.str());
-        }
+        failText << " session case failed: ";
+
+        ASSERT(sessions()->has(ids[i]) == testCases[i].inCollection)
+            << failText.str() << (testCases[i].inCollection ? "session wasn't in collection"
+                                                            : "session was in collection");
+        ASSERT((service()->matchKilled(ids[i]) != nullptr) == testCases[i].killed)
+            << failText.str()
+            << (testCases[i].killed ? "session wasn't killed" : "session was killed");
     }
 }
 

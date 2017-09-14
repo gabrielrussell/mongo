@@ -92,7 +92,7 @@ public:
 
         Status startSessionStatus = lsCache->startSession(opCtx, record.get());
 
-        if (!startSessionStatus.isOK() && startSessionStatus != ErrorCodes::CacheEviction) {
+        if (!startSessionStatus.isOK()) {
             return appendCommandStatus(result, startSessionStatus);
         }
 

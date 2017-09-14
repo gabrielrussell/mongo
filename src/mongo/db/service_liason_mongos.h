@@ -50,7 +50,8 @@ namespace mongo {
  */
 class ServiceLiasonMongos : public ServiceLiason {
 public:
-    LogicalSessionIdSet getActiveSessions() const override;
+    LogicalSessionIdSet getActiveOpSessions() const override;
+    LogicalSessionIdSet getOpenCursorSessions() const override;
 
     void scheduleJob(PeriodicRunner::PeriodicJob job) override;
 

@@ -125,16 +125,14 @@ auto dispatch(OperationContext* opCtx, LocalCallback localCallback, RemoteCallba
 }  // namespace
 
 Status SessionsCollectionRS::refreshSessions(OperationContext* opCtx,
-                                             const LogicalSessionRecordSet& sessions,
-                                             Date_t refreshTime) {
+                                             const LogicalSessionRecordSet& sessions) {
     return dispatch(opCtx,
                     [&] {
                         DBDirectClient client(opCtx);
-                        return doRefresh(sessions, refreshTime, makeSendFnForBatchWrite(&client));
+                        return doRefresh(sessions, makeSendFnForBatchWrite(&client));
                     },
                     [&](DBClientBase* client) {
-                        return doRefreshExternal(
-                            sessions, refreshTime, makeSendFnForCommand(client));
+                        return doRefreshExternal(sessions, makeSendFnForCommand(client));
                     });
 }
 
