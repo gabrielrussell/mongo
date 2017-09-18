@@ -185,13 +185,16 @@ public:
         // Attempt a refresh of many records, split into batches.
         LogicalSessionRecordSet toRefresh;
         int recordCount = 5000;
+        unsigned int refreshedCount = 0;
         for (int i = 0; i < recordCount; i++) {
-            auto record = makeRecord(thePast);
+            auto record = makeRecord(now);
             res = insertRecord(opCtx(), record);
 
             // Refresh some of these records.
             if (i % 4 == 0) {
                 toRefresh.insert(record);
+            } else {
+                refreshedCount++ ;
             }
         }
 
@@ -201,7 +204,7 @@ public:
 
         // Ensure that the right number of timestamps were updated.
         auto n = db.count(ns(), BSON("lastUse" << now));
-        ASSERT_EQ(n, toRefresh.size());
+        ASSERT_EQ(n, refreshedCount);
     }
 };
 
