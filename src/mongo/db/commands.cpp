@@ -437,6 +437,14 @@ void Command::filterCommandReplyForPassthrough(const BSONObj& cmdObj, BSONObjBui
     }
 }
 
+bool SessionsBasicCommand::enhancedRun(OperationContext* opCtx,
+                               const OpMsgRequest& request,
+                               BSONObjBuilder& result) {
+    uassertNoDocumentSequences(request);
+    return run(opCtx, request.getDatabase().toString(), request.body, result);
+}
+
+
 BSONObj Command::filterCommandReplyForPassthrough(const BSONObj& cmdObj) {
     BSONObjBuilder bob;
     filterCommandReplyForPassthrough(cmdObj, &bob);

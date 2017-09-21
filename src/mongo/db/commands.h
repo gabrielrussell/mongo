@@ -610,6 +610,13 @@ private:
     void uassertNoDocumentSequences(const OpMsgRequest& request);
 };
 
+class SessionsBasicCommand : public BasicCommand {
+
+    bool enhancedRun(OperationContext* opCtx,
+                     const OpMsgRequest& request,
+                     BSONObjBuilder& result) final;
+
+}
 /**
  * Deprecated. Do not add new subclasses.
  */
