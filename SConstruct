@@ -1425,7 +1425,8 @@ else:
     env.AppendUnique( CPPDEFINES=[ 'NDEBUG' ] )
 
 if env.TargetOSIs('linux'):
-    env.Append( LIBS=['m',"resolv"] )
+    #env.Append( LIBS=['m',"resolv"] )
+    env.Append( LIBS=['m'] )
 
 elif env.TargetOSIs('solaris'):
      env.Append( LIBS=["socket","resolv","lgrp"] )
@@ -2136,10 +2137,6 @@ def doConfigure(myenv):
     if has_option('libc++'):
         if not myenv.ToolchainIs('clang'):
             myenv.FatalError('libc++ is currently only supported for clang')
-        if AddToCXXFLAGSIfSupported(myenv, '-stdlib=libc++'):
-            myenv.Append(LINKFLAGS=['-stdlib=libc++'])
-        else:
-            myenv.ConfError('libc++ requested, but compiler does not support -stdlib=libc++' )
     else:
         def CheckLibStdCxx(context):
             test_body = """
