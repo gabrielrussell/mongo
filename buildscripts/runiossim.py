@@ -17,7 +17,7 @@ if __name__ == "__main__":
 
     print("Creating simulator")
     # use subprocess.check_call() for tasks because it throws an exception on failure
-    subprocess.check_call(["xcrun", "simctl", "create", "mongo-sim", "com.apple.CoreSimulator.SimDeviceType.iPhone-7", "com.apple.CoreSimulator.SimRuntime.iOS-10-3"])
+    subprocess.check_call(["xcrun", "simctl", "create", "mongo-sim", "com.apple.CoreSimulator.SimDeviceType.iPhone-7", "com.apple.CoreSimulator.SimRuntime.iOS-11-2"])
     try:
         print("Booting simulator")
         subprocess.check_call(["xcrun", "simctl", "boot", "mongo-sim"])
