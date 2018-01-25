@@ -1176,7 +1176,7 @@ if get_option('allocator') == "auto":
     if env.TargetOSIs('android'):
         env['MONGO_ALLOCATOR'] = "system"
     elif env.TargetOSIs('windows') or \
-       env.TargetOSIs('linux'): 
+       env.TargetOSIs('linux'):
         env['MONGO_ALLOCATOR'] = "tcmalloc"
     else:
         env['MONGO_ALLOCATOR'] = "system"
