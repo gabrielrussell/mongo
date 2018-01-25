@@ -1053,6 +1053,7 @@ os_macros = {
     # the above declarations since we will never target them with anything other than XCode 8.
     "macOS": "defined(__APPLE__) && (TARGET_OS_OSX || (TARGET_OS_MAC && !TARGET_OS_IPHONE))",
     "linux": "defined(__linux__)",
+    "android": "defined(__ANDROID__)",
 }
 
 def CheckForOS(context, which_os):
@@ -1172,8 +1173,10 @@ env['TARGET_OS_FAMILY'] = 'posix' if env.TargetOSIs('posix') else env.GetTargetO
 # options for some strange reason in SCons. Instead, we store this
 # option as a new variable in the environment.
 if get_option('allocator') == "auto":
-    if env.TargetOSIs('windows') or \
-       env.TargetOSIs('linux'):
+    if env.TargetOSIs('android'):
+        env['MONGO_ALLOCATOR'] = "system"
+    elif env.TargetOSIs('windows') or \
+       env.TargetOSIs('linux'): 
         env['MONGO_ALLOCATOR'] = "tcmalloc"
     else:
         env['MONGO_ALLOCATOR'] = "system"
@@ -1441,7 +1444,10 @@ if debugBuild:
 else:
     env.AppendUnique( CPPDEFINES=[ 'NDEBUG' ] )
 
-if env.TargetOSIs('linux'):
+if env.TargetOSIs('android'):
+    env.Append( LIBS=['m'] )
+
+elif env.TargetOSIs('linux'):
     env.Append( LIBS=['m',"resolv"] )
 
 elif env.TargetOSIs('solaris'):
@@ -1650,7 +1656,7 @@ if env.TargetOSIs('posix'):
                          "-Wno-unknown-pragmas",
                          "-Winvalid-pch"] )
     # env.Append( " -Wconversion" ) TODO: this doesn't really work yet
-    if env.TargetOSIs('linux', 'darwin', 'solaris'):
+    if env.TargetOSIs('linux', 'darwin', 'solaris') and not env.TargetOSIs('android'):
         if not has_option("disable-warnings-as-errors"):
             env.Append( CCFLAGS=["-Werror"] )
 
