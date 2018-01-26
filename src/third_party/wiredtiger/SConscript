@@ -31,7 +31,7 @@ if conf.CheckFunc("fallocate"):
     conf.env.Append(CPPDEFINES=[
         "HAVE_FALLOCATE"
     ])
-if conf.CheckFunc("sync_file_range"):
+if conf.CheckFunc("sync_file_range", "fcntl.h"):
     conf.env.Append(CPPDEFINES=[
         "HAVE_SYNC_FILE_RANGE"
     ])
