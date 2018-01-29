@@ -15,3 +15,6 @@ echo y | ./tools/bin/sdkmanager "build-tools;27.0.1" "platforms;android-24" "emu
 popd
 
 $SDK_ROOT/ndk-bundle/build/tools/make_standalone_toolchain.py --arch arm64 --api 24  --stl=libc++ --force  --install-dir $TOOLCHAIN
+
+echo SDK_ROOT=${SDK_ROOT}
+echo TOOLCHAIN=${TOOLCHAIN}
