@@ -2389,6 +2389,7 @@ tasks:
           fi
 
           ${activate_virtualenv}
+          pwd
           ${compile_env|} $python ./buildscripts/scons.py ${compile_flags|} ${scons_cache_args|} --use-new-tools --build-mongoreplay="${build_mongoreplay}" --detect-odr-violations $extra_args all ${additional_targets|} MONGO_VERSION=${version}
 
     - command: s3.put
@@ -6240,7 +6241,7 @@ buildvariants:
   expansions:
     build_cdriver: true
     cdriver_configure_flags: --prefix=$(pwd)/install --with-libbson=bundled --disable-automatic-init-and-cleanup --disable-ssl --disable-sasl --disable-examples --disable-man-pages --disable-html-docs --disable-shm-counters --disable-shared --enable-static --host aarch64-unknown-linux-gnu CC=$(dirname $PWD)/android_toolchain/bin/clang CXX=$(dirname $PWD)/android_toolchain/clang++
-    compile_flags: -j$(grep -c ^processor /proc/cpuinfo) --dbg=on --android-toolchain-path=android_toolchain --variables-files=etc/scons/android_ndk.vars CPPPATH="$(dirname $PWD)/mongo-c-driver/install/include/libbson-1.0 $(dirname $PWD)/mongo-c-driver/install/include/libmongoc-1.0" LIBPATH="$(dirname $PWD)/mongo-c-driver/install/lib" all
+    compile_flags: -j$(grep -c ^processor /proc/cpuinfo) --dbg=on --android-toolchain-path=$(pwd)/android_toolchain --variables-files=etc/scons/android_ndk.vars CPPPATH="$(dirname $PWD)/mongo-c-driver/install/include/libbson-1.0 $(dirname $(pwd))/mongo-c-driver/install/include/libmongoc-1.0" LIBPATH="$(dirname $PWD)/mongo-c-driver/install/lib" all
     disable_unit_tests: true
     enable_android_emu_tests: true
     setup_android_toolchain: true
