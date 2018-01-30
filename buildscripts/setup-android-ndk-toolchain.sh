@@ -4,10 +4,11 @@ if [ -z "$python" ] ; then
     python=`which python`
 fi
 
-SDK_ROOT=$PWD/android_sdk
-TOOLCHAIN=$PWD/android_toolchain
-
+SDK_ROOT=$PWD/android_ndk
 mkdir $SDK_ROOT
+
+TOOLCHAIN=$PWD/android_toolchain
+mkdir $TOOLCHAIN
 
 (
     cd $SDK_ROOT
