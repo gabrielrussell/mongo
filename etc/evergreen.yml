@@ -428,7 +428,7 @@ functions:
         set -o errexit
         set -o verbose
         if [ "${setup_android_ndk|}" = "true" ]; then
-            src/buildscripts/setup-android-ndk-toolchain.sh
+            JAVA_HOME=/opt/java/jdk8/ src/buildscripts/setup-android-ndk-toolchain.sh
         fi
 
   "build cdriver" :
@@ -2365,8 +2365,8 @@ tasks:
     - func: "setup credentials"
     - func: "build new tools" # noop if ${newtools} is not "true"
     - func: "build rocksdb" # noop if ${build_rocksdb} is not "true"
-    - func: "build cdriver" # noop if ${build_cdriver} is not "true"
     - func: "setup android ndk" # noop if ${setup_android_ndk} is not "true"
+    - func: "build cdriver" # noop if ${build_cdriver} is not "true"
     - *generate_compile_expansions
     # Then we load the generated version data into the agent so we can use it in task definitions.
     - *apply_compile_expansions
@@ -6234,7 +6234,7 @@ buildvariants:
 - name: android-emulator
   display_name: "Android emulator DEBUG"
   run_on:
-  - rhel62-small
+  - ubuntu1404-test
   batchtime: 1440 # 1 day
   expansions:
     build_cdriver: true
