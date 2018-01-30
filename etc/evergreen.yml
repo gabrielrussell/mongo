@@ -445,6 +445,7 @@ functions:
         tar xzf mongo-c-driver-$CDRIVER_VERSION.tar.gz
         mv mongo-c-driver-$CDRIVER_VERSION mongo-c-driver
         cd mongo-c-driver
+        patch -p1 < ../mongoc-stat.c.diff
         export ${compile_env|}
         ./configure --prefix=$(pwd)/install --with-libbson=bundled --disable-automatic-init-and-cleanup --disable-ssl --disable-sasl --disable-examples --disable-man-pages --disable-html-docs --disable-shm-counters --disable-shared --enable-static ${cdriver_configure_flags|}
         make
