@@ -421,7 +421,7 @@ functions:
         make USE_RTTI=1 CC=/opt/mongodbtoolchain/v2/bin/gcc CXX=/opt/mongodbtoolchain/v2/bin/g++ static_lib
         fi
 
-  "setup android ndk" :
+  "setup android toolchain" :
     command: shell.exec
     params:
       script: |
@@ -2365,7 +2365,7 @@ tasks:
     - func: "setup credentials"
     - func: "build new tools" # noop if ${newtools} is not "true"
     - func: "build rocksdb" # noop if ${build_rocksdb} is not "true"
-    - func: "setup android ndk" # noop if ${setup_android_ndk} is not "true"
+    - func: "setup android toolchain" # noop if ${setup_android_ndk} is not "true"
     - func: "build cdriver" # noop if ${build_cdriver} is not "true"
     - *generate_compile_expansions
     # Then we load the generated version data into the agent so we can use it in task definitions.
@@ -6238,7 +6238,7 @@ buildvariants:
   batchtime: 1440 # 1 day
   expansions:
     build_cdriver: true
-    cdriver_configure_flags: --prefix=$(pwd)/install --with-libbson=bundled --disable-automatic-init-and-cleanup --disable-ssl --disable-sasl --disable-examples --disable-man-pages --disable-html-docs --disable-shm-counters --disable-shared --enable-static --host aarch64-unknown-linux-gnu CC=$(dirname $PWD)/android_ndk/bin/clang CXX=$(dirname $PWD)/android_ndk/clang++
+    cdriver_configure_flags: --prefix=$(pwd)/install --with-libbson=bundled --disable-automatic-init-and-cleanup --disable-ssl --disable-sasl --disable-examples --disable-man-pages --disable-html-docs --disable-shm-counters --disable-shared --enable-static --host aarch64-unknown-linux-gnu CC=$(dirname $PWD)/android_toolchain/bin/clang CXX=$(dirname $PWD)/android_toolchain/clang++
     compile_flags: -j$(sysctl -n hw.logicalcpu) --dbg=on --disable-warnings-as-errors CPPPATH="$(dirname $PWD)/mongo-c-driver/install/include/libbson-1.0 $(dirname $PWD)/mongo-c-driver/install/include/libmongoc-1.0" LIBPATH="$(dirname $PWD)/mongo-c-driver/install/lib" all
     disable_unit_tests: true
     enable_android_emu_tests: true
