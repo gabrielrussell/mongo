@@ -38,6 +38,15 @@
 #include "mongo/unittest/unittest.h"
 #include "mongo/util/quick_exit.h"
 #include "mongo/util/signal_handlers_synchronous.h"
+
+#include "mongo/db/server_options.h"
+
+#include "mongo/util/options_parser/environment.h"
+#include "mongo/util/options_parser/option_section.h"
+#include "mongo/util/options_parser/options_parser.h"
+
+namespace moe = mongo::optionenvironment;
+
 namespace {
 
 std::unique_ptr<mongo::unittest::TempDir> globalTempDir;
@@ -156,8 +165,28 @@ TEST_F(MongodbEmbeddedTransportLayerTest, InsertAndDelete) {
 // call runGlobalInitializers(). The embedded C API calls mongoDbMain() which
 // calls runGlobalInitializers().
 int main(int argc, char** argv, char** envp) {
+
+    moe::OptionsParser parser;
+    moe::Environment environment;
+    moe::OptionSection options;
+    std::map<std::string, std::string> env;
+
+    options.addOptionChaining(
+        "tempPath", "tempPath", moe::String, "directory to place mongo::TempDir subdirectories");
+    std::vector<std::string> argVector(argv, argv + argc);
+    mongo::Status ret = parser.run(options, argVector, env, &environment);
+    if (!ret.isOK()) {
+        std::cerr << options.helpString();
+        return EXIT_FAILURE;
+    }
+    if (environment.count("tempPath")) {
+        ::mongo::unittest::_setTempPath(environment["tempPath"].as<std::string>());
+    }
+
     ::mongo::clearSignalMask();
     ::mongo::setupSynchronousSignalHandlers();
+    ::mongo::serverGlobalParams.noUnixSocket = true;
+    ::mongo::unittest::_setupTestLogger();
     auto result = ::mongo::unittest::Suite::run(std::vector<std::string>(), "", 1);
     globalTempDir.reset();
     mongo::quickExit(result);

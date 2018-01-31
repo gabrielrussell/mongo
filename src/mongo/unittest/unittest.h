@@ -235,6 +235,8 @@ namespace mongo {
 
 namespace unittest {
 
+void _setupTestLogger();
+
 class Result;
 
 /**

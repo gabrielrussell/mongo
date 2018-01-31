@@ -50,8 +50,13 @@ namespace unittest {
 namespace str = mongoutils::str;
 namespace moe = mongo::optionenvironment;
 
-namespace {
 boost::filesystem::path defaultRoot;
+void _setTempPath(string tempPath) {
+    defaultRoot = tempPath;
+}
+
+
+namespace {
 
 MONGO_GENERAL_STARTUP_OPTIONS_REGISTER(TempDirOptions)(InitializerContext* context) {
     moe::startupOptions.addOptionChaining(

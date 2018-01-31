@@ -57,13 +57,21 @@ using std::string;
 
 namespace unittest {
 
+logger::MessageLogDomain* unittestOutput = logger::globalLogManager()->getNamedDomain("unittest");
+
+void _setupTestLogger() {
+    unittestOutput->attachAppender(logger::MessageLogDomain::AppenderAutoPtr(
+        new logger::ConsoleAppender<logger::MessageLogDomain::Event>(
+            new logger::MessageEventDetailsEncoder)));
+}
+
+
 namespace {
 
 bool stringContains(const std::string& haystack, const std::string& needle) {
     return haystack.find(needle) != std::string::npos;
 }
 
-logger::MessageLogDomain* unittestOutput = logger::globalLogManager()->getNamedDomain("unittest");
 
 typedef std::map<std::string, std::shared_ptr<Suite>> SuiteMap;
 
@@ -80,9 +88,7 @@ logger::LogstreamBuilder log() {
 
 MONGO_INITIALIZER_WITH_PREREQUISITES(UnitTestOutput, ("GlobalLogManager", "default"))
 (InitializerContext*) {
-    unittestOutput->attachAppender(logger::MessageLogDomain::AppenderAutoPtr(
-        new logger::ConsoleAppender<logger::MessageLogDomain::Event>(
-            new logger::MessageEventDetailsEncoder)));
+    _setupTestLogger();
     return Status::OK();
 }
 
