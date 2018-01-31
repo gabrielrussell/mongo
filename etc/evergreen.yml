@@ -892,8 +892,8 @@ functions:
         if [ ${enable_android_emu_tests|false} = "true" ]; then
             $(dirname $(pwd))/android_toolchain/bin/aarch64-linux-android-strip "build/debug/mongo/client/embedded/mongo_embedded_capi_test"
             $(dirname $(pwd))/android_toolchain/bin/aarch64-linux-android-strip "build/debug/mongo/client/embedded/mongo_embedded_transport_test"
-            ${compile_env|} $python buildscripts/runandroidsim.sh "build/debug/mongo/client/embedded/mongo_embedded_capi_test"
-            ${compile_env|} $python buildscripts/runandroidsim.sh "build/debug/mongo/client/embedded/mongo_embedded_transport_test"
+            ${compile_env|} buildscripts/runandroidsim.sh "build/debug/mongo/client/embedded/mongo_embedded_capi_test"
+            ${compile_env|} buildscripts/runandroidsim.sh "build/debug/mongo/client/embedded/mongo_embedded_transport_test"
         fi
 
   "run powercycle test" :
