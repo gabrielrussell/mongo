@@ -1,16 +1,12 @@
 #!/bin/sh
 
-set -o verbose
-set -x
-
-echo "xcrun simctl list"
-xcrun simctl list
-
 if [ "$#" != "3" ]; then
     echo "usage:"
-    echo "runiossim.sh <device> <runtime> <test>"
+    echo "$0 <device> <runtime> <test>"
     exit 1
 fi
+
+set -o verbose
 
 DEVICE="$1"
 RUNTIME="$2"
