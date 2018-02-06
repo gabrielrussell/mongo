@@ -41,7 +41,6 @@
 #include "mongo/util/options_parser/startup_option_init.h"
 #include "mongo/util/options_parser/startup_options.h"
 
-
 namespace mongo {
 
 using std::string;

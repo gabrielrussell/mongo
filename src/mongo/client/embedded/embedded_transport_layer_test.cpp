@@ -33,17 +33,15 @@
 #include <mongoc.h>
 #include <set>
 
+#include "mongo/db/server_options.h"
 #include "mongo/stdx/memory.h"
 #include "mongo/unittest/temp_dir.h"
 #include "mongo/unittest/unittest.h"
-#include "mongo/util/quick_exit.h"
-#include "mongo/util/signal_handlers_synchronous.h"
-
-#include "mongo/db/server_options.h"
-
 #include "mongo/util/options_parser/environment.h"
 #include "mongo/util/options_parser/option_section.h"
 #include "mongo/util/options_parser/options_parser.h"
+#include "mongo/util/quick_exit.h"
+#include "mongo/util/signal_handlers_synchronous.h"
 
 namespace moe = mongo::optionenvironment;
 
