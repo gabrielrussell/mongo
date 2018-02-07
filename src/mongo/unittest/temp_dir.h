@@ -34,6 +34,9 @@
 
 namespace mongo {
 namespace unittest {
+
+void setTempPath(std::string tempPath);
+
 /**
  * An RAII temporary directory that deletes itself and all contents files on scope exit.
  */

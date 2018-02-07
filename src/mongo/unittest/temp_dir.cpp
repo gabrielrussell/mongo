@@ -52,6 +52,13 @@ namespace moe = mongo::optionenvironment;
 
 namespace {
 boost::filesystem::path defaultRoot;
+}
+
+void setTempPath(string tempPath) {
+    defaultRoot = tempPath;
+}
+
+namespace {
 
 MONGO_GENERAL_STARTUP_OPTIONS_REGISTER(TempDirOptions)(InitializerContext* context) {
     moe::startupOptions.addOptionChaining(
