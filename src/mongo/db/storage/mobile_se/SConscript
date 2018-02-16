@@ -2,6 +2,8 @@ Import("env")
 
 env = env.Clone()
 
+env.InjectThirdPartyIncludePaths(libraries=['sqlite'])
+
 env.Library(
     target='storage_mobile_core',
     source=[
@@ -27,7 +29,7 @@ env.Library(
         '$BUILD_DIR/mongo/db/storage/key_string',
         '$BUILD_DIR/mongo/db/storage/kv/kv_prefix',
         '$BUILD_DIR/mongo/db/storage/oplog_hack',
-        '../third_party/sqlite/sqlite'
+        '$BUILD_DIR/third_party/sqlite/sqlite',
         ]
     )
 

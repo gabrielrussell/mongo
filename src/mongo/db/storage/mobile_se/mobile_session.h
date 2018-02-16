@@ -5,8 +5,8 @@
 #pragma once
 
 #include <string>
+#include <sqlite3.h>
 
-#include "../third_party/sqlite/sqlite3.h"
 #include "mobile_session_pool.h"
 #include "mongo/base/disallow_copying.h"
 

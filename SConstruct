@@ -316,6 +316,11 @@ add_option('use-system-zlib',
     nargs=0,
 )
 
+add_option('use-system-sqlite',
+    help='use system version of sqlite library',
+    nargs=0,
+)
+
 add_option('use-system-stemmer',
     help='use system version of stemmer',
     nargs=0)

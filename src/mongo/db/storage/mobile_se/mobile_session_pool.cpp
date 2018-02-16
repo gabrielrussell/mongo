@@ -11,8 +11,8 @@
 #include <queue>
 #include <string>
 #include <vector>
+#include <sqlite3.h>
 
-#include "../third_party/sqlite/sqlite3.h"
 #include "mobile_session.h"
 #include "mobile_sqlite_statement.h"
 #include "mobile_util.h"

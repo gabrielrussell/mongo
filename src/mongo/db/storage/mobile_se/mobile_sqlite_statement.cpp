@@ -9,8 +9,8 @@
 #include "mobile_sqlite_statement.h"
 
 #include <string>
+#include <sqlite3.h>
 
-#include "../third_party/sqlite/sqlite3.h"
 #include "mobile_util.h"
 #include "mongo/db/concurrency/write_conflict_exception.h"
 #include "mongo/util/assert_util.h"

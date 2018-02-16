@@ -7,7 +7,8 @@
 #include "mongo/util/log.h"
 #include "mongo/util/mongoutils/str.h"
 
-#include "../third_party/sqlite/sqlite3.h"
+#include <sqlite3.h>
+
 #include "mobile_recovery_unit.h"
 #include "mobile_sqlite_statement.h"
 #include "mobile_util.h"

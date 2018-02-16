@@ -48,6 +48,10 @@ if not use_system_version_of_library('zlib'):
     thirdPartyIncludePathList.append(
         ('zlib', '#/src/third_party/zlib' + zlibSuffix))
 
+if not use_system_version_of_library('sqlite'):
+    thirdPartyIncludePathList.append(
+        ('sqlite', '#/src/third_party/sqlite'))
+
 if not use_system_version_of_library('google-benchmark'):
     thirdPartyIncludePathList.append(
         ('benchmark', '#/src/third_party/benchmark' + benchmarkSuffix + '/benchmark/include'))

@@ -5,8 +5,7 @@
 #pragma once
 
 #include <string>
-
-#include "../third_party/sqlite/sqlite3.h"
+#include <sqlite3.h>
 
 #include "mobile_session.h"
 

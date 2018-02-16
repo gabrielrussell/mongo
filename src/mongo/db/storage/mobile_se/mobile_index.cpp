@@ -6,12 +6,13 @@
 
 #include "mobile_index.h"
 
+#include <sqlite3.h>
+
 #include "mongo/bson/bsonobj.h"
 #include "mongo/db/index/index_descriptor.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/storage/key_string.h"
 
-#include "../third_party/sqlite/sqlite3.h"
 #include "mobile_recovery_unit.h"
 #include "mobile_sqlite_statement.h"
 #include "mobile_util.h"

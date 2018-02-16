@@ -6,9 +6,9 @@
 
 #include <queue>
 #include <string>
+#include <sqlite3.h>
 #include <vector>
 
-#include "../third_party/sqlite/sqlite3.h"
 #include "mobile_session.h"
 #include "mongo/base/disallow_copying.h"
 #include "mongo/db/operation_context.h"

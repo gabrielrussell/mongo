@@ -8,6 +8,8 @@
 
 #include "mobile_record_store.h"
 
+#include <sqlite3.h>
+
 #include "mongo/base/static_assert.h"
 #include "mongo/db/catalog/collection_options.h"
 #include "mongo/db/jsobj.h"
@@ -20,7 +22,6 @@
 #include "mongo/util/log.h"
 #include "mongo/util/mongoutils/str.h"
 
-#include "../third_party/sqlite/sqlite3.h"
 #include "mobile_recovery_unit.h"
 #include "mobile_session.h"
 #include "mobile_sqlite_statement.h"
