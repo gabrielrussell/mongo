@@ -29,14 +29,14 @@ mkdir $SDK_ROOT
 TOOLCHAIN=$PWD/android_toolchain
 mkdir $TOOLCHAIN
 
-API_VERSION=24
+API_VERSION=21
 
 (
     cd $SDK_ROOT
     SDK_PACKAGE=sdk-tools-linux-3859397.zip
     curl -O https://dl.google.com/android/repository/$SDK_PACKAGE
     unzip $SDK_PACKAGE
-    echo y | ./tools/bin/sdkmanager "platforms;android-24" "emulator" "ndk-bundle" "platform-tools" "build-tools;23.0.3" $SYSTEM_IMAGE
+    echo y | ./tools/bin/sdkmanager "emulator" "ndk-bundle" "platform-tools" "build-tools;23.0.3" $SYSTEM_IMAGE
 )
 
 $PYTHON $SDK_ROOT/ndk-bundle/build/tools/make_standalone_toolchain.py --arch $ARCH --api $API_VERSION  --stl=libc++ --force  --install-dir $TOOLCHAIN
