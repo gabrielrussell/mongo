@@ -65,7 +65,7 @@ elif env.TargetOSIs('openbsd'):
 elif env.TargetOSIs('linux'):
     if env.TargetOSIs('android'):
         env.Append(CPPPATH=["build_android"])
-        env.Append(CPPDEFINES=["_GNU_SOURCE"])
+        #env.Append(CPPDEFINES=["_GNU_SOURCE"])
     else:
         env.Append(CPPPATH=["build_linux"])
         env.Append(CPPDEFINES=["_GNU_SOURCE"])
