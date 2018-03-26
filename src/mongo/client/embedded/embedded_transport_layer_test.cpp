@@ -45,6 +45,8 @@
 
 namespace moe = mongo::optionenvironment;
 
+libmongodbcapi_lib* lib;
+
 namespace {
 
 std::unique_ptr<mongo::unittest::TempDir> globalTempDir;
@@ -61,7 +63,7 @@ protected:
                               "mobile",
                               "--dbpath",
                               globalTempDir->path().c_str()};
-        db_handle = libmongodbcapi_db_new(argc, argv, nullptr);
+        db_handle = libmongodbcapi_db_new(lib, argc, argv, nullptr);
 
         cd_client = embedded_mongoc_client_new(db_handle);
         mongoc_client_set_error_api(cd_client, 2);
@@ -188,19 +190,16 @@ int main(int argc, char** argv, char** envp) {
 
     mongoc_init();
 
-    int init = libmongodbcapi_init(nullptr);
-    if (init != LIBMONGODB_CAPI_SUCCESS) {
-        std::cerr << "libmongodbcapi_init() failed with " << init << std::endl;
-        return EXIT_FAILURE;
-    }
+    lib = libmongodbcapi_init(nullptr);
+    massert(mongo::ErrorCodes::InternalError,
+            libmongodbcapi_status_get_what(libmongodbcapi_process_get_status()),
+            lib != nullptr);
 
     auto result = ::mongo::unittest::Suite::run(std::vector<std::string>(), "", 1);
 
-    int fini = libmongodbcapi_fini();
-    if (fini != LIBMONGODB_CAPI_SUCCESS) {
-        std::cerr << "libmongodbcapi_fini() failed with " << fini << std::endl;
-        return EXIT_FAILURE;
-    }
+    massert(mongo::ErrorCodes::InternalError,
+            libmongodbcapi_status_get_what(libmongodbcapi_process_get_status()),
+            libmongodbcapi_fini(lib) == LIBMONGODB_CAPI_SUCCESS);
 
     mongoc_cleanup();
 

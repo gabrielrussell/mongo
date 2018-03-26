@@ -48,6 +48,8 @@
 
 namespace moe = mongo::optionenvironment;
 
+libmongodbcapi_lib* lib;
+
 namespace {
 
 std::unique_ptr<mongo::unittest::TempDir> globalTempDir;
@@ -75,13 +77,20 @@ protected:
                               "mobile",
                               "--dbpath",
                               globalTempDir->path().c_str()};
-        db = libmongodbcapi_db_new(7, argv, nullptr);
-        ASSERT(db != nullptr);
+        db = libmongodbcapi_db_new(lib, 7, argv, nullptr);
+        massert(mongo::ErrorCodes::InternalError,
+                libmongodbcapi_status_get_what(libmongodbcapi_lib_get_status(lib)),
+                db != nullptr);
     }
 
     void tearDown() {
-        libmongodbcapi_db_destroy(db);
-        ASSERT_EQUALS(libmongodbcapi_get_last_error(), LIBMONGODB_CAPI_SUCCESS);
+        massert(mongo::ErrorCodes::InternalError,
+                libmongodbcapi_status_get_what(libmongodbcapi_process_get_status()),
+                libmongodbcapi_db_destroy(db) == LIBMONGODB_CAPI_SUCCESS);
+    }
+
+    libmongodbcapi_lib* getLib() {
+        return lib;
     }
 
     libmongodbcapi_db* getDB() {
@@ -90,8 +99,9 @@ protected:
 
     MongoDBCAPIClientPtr createClient() {
         MongoDBCAPIClientPtr client(libmongodbcapi_db_client_new(db));
-        ASSERT(client != nullptr);
-        ASSERT_EQUALS(libmongodbcapi_get_last_error(), LIBMONGODB_CAPI_SUCCESS);
+        massert(mongo::ErrorCodes::InternalError,
+                libmongodbcapi_status_get_what(libmongodbcapi_db_get_status(db)),
+                client != nullptr);
         return client;
     }
 
@@ -154,12 +164,6 @@ TEST_F(MongodbCAPITest, CreateMultipleClients) {
     // ensure that each client is unique by making sure that the set size equals the number of
     // clients instantiated
     ASSERT_EQUALS(static_cast<int>(clients.size()), numClients);
-}
-
-TEST_F(MongodbCAPITest, DBPump) {
-    libmongodbcapi_db* db = getDB();
-    int err = libmongodbcapi_db_pump(db);
-    ASSERT_EQUALS(err, LIBMONGODB_CAPI_SUCCESS);
 }
 
 TEST_F(MongodbCAPITest, IsMaster) {
@@ -376,9 +380,11 @@ TEST_F(MongodbCAPITest, InsertAndUpdate) {
 // This test is temporary to make sure that only one database can be created
 // This restriction may be relaxed at a later time
 TEST_F(MongodbCAPITest, CreateMultipleDBs) {
-    libmongodbcapi_db* db2 = libmongodbcapi_db_new(0, nullptr, nullptr);
+    libmongodbcapi_lib* lib = getLib();
+    libmongodbcapi_db* db2 = libmongodbcapi_db_new(lib, 0, nullptr, nullptr);
     ASSERT(db2 == nullptr);
-    ASSERT_EQUALS(libmongodbcapi_get_last_error(), LIBMONGODB_CAPI_ERROR_UNKNOWN);
+    ASSERT_EQUALS(libmongodbcapi_status_get_error(libmongodbcapi_lib_get_status(lib)),
+                  LIBMONGODB_CAPI_ERROR_DB_OPEN);
 }
 }  // namespace
 
@@ -409,19 +415,16 @@ int main(int argc, char** argv, char** envp) {
     ::mongo::serverGlobalParams.noUnixSocket = true;
     ::mongo::unittest::setupTestLogger();
 
-    int init = libmongodbcapi_init(nullptr);
-    if (init != LIBMONGODB_CAPI_SUCCESS) {
-        std::cerr << "libmongodbcapi_init() failed with " << init << std::endl;
-        return EXIT_FAILURE;
-    }
+    lib = libmongodbcapi_init(nullptr);
+    massert(mongo::ErrorCodes::InternalError,
+            libmongodbcapi_status_get_what(libmongodbcapi_process_get_status()),
+            lib != nullptr);
 
     ::mongo::unittest::Suite::run(std::vector<std::string>(), "", 1);
 
-    int fini = libmongodbcapi_fini();
-    if (fini != LIBMONGODB_CAPI_SUCCESS) {
-        std::cerr << "libmongodbcapi_fini() failed with " << fini << std::endl;
-        return EXIT_FAILURE;
-    }
+    massert(mongo::ErrorCodes::InternalError,
+            libmongodbcapi_status_get_what(libmongodbcapi_process_get_status()),
+            libmongodbcapi_fini(lib) == LIBMONGODB_CAPI_SUCCESS);
 
     globalTempDir.reset();
 }

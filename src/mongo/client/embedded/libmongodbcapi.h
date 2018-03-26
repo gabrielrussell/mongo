@@ -29,11 +29,14 @@
 #define LIBMONGODBCAPI_H
 
 #include <stddef.h>
+#include <string>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+typedef struct libmongodbcapi_status libmongodbcapi_status;
+typedef struct libmongodbcapi_lib libmongodbcapi_lib;
 typedef struct libmongodbcapi_db libmongodbcapi_db;
 typedef struct libmongodbcapi_client libmongodbcapi_client;
 
@@ -41,9 +44,12 @@ typedef enum {
     LIBMONGODB_CAPI_ERROR_UNKNOWN = -1,
     LIBMONGODB_CAPI_SUCCESS = 0,
 
+    LIBMONGODB_CAPI_ERROR_DB_INITIALIZATION_FAILED,
     LIBMONGODB_CAPI_ERROR_LIBRARY_ALREADY_INITIALIZED,
     LIBMONGODB_CAPI_ERROR_LIBRARY_NOT_INITIALIZED,
     LIBMONGODB_CAPI_ERROR_DB_OPEN,
+    LIBMONGODB_CAPI_ERROR_DBEXCEPTION,
+    LIBMONGODB_CAPI_ERROR_EXCEPTION,
 } libmongodbcapi_error;
 
 
@@ -60,7 +66,7 @@ typedef enum {
 * @return Returns LIBMONGODB_CAPI_ERROR_LIBRARY_ALREADY_INITIALIZED if libmongodbcapi_init() has
 * already been called without an intervening call to libmongodbcapi_fini().
 */
-int libmongodbcapi_init(const char* yaml_config);
+libmongodbcapi_lib* libmongodbcapi_init(const char* yaml_config);
 
 /**
 * Tears down the state of the library, all databases must be closed before calling this.
@@ -72,9 +78,12 @@ int libmongodbcapi_init(const char* yaml_config);
 * been called previously.
 * @return Returns LIBMONGODB_CAPI_ERROR_DB_OPEN if there are open databases that haven't been closed
 * with libmongodbcapi_db_destroy().
+* @return Returns LIBMONGODB_CAPI_ERROR_EXCEPTION for errors that resulted in an exception. The
+* strigified version of the exception can be retrieved with
+* libmongodbcapi_get_last_error_exception_string()
 * @return Returns LIBMONGODB_CAPI_ERROR_UNKNOWN for any other unspecified errors.
 */
-int libmongodbcapi_fini();
+int libmongodbcapi_fini(libmongodbcapi_lib*);
 
 /**
 * Starts the database and returns a handle with the service context.
@@ -88,7 +97,10 @@ int libmongodbcapi_fini();
 *
 * @return A pointer to a db handle or null on error
 */
-libmongodbcapi_db* libmongodbcapi_db_new(int argc, const char** argv, const char** envp);
+libmongodbcapi_db* libmongodbcapi_db_new(libmongodbcapi_lib* lib,
+                                         int argc,
+                                         const char** argv,
+                                         const char** envp);
 
 /**
 * Shuts down the database
@@ -99,17 +111,6 @@ libmongodbcapi_db* libmongodbcapi_db_new(int argc, const char** argv, const char
 * @return A libmongo error code
 */
 int libmongodbcapi_db_destroy(libmongodbcapi_db* db);
-
-/**
-* Let the database do background work. Returns an int from the error enum
-*
-* @param
-*      The database that has work that needs to be done
-*
-* @return Returns LIBMONGODB_CAPI_SUCCESS on success, or an error code from libmongodbcapi_error on
-* failure.
-*/
-int libmongodbcapi_db_pump(libmongodbcapi_db* db);
 
 /**
 * Creates a new clienst and retuns it so the caller can do operation
@@ -129,7 +130,7 @@ libmongodbcapi_client* libmongodbcapi_db_client_new(libmongodbcapi_db* db);
 * @param client
 *       A pointer to the client to be destroyed
 */
-void libmongodbcapi_db_client_destroy(libmongodbcapi_client* client);
+libmongodbcapi_error libmongodbcapi_db_client_destroy(libmongodbcapi_client* client);
 
 /**
 * Makes an RPC call to the database
@@ -156,10 +157,21 @@ int libmongodbcapi_db_client_wire_protocol_rpc(libmongodbcapi_client* client,
                                                size_t input_size,
                                                void** output,
                                                size_t* output_size);
-/**
-* @return a per-thread value indicating the last error
-*/
-int libmongodbcapi_get_last_error();
+
+libmongodbcapi_error libmongodbcapi_status_get_error(libmongodbcapi_status* status);
+
+const char* libmongodbcapi_status_get_what(libmongodbcapi_status* status);
+
+int libmongodbcapi_status_get_code(libmongodbcapi_status* status);
+
+libmongodbcapi_status* libmongodbcapi_process_get_status();
+
+libmongodbcapi_status* libmongodbcapi_lib_get_status(libmongodbcapi_lib* lib);
+
+libmongodbcapi_status* libmongodbcapi_db_get_status(libmongodbcapi_db* db);
+
+libmongodbcapi_status* libmongodbcapi_client_get_status(libmongodbcapi_client* client);
+
 
 #ifdef __cplusplus
 }
