@@ -74,7 +74,7 @@ struct libmongodbcapi_db {
     std::vector<char*> envpPointers;
 
     libmongodbcapi_status status;
-    libmongodbcapi_lib* parent_lib;
+    libmongodbcapi_lib* parent_lib = nullptr;
 };
 
 struct libmongodbcapi_client {
@@ -185,7 +185,7 @@ libmongodbcapi_db* db_new(libmongodbcapi_lib* lib,
     lib->status.error = LIBMONGODB_CAPI_SUCCESS;
     return global_db;
 } catch (const DBException& ex) {
-    lib->status.error = LIBMONGODB_CAPI_ERROR_DBEXCEPTION;
+    lib->status.error = LIBMONGODB_CAPI_ERROR_EXCEPTION;
     lib->status.what = ex.what();
     lib->status.exception_code = ex.code();
     return nullptr;

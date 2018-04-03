@@ -48,7 +48,7 @@
 
 namespace moe = mongo::optionenvironment;
 
-libmongodbcapi_lib* lib;
+libmongodbcapi_lib* global_lib_handle;
 
 namespace {
 
@@ -77,9 +77,9 @@ protected:
                               "mobile",
                               "--dbpath",
                               globalTempDir->path().c_str()};
-        db = libmongodbcapi_db_new(lib, 7, argv, nullptr);
+        db = libmongodbcapi_db_new(global_lib_handle, 7, argv, nullptr);
         massert(mongo::ErrorCodes::InternalError,
-                libmongodbcapi_status_get_what(libmongodbcapi_lib_get_status(lib)),
+                libmongodbcapi_status_get_what(libmongodbcapi_lib_get_status(global_lib_handle)),
                 db != nullptr);
     }
 
@@ -87,10 +87,6 @@ protected:
         massert(mongo::ErrorCodes::InternalError,
                 libmongodbcapi_status_get_what(libmongodbcapi_process_get_status()),
                 libmongodbcapi_db_destroy(db) == LIBMONGODB_CAPI_SUCCESS);
-    }
-
-    libmongodbcapi_lib* getLib() {
-        return lib;
     }
 
     libmongodbcapi_db* getDB() {
@@ -380,7 +376,7 @@ TEST_F(MongodbCAPITest, InsertAndUpdate) {
 // This test is temporary to make sure that only one database can be created
 // This restriction may be relaxed at a later time
 TEST_F(MongodbCAPITest, CreateMultipleDBs) {
-    libmongodbcapi_lib* lib = getLib();
+    libmongodbcapi_lib* lib = global_lib_handle;
     libmongodbcapi_db* db2 = libmongodbcapi_db_new(lib, 0, nullptr, nullptr);
     ASSERT(db2 == nullptr);
     ASSERT_EQUALS(libmongodbcapi_status_get_error(libmongodbcapi_lib_get_status(lib)),
@@ -415,16 +411,16 @@ int main(int argc, char** argv, char** envp) {
     ::mongo::serverGlobalParams.noUnixSocket = true;
     ::mongo::unittest::setupTestLogger();
 
-    lib = libmongodbcapi_init(nullptr);
+    global_lib_handle = libmongodbcapi_init(nullptr);
     massert(mongo::ErrorCodes::InternalError,
             libmongodbcapi_status_get_what(libmongodbcapi_process_get_status()),
-            lib != nullptr);
+            global_lib_handle != nullptr);
 
     ::mongo::unittest::Suite::run(std::vector<std::string>(), "", 1);
 
     massert(mongo::ErrorCodes::InternalError,
             libmongodbcapi_status_get_what(libmongodbcapi_process_get_status()),
-            libmongodbcapi_fini(lib) == LIBMONGODB_CAPI_SUCCESS);
+            libmongodbcapi_fini(global_lib_handle) == LIBMONGODB_CAPI_SUCCESS);
 
     globalTempDir.reset();
 }
