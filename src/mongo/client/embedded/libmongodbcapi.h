@@ -157,18 +157,56 @@ int libmongodbcapi_db_client_wire_protocol_rpc(libmongodbcapi_client* client,
                                                size_t input_size,
                                                void** output,
                                                size_t* output_size);
+/**
+* @return Returns the libmongodbcapi_error of the libmongodbcapi_status. If the failing function
+* returns a libmongodbcapi_status, then this is redundant, but if the failing function returns
+* pointer, then this is where you find out the libmongodbcapi_error for the failure.
+*/
 
 libmongodbcapi_error libmongodbcapi_status_get_error(libmongodbcapi_status* status);
 
+/**
+* @return For failures where the libmongodbcapi_error==LIBMONGODB_CAPI_ERROR_EXCEPTION, this
+* returns a string representation of the exception
+*/
+
 const char* libmongodbcapi_status_get_what(libmongodbcapi_status* status);
+
+/**
+* @return For failures where the libmongodbcapi_error==LIBMONGODB_CAPI_ERROR_EXCEPTION and the
+* exception was of type DBException, this returns the numeric code indicating which specific
+* DBException was thrown
+*/
 
 int libmongodbcapi_status_get_code(libmongodbcapi_status* status);
 
+/**
+* @return Returns a pointer to the processes libmongodbcapi_status which will hold details of
+* any failures from creating or destroying libmongodbcapi_lib's.
+*/
+
 libmongodbcapi_status* libmongodbcapi_process_get_status();
+
+/**
+* @return Returns pointer to the mongodbcapi_lib's libmongodbcapi_status which will hold details
+* of any failures of creating or destroying libmongodbcapi_db's, or from acting directly on the
+* mongodbcapi_lib
+* */
 
 libmongodbcapi_status* libmongodbcapi_lib_get_status(libmongodbcapi_lib* lib);
 
+/**
+* @return Returns pointer to the mongodbcapi_db's libmongodbcapi_status which will hold details
+* of any failures of creating or destroying libmongodbcapi_db's, or from acting directly on the 
+* libmongodbcapi_db
+* */
+
 libmongodbcapi_status* libmongodbcapi_db_get_status(libmongodbcapi_db* db);
+
+/**
+* @return Returns pointer to the mongodbcapi_db's libmongodbcapi_status which will hold details
+* of any failures from acting directly on the libmongodbcapi_client
+* */
 
 libmongodbcapi_status* libmongodbcapi_client_get_status(libmongodbcapi_client* client);
 
