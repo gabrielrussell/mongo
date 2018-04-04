@@ -45,7 +45,7 @@
 
 namespace moe = mongo::optionenvironment;
 
-libmongodbcapi_lib* lib;
+libmongodbcapi_lib* global_lib_handle;
 
 namespace {
 
@@ -63,7 +63,7 @@ protected:
                               "mobile",
                               "--dbpath",
                               globalTempDir->path().c_str()};
-        db_handle = libmongodbcapi_db_new(lib, argc, argv, nullptr);
+        db_handle = libmongodbcapi_db_new(global_lib_handle, argc, argv, nullptr);
 
         cd_client = embedded_mongoc_client_new(db_handle);
         mongoc_client_set_error_api(cd_client, 2);
@@ -190,16 +190,16 @@ int main(int argc, char** argv, char** envp) {
 
     mongoc_init();
 
-    lib = libmongodbcapi_init(nullptr);
+    global_lib_handle = libmongodbcapi_init(nullptr);
     massert(mongo::ErrorCodes::InternalError,
             libmongodbcapi_status_get_what(libmongodbcapi_process_get_status()),
-            lib != nullptr);
+            global_lib_handle != nullptr);
 
     auto result = ::mongo::unittest::Suite::run(std::vector<std::string>(), "", 1);
 
     massert(mongo::ErrorCodes::InternalError,
             libmongodbcapi_status_get_what(libmongodbcapi_process_get_status()),
-            libmongodbcapi_fini(lib) == LIBMONGODB_CAPI_SUCCESS);
+            libmongodbcapi_fini(global_lib_handle) == LIBMONGODB_CAPI_SUCCESS);
 
     mongoc_cleanup();
 
