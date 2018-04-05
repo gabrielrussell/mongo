@@ -44,13 +44,21 @@ typedef enum {
     LIBMONGODB_CAPI_ERROR_UNKNOWN = -1,
     LIBMONGODB_CAPI_SUCCESS = 0,
 
+    LIBMONGODB_CAPI_ERROR_EXCEPTION,
     LIBMONGODB_CAPI_ERROR_DB_INITIALIZATION_FAILED,
     LIBMONGODB_CAPI_ERROR_LIBRARY_ALREADY_INITIALIZED,
     LIBMONGODB_CAPI_ERROR_LIBRARY_NOT_INITIALIZED,
     LIBMONGODB_CAPI_ERROR_DB_OPEN,
-    LIBMONGODB_CAPI_ERROR_EXCEPTION,
+    LIBMONGODB_CAPI_ERROR_ENOMEM,
 } libmongodbcapi_error;
 
+
+/**
+* @return Returns a pointer to the processes libmongodbcapi_status which will hold details of
+* any failures from creating or destroying libmongodbcapi_lib's.
+*/
+
+libmongodbcapi_status* libmongodbcapi_process_get_status();
 
 /**
 * Initializes the mongodbcapi library, required before any other call. Cannot be called again
@@ -102,6 +110,14 @@ libmongodbcapi_db* libmongodbcapi_db_new(libmongodbcapi_lib* lib,
                                          const char** envp);
 
 /**
+* @return Returns pointer to the mongodbcapi_lib's libmongodbcapi_status which will hold details
+* of any failures of creating or destroying libmongodbcapi_db's, or from acting directly on the
+* mongodbcapi_lib
+* */
+
+libmongodbcapi_status* libmongodbcapi_lib_get_status(libmongodbcapi_lib* lib);
+
+/**
 * Shuts down the database
 *
 * @param
@@ -112,6 +128,14 @@ libmongodbcapi_db* libmongodbcapi_db_new(libmongodbcapi_lib* lib,
 int libmongodbcapi_db_destroy(libmongodbcapi_db* db);
 
 /**
+* @return Returns pointer to the mongodbcapi_db's libmongodbcapi_status which will hold details
+* of any failures of creating or destroying libmongodbcapi_db's, or from acting directly on the 
+* libmongodbcapi_db
+* */
+
+libmongodbcapi_status* libmongodbcapi_db_get_status(libmongodbcapi_db* db);
+
+/**
 * Creates a new clienst and retuns it so the caller can do operation
 * A client will be destroyed when the owning db is destroyed
 *
@@ -120,7 +144,7 @@ int libmongodbcapi_db_destroy(libmongodbcapi_db* db);
 *
 * @return A pointer to a client or null on error
 */
-libmongodbcapi_client* libmongodbcapi_db_client_new(libmongodbcapi_db* db);
+libmongodbcapi_client* libmongodbcapi_client_new(libmongodbcapi_db* db);
 
 /**
 * Destroys a client and removes it from the db/service context
@@ -129,8 +153,16 @@ libmongodbcapi_client* libmongodbcapi_db_client_new(libmongodbcapi_db* db);
 * @param client
 *       A pointer to the client to be destroyed
 */
-libmongodbcapi_error libmongodbcapi_db_client_destroy(libmongodbcapi_client* client);
+int libmongodbcapi_client_destroy(libmongodbcapi_client* client);
 
+/**
+* @param client
+*      The client that that the failure happed on
+*
+* @return Returns pointer to the mongodbcapi_db's libmongodbcapi_status which will hold details
+* of any failures from acting directly on the libmongodbcapi_client
+* */
+libmongodbcapi_status* libmongodbcapi_client_get_status(libmongodbcapi_client* client);
 /**
 * Makes an RPC call to the database
 *
@@ -151,7 +183,7 @@ libmongodbcapi_error libmongodbcapi_db_client_destroy(libmongodbcapi_client* cli
 * @return Returns LIBMONGODB_CAPI_SUCCESS on success, or an error code from libmongodbcapi_error on
 * failure.
 */
-int libmongodbcapi_db_client_wire_protocol_rpc(libmongodbcapi_client* client,
+int libmongodbcapi_client_wire_protocol_rpc(libmongodbcapi_client* client,
                                                const void* input,
                                                size_t input_size,
                                                void** output,
@@ -162,7 +194,7 @@ int libmongodbcapi_db_client_wire_protocol_rpc(libmongodbcapi_client* client,
 * pointer, then this is where you find out the libmongodbcapi_error for the failure.
 */
 
-libmongodbcapi_error libmongodbcapi_status_get_error(libmongodbcapi_status* status);
+int libmongodbcapi_status_get_error(libmongodbcapi_status* status);
 
 /**
 * @return For failures where the libmongodbcapi_error==LIBMONGODB_CAPI_ERROR_EXCEPTION, this
@@ -178,37 +210,6 @@ const char* libmongodbcapi_status_get_what(libmongodbcapi_status* status);
 */
 
 int libmongodbcapi_status_get_code(libmongodbcapi_status* status);
-
-/**
-* @return Returns a pointer to the processes libmongodbcapi_status which will hold details of
-* any failures from creating or destroying libmongodbcapi_lib's.
-*/
-
-libmongodbcapi_status* libmongodbcapi_process_get_status();
-
-/**
-* @return Returns pointer to the mongodbcapi_lib's libmongodbcapi_status which will hold details
-* of any failures of creating or destroying libmongodbcapi_db's, or from acting directly on the
-* mongodbcapi_lib
-* */
-
-libmongodbcapi_status* libmongodbcapi_lib_get_status(libmongodbcapi_lib* lib);
-
-/**
-* @return Returns pointer to the mongodbcapi_db's libmongodbcapi_status which will hold details
-* of any failures of creating or destroying libmongodbcapi_db's, or from acting directly on the 
-* libmongodbcapi_db
-* */
-
-libmongodbcapi_status* libmongodbcapi_db_get_status(libmongodbcapi_db* db);
-
-/**
-* @return Returns pointer to the mongodbcapi_db's libmongodbcapi_status which will hold details
-* of any failures from acting directly on the libmongodbcapi_client
-* */
-
-libmongodbcapi_status* libmongodbcapi_client_get_status(libmongodbcapi_client* client);
-
 
 #ifdef __cplusplus
 }

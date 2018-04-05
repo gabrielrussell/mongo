@@ -67,7 +67,7 @@ namespace {
 struct FreeAndDestroy {
     void operator()(mongoc_stream_t* x) {
         auto stream = static_cast<mongoc_stream_embedded_t*>(x);
-        libmongodbcapi_db_client_destroy(stream->clientHandle);
+        libmongodbcapi_client_destroy(stream->clientHandle);
         stream->~mongoc_stream_embedded_t();
         free(stream);
     }
@@ -135,7 +135,7 @@ extern "C" ssize_t mongoc_stream_embedded_writev(mongoc_stream_t* s,
         if (stream->input_length_to_go == 0) {
             auto input_len = (size_t)(stream->inputBuf.data() - stream->hiddenBuf.get());
             int retVal =
-                libmongodbcapi_db_client_wire_protocol_rpc(stream->clientHandle,
+                libmongodbcapi_client_wire_protocol_rpc(stream->clientHandle,
                                                            stream->hiddenBuf.get(),
                                                            input_len,
                                                            &(stream->libmongo_output),
@@ -221,7 +221,7 @@ extern "C" mongoc_stream_t* embedded_stream_initiator(const mongoc_uri_t* uri,
     stream_buf.release();  // This must be here so we don't have double ownership
     stream->state = RPCState::WaitingForMessageLength;
     // Set up connections to database
-    stream->clientHandle = libmongodbcapi_db_client_new((libmongodbcapi_db*)user_data);
+    stream->clientHandle = libmongodbcapi_client_new((libmongodbcapi_db*)user_data);
 
     // Connect the functions to the stream
     // type is not relevant for us. Has to be set for the C Driver, but it has to do with picking

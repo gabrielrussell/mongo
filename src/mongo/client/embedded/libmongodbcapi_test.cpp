@@ -57,7 +57,7 @@ std::unique_ptr<mongo::unittest::TempDir> globalTempDir;
 struct MongodCapiCleaner {
     void operator()(libmongodbcapi_client* const p) {
         if (p) {
-            libmongodbcapi_db_client_destroy(p);
+            libmongodbcapi_client_destroy(p);
         }
     }
 };
@@ -94,7 +94,7 @@ protected:
     }
 
     MongoDBCAPIClientPtr createClient() {
-        MongoDBCAPIClientPtr client(libmongodbcapi_db_client_new(db));
+        MongoDBCAPIClientPtr client(libmongodbcapi_client_new(db));
         massert(mongo::ErrorCodes::InternalError,
                 libmongodbcapi_status_get_what(libmongodbcapi_db_get_status(db)),
                 client != nullptr);
@@ -116,7 +116,7 @@ protected:
         size_t outputSize;
 
         // call the wire protocol
-        int err = libmongodbcapi_db_client_wire_protocol_rpc(
+        int err = libmongodbcapi_client_wire_protocol_rpc(
             client.get(), inputMessage.buf(), inputMessage.size(), &output, &outputSize);
         ASSERT_EQUALS(err, LIBMONGODB_CAPI_SUCCESS);
 
