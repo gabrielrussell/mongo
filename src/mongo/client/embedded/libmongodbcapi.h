@@ -45,17 +45,18 @@ typedef enum {
     LIBMONGODB_CAPI_SUCCESS = 0,
 
     LIBMONGODB_CAPI_ERROR_EXCEPTION,
-    LIBMONGODB_CAPI_ERROR_DB_INITIALIZATION_FAILED,
     LIBMONGODB_CAPI_ERROR_LIBRARY_ALREADY_INITIALIZED,
     LIBMONGODB_CAPI_ERROR_LIBRARY_NOT_INITIALIZED,
+    LIBMONGODB_CAPI_ERROR_DB_INITIALIZATION_FAILED,
     LIBMONGODB_CAPI_ERROR_DB_OPEN,
+    LIBMONGODB_CAPI_ERROR_DB_CLIENTS_OPEN,
     LIBMONGODB_CAPI_ERROR_ENOMEM,
 } libmongodbcapi_error;
 
 
 /**
 * @return Returns a pointer to the processes libmongodbcapi_status which will hold details of
-* any failures from creating or destroying libmongodbcapi_lib's.
+* any failures of libmongodbcapi_init() or libmongodbcapi_fini(). See libmongodbcapi_status_get_error(), libmongodbcapi_status_get_code(), and libmongodbcapi_status_get_what().
 */
 
 libmongodbcapi_status* libmongodbcapi_process_get_status();
@@ -64,14 +65,16 @@ libmongodbcapi_status* libmongodbcapi_process_get_status();
 * Initializes the mongodbcapi library, required before any other call. Cannot be called again
 * without libmongodbcapi_fini() being called first.
 *
-* @param config null-terminated YAML formatted MongoDB configuration. See documentation for valid
+* @param yaml_config null-terminated YAML formatted MongoDB configuration. See documentation for valid
 * options.
 *
 * @note This function is not thread safe.
 *
-* @return Returns LIBMONGODB_CAPI_SUCCESS on success.
-* @return Returns LIBMONGODB_CAPI_ERROR_LIBRARY_ALREADY_INITIALIZED if libmongodbcapi_init() has
-* already been called without an intervening call to libmongodbcapi_fini().
+* @return Returns a pointer to a libmongodbcapi_lib on success.
+* @return Returns nullptr on error, and details of the error including a libmongodbcapi_error will be
+* available via libmongodbcapi_process_get_status(). If the library had already been initalized,
+* then the libmongodbcapi_error will be LIBMONGODB_CAPI_ERROR_LIBRARY_ALREADY_INITIALIZED.
+*
 */
 libmongodbcapi_lib* libmongodbcapi_init(const char* yaml_config);
 
@@ -88,7 +91,6 @@ libmongodbcapi_lib* libmongodbcapi_init(const char* yaml_config);
 * @return Returns LIBMONGODB_CAPI_ERROR_EXCEPTION for errors that resulted in an exception. The
 * strigified version of the exception can be retrieved with
 * libmongodbcapi_get_last_error_exception_string()
-* @return Returns LIBMONGODB_CAPI_ERROR_UNKNOWN for any other unspecified errors.
 */
 int libmongodbcapi_fini(libmongodbcapi_lib*);
 

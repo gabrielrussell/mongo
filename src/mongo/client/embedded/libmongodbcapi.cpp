@@ -98,7 +98,7 @@ namespace {
 bool libraryInitialized_ = false;
 libmongodbcapi_db* global_db = nullptr;
 
-libmongodbcapi_status process_status;
+libmongodbcapi_status process_status = { 0 };
 
 libmongodbcapi_lib* capi_lib_init(const char* yaml_config) {
 
@@ -111,6 +111,15 @@ libmongodbcapi_lib* capi_lib_init(const char* yaml_config) {
     auto lib = std::make_unique<libmongodbcapi_lib>();
 
     return lib.release();
+} catch (const std::bad_alloc& ex) {
+    process_status = { LIBMONGODB_CAPI_ERROR_ENOMEM, mongo::ErrorCodes::InternalError, "" };
+    return nullptr;
+} catch (const DBException& ex) {
+    process_status = { LIBMONGODB_CAPI_ERROR_EXCEPTION, ex.code(),  ex.what() };
+    return nullptr;
+} catch (const std::exception& ex) {
+    process_status = { LIBMONGODB_CAPI_ERROR_EXCEPTION, mongo::ErrorCodes::InternalError, ex.what()};
+    return nullptr;
 }
 
 int capi_lib_fini(libmongodbcapi_lib* lib) {
@@ -126,15 +135,23 @@ int capi_lib_fini(libmongodbcapi_lib* lib) {
 
     delete lib;
     return LIBMONGODB_CAPI_SUCCESS;
+} catch (const std::bad_alloc& ex) {
+    process_status = { LIBMONGODB_CAPI_ERROR_ENOMEM, mongo::ErrorCodes::InternalError, "" };
+    return nullptr;
+} catch (const DBException& ex) {
+    process_status = { LIBMONGODB_CAPI_ERROR_EXCEPTION, ex.code(),  ex.what() };
+    return nullptr;
+} catch (const std::exception& ex) {
+    process_status = { LIBMONGODB_CAPI_ERROR_EXCEPTION, mongo::ErrorCodes::InternalError, ex.what()};
+    return nullptr;
 }
-
 
 libmongodbcapi_db* db_new(libmongodbcapi_lib* lib,
                           int argc,
                           const char** argv,
                           const char** envp) noexcept try {
     if (!libraryInitialized_) {
-        lib->status = { LIBMONGODB_CAPI_ERROR_LIBRARY_ALREADY_INITIALIZED, mongo::ErrorCodes::InternalError, "" };
+        lib->status = { LIBMONGODB_CAPI_ERROR_LIBRARY_NOT_INITIALIZED, mongo::ErrorCodes::InternalError, "" };
         return nullptr;
     }
     if (global_db) {
@@ -159,7 +176,7 @@ libmongodbcapi_db* db_new(libmongodbcapi_lib* lib,
     // iterate over envp and copy them to envpStorage
     while (envp != nullptr && *envp != nullptr) {
         auto s = mongo::stdx::make_unique<char[]>(std::strlen(*envp) + 1);
-        std::strncpy(s.get(), *envp, std::strlen(*envp) + 1);
+        std::strncpy(s.get(), *envp, std::sntrlen(*envp) + 1);
         global_db->envpPointers.push_back(s.get());
         global_db->envpStorage.push_back(std::move(s));
         envp++;
@@ -195,8 +212,8 @@ int db_destroy(libmongodbcapi_db* db) noexcept {
     libmongodbcapi_lib* lib = db->parent_lib;
     try {
         if (!db->open_clients.empty()) {
-            lib->status = { LIBMONGODB_CAPI_ERROR_UNKNOWN, mongo::ErrorCodes::InternalError, "" };
-            return LIBMONGODB_CAPI_ERROR_UNKNOWN;
+        lib->status = { LIBMONGODB_CAPI_ERROR_DB_CLIENTS_OPEN, mongo::ErrorCodes::InternalError, "" };
+            return LIBMONGODB_CAPI_ERROR_DB_CLIENTS_OPEN;
         }
 
         embedded::shutdown(global_db->serviceContext);
