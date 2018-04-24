@@ -576,11 +576,12 @@ functions:
         export ${compile_env|}
         (
             cd src/libbson
-            /opt/cmake/bin/cmake -DCMAKE_INSTALL_PREFIX=$(pwd)/../../../src/build/mongo-embedded-sdk-${version}-tmp -DCMAKE_PREFIX_PATH=$(pwd)/../../install -DENABLE_SNAPPY=OFF -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DENABLE_ZLIB=OFF -DENABLE_SSL=OFF -DENABLE_SASL=OFF -DENABLE_TESTS=OFF -DENABLE_SRV=OFF -DENABLE_EXAMPLES=OFF ${libbson_cmake_flags}
-            make install
+            /opt/cmake/bin/cmake
+            ${cmake_path|/opt/cmake/bin/cmake} -DCMAKE_INSTALL_PREFIX=$(pwd)/../../../src/build/mongo-embedded-sdk-${version}-tmp -DCMAKE_PREFIX_PATH=$(pwd)/../../install -DENABLE_SNAPPY=OFF -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DENABLE_ZLIB=OFF -DENABLE_SSL=OFF -DENABLE_SASL=OFF -DENABLE_TESTS=OFF -DENABLE_SRV=OFF -DENABLE_EXAMPLES=OFF ${libbson_cmake_flags}
+            make install VERBOSE=1
         )
-        /opt/cmake/bin/cmake -DCMAKE_INSTALL_PREFIX=$(pwd)/../src/build/mongo-embedded-sdk-${version}-tmp -DCMAKE_PREFIX_PATH=$(pwd)/install -DENABLE_SNAPPY=OFF -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DENABLE_ZLIB=OFF -DENABLE_SSL=OFF -DENABLE_SASL=OFF -DENABLE_TESTS=OFF -DENABLE_SRV=OFF -DENABLE_EXAMPLES=OFF ${cdriver_cmake_flags}
-        make install
+        ${cmake_path|/opt/cmake/bin/cmake} -DCMAKE_INSTALL_PREFIX=$(pwd)/../src/build/mongo-embedded-sdk-${version}-tmp -DCMAKE_PREFIX_PATH=$(pwd)/install -DENABLE_SNAPPY=OFF -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DENABLE_ZLIB=OFF -DENABLE_SSL=OFF -DENABLE_SASL=OFF -DENABLE_TESTS=OFF -DENABLE_SRV=OFF -DENABLE_EXAMPLES=OFF ${cdriver_cmake_flags}
+        make install VERBOSE=1
         mv $(pwd)/../src/build/mongo-embedded-sdk-${version}-tmp $(pwd)/../src/build/mongo-embedded-sdk-${version}
         fi
 
@@ -893,6 +894,7 @@ functions:
         fi
 
         ${activate_virtualenv}
+        trap "cat build/scons/config.log" EXIT
         ${compile_env|} $python ./buildscripts/scons.py ${compile_flags|} ${task_compile_flags|} ${scons_cache_args|} $extra_args ${targets} ${additional_targets|} MONGO_VERSION=${version}
 
   "generate compile expansions" :
@@ -7729,6 +7731,7 @@ buildvariants:
   expansions:
     test_flags: --excludeWithAnyTags=requires_mmapv1,uses_transactions
     build_cdriver: true
+    cmake_path: /Applications/cmake-3.2.2-Darwin-x86_64/CMake.app/Contents/bin/cmake
     compile_env: DEVELOPER_DIR=/Applications/Xcode9.2.app
     compile_flags: >-
       -j$(sysctl -n hw.logicalcpu)
@@ -7769,6 +7772,7 @@ buildvariants:
   expansions:
     test_flags: --excludeWithAnyTags=requires_mmapv1,uses_transactions
     build_cdriver: true
+    cmake_path: /Applications/cmake-3.2.2-Darwin-x86_64/CMake.app/Contents/bin/cmake
     compile_flags: >-
       -j$(sysctl -n hw.logicalcpu)
       --dbg=off
@@ -7806,6 +7810,7 @@ buildvariants:
   expansions:
     test_flags: --excludeWithAnyTags=requires_mmapv1,uses_transactions
     build_cdriver: true
+    cmake_path: /Applications/cmake-3.2.2-Darwin-x86_64/CMake.app/Contents/bin/cmake
     compile_env: DEVELOPER_DIR=/Applications/Xcode9.2.app
     compile_flags: >-
       -j$(sysctl -n hw.logicalcpu)
@@ -7845,6 +7850,7 @@ buildvariants:
   batchtime: 1440 # 1 day
   expansions:
     build_cdriver: true
+    cmake_path: /Applications/cmake-3.2.2-Darwin-x86_64/CMake.app/Contents/bin/cmake
     test_flags: --excludeWithAnyTags=requires_mmapv1,uses_transactions
     compile_env: DEVELOPER_DIR=/Applications/XCode9.2.app
     compile_flags: >-
@@ -7866,6 +7872,7 @@ buildvariants:
   batchtime: 1440 # 1 day
   expansions:
     build_cdriver: true
+    cmake_path: /Applications/cmake-3.2.2-Darwin-x86_64/CMake.app/Contents/bin/cmake
     test_flags: --excludeWithAnyTags=requires_mmapv1,uses_transactions
     compile_env: DEVELOPER_DIR=/Applications/XCode9.2.app
     compile_flags: >-
@@ -7924,8 +7931,13 @@ buildvariants:
       --android-toolchain-path=$(dirname $(pwd))/android_toolchain
       --variables-files=etc/scons/android_toolchain.vars
       --use-system-mongo-c=on
-    libbson_cmake_flags:
-    cdriver_cmake_flags:
+    libbson_cmake_flags: >-
+        -DCMAKE_SYSTEM_PROCESSOR=arm
+        -DCMAKE_C_FLAGS="-arch arm64"
+    cdriver_cmake_flags: >-
+        -DCMAKE_SYSTEM_PROCESSOR=arm
+        -DCMAKE_C_FLAGS="-arch arm64"
+#      LDFLAGS="-Wl,-rpath,\$ORIGIN/../lib"                            
     test_flags: --excludeWithAnyTags=requires_mmapv1
     compile_env: DEVELOPER_DIR=/Applications/Xcode8.3.app
     disable_unit_tests: true
