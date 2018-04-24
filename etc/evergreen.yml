@@ -7932,12 +7932,9 @@ buildvariants:
       --variables-files=etc/scons/android_toolchain.vars
       --use-system-mongo-c=on
     libbson_cmake_flags: >-
-        -DCMAKE_SYSTEM_PROCESSOR=arm
-        -DCMAKE_C_FLAGS="-arch arm64"
+        -DCMAKE_TOOLCHAIN_FILE=../../../android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
     cdriver_cmake_flags: >-
-        -DCMAKE_SYSTEM_PROCESSOR=arm
-        -DCMAKE_C_FLAGS="-arch arm64"
-#      LDFLAGS="-Wl,-rpath,\$ORIGIN/../lib"                            
+        -DCMAKE_TOOLCHAIN_FILE=../android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
     test_flags: --excludeWithAnyTags=requires_mmapv1
     compile_env: DEVELOPER_DIR=/Applications/Xcode8.3.app
     disable_unit_tests: true
