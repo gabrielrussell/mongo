@@ -566,6 +566,7 @@ functions:
         set -o xtrace
 
         VERSION=${version}
+        WORKDIR=${workdir}
 
         if [ "${build_cdriver|}" = "true" ]; then
         CDRIVER_VERSION=1.9.2
@@ -577,16 +578,19 @@ functions:
         cd mongo-c-driver
         # remove this patch once SERVER-33101 is released
         patch -p1 < ../src/buildscripts/mongoc-stat.c.diff
+        # remove this once ??? is released
+        patch -p1 < ../src/buildscripts/mongo-c-driver_CMakeLists.txt.diff
+
         trap "cat CMakeFiles/CMakeOutput.log" EXIT
         export ${compile_env|}
         (
             cd src/libbson
-            ${cmake_path|/opt/cmake/bin/cmake} -DCMAKE_INSTALL_PREFIX=$(pwd)/../../../src/build/mongo-embedded-sdk-$VERSION-tmp -DCMAKE_PREFIX_PATH=$(pwd)/../../../src/build/mongo-embedded-sdk-$VERSION-tmp -DENABLE_SNAPPY=OFF -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DENABLE_ZLIB=OFF -DENABLE_SSL=OFF -DENABLE_SASL=OFF -DENABLE_TESTS=OFF -DENABLE_SRV=OFF -DENABLE_EXAMPLES=OFF ${libbson_cmake_flags}
+            ${cmake_path|/opt/cmake/bin/cmake} -DCMAKE_INSTALL_PREFIX=$WORKDIR/src/build/mongo-embedded-sdk-$VERSION-tmp -DCMAKE_PREFIX_PATH=$WORKDIR/src/build/mongo-embedded-sdk-$VERSION-tmp -DENABLE_SNAPPY=OFF -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DENABLE_ZLIB=OFF -DENABLE_SSL=OFF -DENABLE_SASL=OFF -DENABLE_TESTS=OFF -DENABLE_SRV=OFF -DENABLE_EXAMPLES=OFF ${libbson_cmake_flags}
             make install VERBOSE=1
         )
-        ${cmake_path|/opt/cmake/bin/cmake} -DCMAKE_INSTALL_PREFIX=$(pwd)/../src/build/mongo-embedded-sdk-$VERSION-tmp -DCMAKE_PREFIX_PATH=$(pwd)/../src/build/mongo-embedded-sdk-$VERSION-tmp -DENABLE_SNAPPY=OFF -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DENABLE_ZLIB=OFF -DENABLE_SSL=OFF -DENABLE_SASL=OFF -DENABLE_TESTS=OFF -DENABLE_SRV=OFF -DENABLE_EXAMPLES=OFF ${cdriver_cmake_flags}
+        ${cmake_path|/opt/cmake/bin/cmake} -DCMAKE_INSTALL_PREFIX=$WORKDIR/src/build/mongo-embedded-sdk-$VERSION-tmp -DCMAKE_PREFIX_PATH=$WORKDIR/src/build/mongo-embedded-sdk-$VERSION-tmp -DENABLE_SNAPPY=OFF -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DENABLE_ZLIB=OFF -DENABLE_SSL=OFF -DENABLE_SASL=OFF -DENABLE_TESTS=OFF -DENABLE_SRV=OFF -DENABLE_EXAMPLES=OFF ${cdriver_cmake_flags}
         make install VERBOSE=1
-        mv $(pwd)/../src/build/mongo-embedded-sdk-$VERSION-tmp $(pwd)/../src/build/mongo-embedded-sdk-$VERSION
+        mv $WORKDIR/src/build/mongo-embedded-sdk-$VERSION-tmp $WORKDIR/src/build/mongo-embedded-sdk-$VERSION
         fi
 
   "build new tools" :
@@ -7937,16 +7941,16 @@ buildvariants:
       --use-system-mongo-c=on
     libbson_cmake_flags: >-
         -DTHREADS_PTHREAD_ARG=2
-        -DCMAKE_TOOLCHAIN_FILE=../../../android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
-        -DCMAKE_FIND_ROOT_PATH=../../../android_toolchain
+        -DCMAKE_TOOLCHAIN_FILE=$WORKDIR/android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
+        -DCMAKE_FIND_ROOT_PATH=$WORKDIR/src/android_toolchain
         -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
         -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY
     cdriver_cmake_flags: >-
         -DTHREADS_PTHREAD_ARG=2
-        -DCMAKE_TOOLCHAIN_FILE=../android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
-        -DCMAKE_FIND_ROOT_PATH="../android_toolchain;../src/build/mongo-embedded-sdk-$VERSION-tmp"
+        -DCMAKE_TOOLCHAIN_FILE=$WORKDIR/src/android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
+        -DCMAKE_FIND_ROOT_PATH="$WORKDIR/src/android_toolchain;$WORKDIR/src/build/mongo-embedded-sdk-$VERSION-tmp"
         -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
@@ -7979,16 +7983,16 @@ buildvariants:
       --use-system-mongo-c=on
     libbson_cmake_flags: >-
         -DTHREADS_PTHREAD_ARG=2
-        -DCMAKE_TOOLCHAIN_FILE=../../../android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
-        -DCMAKE_FIND_ROOT_PATH=../android_toolchain
+        -DCMAKE_TOOLCHAIN_FILE=$WORKDIR/src/android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
+        -DCMAKE_FIND_ROOT_PATH=$WORKDIR/src/android_toolchain
         -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
         -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY
     cdriver_cmake_flags: >-
         -DTHREADS_PTHREAD_ARG=2
-        -DCMAKE_TOOLCHAIN_FILE=../android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
-        -DCMAKE_FIND_ROOT_PATH="../android_toolchain;../src/build/mongo-embedded-sdk-$VERSION-tmp"
+        -DCMAKE_TOOLCHAIN_FILE=$WORKDIR/src/android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
+        -DCMAKE_FIND_ROOT_PATH="$WORKDIR/src/android_toolchain;$WORKDIR/src/build/mongo-embedded-sdk-$VERSION-tmp"
         -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
