@@ -7940,6 +7940,7 @@ buildvariants:
       --variables-files=etc/scons/android_toolchain.vars
       --use-system-mongo-c=on
     libbson_cmake_flags: >-
+        -DANDROID_NATIVE_API_LEVEL=24
         -DTHREADS_PTHREAD_ARG=2
         -DCMAKE_TOOLCHAIN_FILE=$WORKDIR/android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
         -DCMAKE_FIND_ROOT_PATH=$WORKDIR/android_toolchain
@@ -7948,6 +7949,7 @@ buildvariants:
         -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
         -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY
     cdriver_cmake_flags: >-
+        -DANDROID_NATIVE_API_LEVEL=24
         -DTHREADS_PTHREAD_ARG=2
         -DCMAKE_TOOLCHAIN_FILE=$WORKDIR/android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
         -DCMAKE_FIND_ROOT_PATH="$WORKDIR/android_toolchain;$WORKDIR/src/build/mongo-embedded-sdk-$VERSION-tmp"
@@ -7982,6 +7984,7 @@ buildvariants:
       --variables-files=etc/scons/android_toolchain.vars
       --use-system-mongo-c=on
     libbson_cmake_flags: >-
+        -DANDROID_NATIVE_API_LEVEL=24
         -DTHREADS_PTHREAD_ARG=2
         -DCMAKE_TOOLCHAIN_FILE=$WORKDIR/android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
         -DCMAKE_FIND_ROOT_PATH=$WORKDIR/android_toolchain
@@ -7990,6 +7993,7 @@ buildvariants:
         -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
         -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY
     cdriver_cmake_flags: >-
+        -DANDROID_NATIVE_API_LEVEL=24
         -DTHREADS_PTHREAD_ARG=2
         -DCMAKE_TOOLCHAIN_FILE=$WORKDIR/android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
         -DCMAKE_FIND_ROOT_PATH="$WORKDIR/android_toolchain;$WORKDIR/src/build/mongo-embedded-sdk-$VERSION-tmp"
