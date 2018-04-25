@@ -1,0 +1,26 @@
+--- mongo-c-driver-1.9.2/CMakeLists.txt	2018-01-08 09:15:49.000000000 -0500
++++ mongo-c-driver/CMakeLists.txt	2018-04-25 16:20:22.508898593 -0400
+@@ -199,9 +199,11 @@
+ endif ()
+ 
+ include(CheckLibraryExists)
+-CHECK_LIBRARY_EXISTS(ssl ASN1_STRING_get0_data "openssl/asn1.h" MONGOC_HAVE_ASN1_STRING_GET0_DATA)
+-if (NOT MONGOC_HAVE_ASN1_STRING_GET0_DATA)
+-   set (MONGOC_HAVE_ASN1_STRING_GET0_DATA 0)
++if (NOT ENABLE_SSL STREQUAL OFF)
++    CHECK_LIBRARY_EXISTS(ssl ASN1_STRING_get0_data "openssl/asn1.h" MONGOC_HAVE_ASN1_STRING_GET0_DATA)
++    if (NOT MONGOC_HAVE_ASN1_STRING_GET0_DATA)
++       set (MONGOC_HAVE_ASN1_STRING_GET0_DATA 0)
++    endif ()
+ endif ()
+ 
+ if (NOT (ENABLE_SASL STREQUAL CYRUS
+@@ -622,7 +624,7 @@
+    set(THREAD_LIB ${CMAKE_THREAD_LIBS_INIT})
+ endif()
+ 
+-set (LIBS ${SASL_LIBS} ${SSL_LIBS} ${SHM_LIB} ${RESOLV_LIBS} ${SNAPPY_LIBS} Threads::Threads)
++set (LIBS ${SASL_LIBS} ${SSL_LIBS} ${SHM_LIB} ${RESOLV_LIBS} ${SNAPPY_LIBS} ${THREAD_LIB}})
+ if(WIN32)
+    set (LIBS ${LIBS} ws2_32)
+ endif()
