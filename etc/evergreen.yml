@@ -7942,15 +7942,15 @@ buildvariants:
     libbson_cmake_flags: >-
         -DTHREADS_PTHREAD_ARG=2
         -DCMAKE_TOOLCHAIN_FILE=$WORKDIR/android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
-        -DCMAKE_FIND_ROOT_PATH=$WORKDIR/src/android_toolchain
+        -DCMAKE_FIND_ROOT_PATH=$WORKDIR/android_toolchain
         -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
         -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY
     cdriver_cmake_flags: >-
         -DTHREADS_PTHREAD_ARG=2
-        -DCMAKE_TOOLCHAIN_FILE=$WORKDIR/src/android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
-        -DCMAKE_FIND_ROOT_PATH="$WORKDIR/src/android_toolchain;$WORKDIR/src/build/mongo-embedded-sdk-$VERSION-tmp"
+        -DCMAKE_TOOLCHAIN_FILE=$WORKDIR/android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
+        -DCMAKE_FIND_ROOT_PATH="$WORKDIR/android_toolchain;$WORKDIR/src/build/mongo-embedded-sdk-$VERSION-tmp"
         -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
@@ -7983,16 +7983,16 @@ buildvariants:
       --use-system-mongo-c=on
     libbson_cmake_flags: >-
         -DTHREADS_PTHREAD_ARG=2
-        -DCMAKE_TOOLCHAIN_FILE=$WORKDIR/src/android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
-        -DCMAKE_FIND_ROOT_PATH=$WORKDIR/src/android_toolchain
+        -DCMAKE_TOOLCHAIN_FILE=$WORKDIR/android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
+        -DCMAKE_FIND_ROOT_PATH=$WORKDIR/android_toolchain
         -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
         -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY
     cdriver_cmake_flags: >-
         -DTHREADS_PTHREAD_ARG=2
-        -DCMAKE_TOOLCHAIN_FILE=$WORKDIR/src/android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
-        -DCMAKE_FIND_ROOT_PATH="$WORKDIR/src/android_toolchain;$WORKDIR/src/build/mongo-embedded-sdk-$VERSION-tmp"
+        -DCMAKE_TOOLCHAIN_FILE=$WORKDIR/android_sdk/ndk-bundle/build/cmake/android.toolchain.cmake
+        -DCMAKE_FIND_ROOT_PATH="$WORKDIR/android_toolchain;$WORKDIR/src/build/mongo-embedded-sdk-$VERSION-tmp"
         -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY
         -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
