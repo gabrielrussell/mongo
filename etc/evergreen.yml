@@ -9047,7 +9047,6 @@ buildvariants:
     libbson_cmake_flags:
     cdriver_cmake_flags:
     test_flags: --excludeWithAnyTags=requires_mmapv1
-    compile_env: DEVELOPER_DIR=/Applications/Xcode8.3.app
     disable_unit_tests: true
     enable_embedded_tests: native
   tasks:
@@ -9141,7 +9140,6 @@ buildvariants:
         -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
         -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY
         -DCMAKE_INSTALL_NAME_DIR='\$ORIGIN/../lib'
-    compile_env: JAVA_HOME=/opt/java/jdk8/
     disable_unit_tests: true
     # The Android x86_64 emulator requires KVM.
     enable_embedded_tests: false
