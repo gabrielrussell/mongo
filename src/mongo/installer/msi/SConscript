@@ -5,6 +5,9 @@ import os
 Import("env")
 Import("has_option")
 
+if not env.TargetOSIs('windows'):
+    Return()
+
 env = env.Clone()
 
 env.SConscript(

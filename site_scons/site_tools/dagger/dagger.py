@@ -106,6 +106,7 @@ def emit_obj_db_entry(target, source, env):
     for t in target:
         if str(t) is None:
             continue
+        env.Requires(env['DEPENDENCY_DB'],t)
         OBJ_DB.append(t)
     return target, source
 
@@ -113,6 +114,7 @@ def emit_prog_db_entry(target, source, env):
     for t in target:
         if str(t) is None:
             continue
+        env.Requires(env['DEPENDENCY_DB'],t)
         EXE_DB[t] = [str(s) for s in source]
 
     return target, source
@@ -123,6 +125,7 @@ def emit_lib_db_entry(target, source, env):
     for t in target:
         if str(t) is None:
             continue
+        env.Requires(env['DEPENDENCY_DB'],t)
         LIB_DB.append(t)
     return target, source
 
@@ -234,8 +237,8 @@ def write_obj_db(target, source, env):
     for lib in LIB_DB:
         __generate_lib_rels(lib, g)
 
-    for obj in OBJ_DB:
-        __generate_sym_rels(obj, g)
+    #for obj in OBJ_DB:
+    #    __generate_sym_rels(obj, g)
 
     for obj in OBJ_DB:
         __generate_file_rels(obj, g)
