@@ -10,7 +10,6 @@ file, after all environment configuration has been completed.
 
 env.Tool("dagger")
 dependencyDb = env.Alias("dagger", env.BuildDeps(desiredpathtostoregraph))
-env.Requires(dependencyDb, desired alias)
 
 The desired path determines where the graph object is stored (which
 should be in the same directory as the accompanying command line tool)
@@ -106,6 +105,7 @@ def emit_obj_db_entry(target, source, env):
     for t in target:
         if str(t) is None:
             continue
+        env.Depends(env['DEPENDENCY_DB'], t)
         OBJ_DB.append(t)
     return target, source
 
@@ -113,6 +113,7 @@ def emit_prog_db_entry(target, source, env):
     for t in target:
         if str(t) is None:
             continue
+        env.Depends(env['DEPENDENCY_DB'], t)
         EXE_DB[t] = [str(s) for s in source]
 
     return target, source
@@ -123,6 +124,7 @@ def emit_lib_db_entry(target, source, env):
     for t in target:
         if str(t) is None:
             continue
+        env.Depends(env['DEPENDENCY_DB'], t)
         LIB_DB.append(t)
     return target, source
 
@@ -229,6 +231,9 @@ def write_obj_db(target, source, env):
     creates the build dependency graph. The graph is then exported to a JSON
     file for use with the separate query tool/visualizer
     """
+    if env['VERBOSE']:
+        print("building " + str(target[0]))
+
     g = graph.Graph()
 
     for lib in LIB_DB:

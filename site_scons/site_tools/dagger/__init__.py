@@ -14,13 +14,18 @@ def generate(env, **kwargs):
     to the native builders for object/libraries.
     """
 
-    env.Replace(LIBEMITTER=SCons.Builder.ListEmitter([env['LIBEMITTER'],
-                                                      dagger.emit_lib_db_entry]))
     running_os = os.sys.platform
 
-    if not (running_os.startswith('win') or running_os.startswith('sun')):
-        env.Replace(PROGEMITTER=SCons.Builder.ListEmitter([env['PROGEMITTER'],
-        dagger.emit_prog_db_entry]))
+    def add_emitter(target_builder,emitter):
+        builder = env['BUILDERS'][target_builder]
+        base_emitter = builder.emitter
+        new_emitter = SCons.Builder.ListEmitter([base_emitter, emitter])
+        builder.emitter = new_emitter
+
+    add_emitter('Program',dagger.emit_prog_db_entry)
+    add_emitter('StaticLibrary',dagger.emit_lib_db_entry)
+    add_emitter('SharedLibrary',dagger.emit_lib_db_entry)
+    add_emitter('LoadableModule',dagger.emit_lib_db_entry)
 
     static_obj, shared_obj = SCons.Tool.createObjBuilders(env)
     suffixes = ['.c', '.cc', '.cxx', '.cpp']

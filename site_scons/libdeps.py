@@ -51,9 +51,11 @@ automatically added when missing.
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import os
+import traceback
 
 import SCons.Errors
 import SCons.Scanner
+import SCons.Script.Main
 import SCons.Util
 
 libdeps_env_var = 'LIBDEPS'
@@ -106,6 +108,8 @@ def __get_libdeps(node):
 
     def visit(n):
         if getattr(n.target_node.attributes, 'libdeps_exploring', False):
+            if SCons.Script.Main.print_stacktrace:
+                traceback.print_stack()
             raise DependencyCycleError(n.target_node)
 
         n.target_node.attributes.libdeps_exploring = True

@@ -3558,6 +3558,12 @@ if has_option('jlink'):
         new_emitter = SCons.Builder.ListEmitter([base_emitter, jlink_emitter])
         builder.emitter = new_emitter
 
+# setup the Dagger tool if we're running it
+# Do this before we run SConscript because the dagger emitters depend on
+# this env['DEPENDENCY_DB'] existing
+if should_dagger:
+    env['DEPENDENCY_DB'] = env.Alias("dagger", env.Dagger('library_dependency_graph.json') )
+
 env.SConscript(
     dirs=[
         'src',
@@ -3570,12 +3576,6 @@ env.SConscript(
 )
 
 all = env.Alias('all', ['core', 'tools', 'dbtest', 'unittests', 'integration_tests', 'benchmarks'])
-
-# run the Dagger tool if it's installed
-if should_dagger:
-    dependencyDb = env.Alias("dagger", env.Dagger('library_dependency_graph.json'))
-    # Require everything to be built before trying to extract build dependency information
-    env.Requires(dependencyDb, all)
 
 # We don't want installing files to cause them to flow into the cache,
 # since presumably we can re-install them from the origin if needed.
