@@ -237,8 +237,8 @@ def write_obj_db(target, source, env):
     for lib in LIB_DB:
         __generate_lib_rels(lib, g)
 
-    #for obj in OBJ_DB:
-    #    __generate_sym_rels(obj, g)
+    for obj in OBJ_DB:
+        __generate_sym_rels(obj, g)
 
     for obj in OBJ_DB:
         __generate_file_rels(obj, g)
