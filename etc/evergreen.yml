@@ -3043,7 +3043,7 @@ tasks:
         permissions: public-read
         content_type: application/json
         display_name: Library Dependency Graph (library_dependency_graph.json)
-        build_variants: [enterprise-ubuntu1604-64]
+        build_variants: [enterprise-ubuntu1604-64-dagger]
 
 ## compile_unittests - build unittests ##
 - name: compile_unittests
@@ -10156,11 +10156,10 @@ buildvariants:
 # This variant is to intentionally test uncommon features nightly
 - <<: *enterprise-rhel-70-64-bit-template
   name: enterprise-rhel-70-64-bit-kitchen-sink
-  display_name: "~ Enterprise RHEL 7.0 (Dagger, gperftools)"
+  display_name: "~ Enterprise RHEL 7.0 (gperftools)"
   expansions:
     <<: *enterprise-rhel-70-64-bit-expansions-template
     compile_flags: --ssl --use-cpu-profiler MONGO_DISTMOD=rhel70 -j$(grep -c ^processor /proc/cpuinfo) --release --variables-files=etc/scons/mongodbtoolchain_gcc.vars
-    additional_targets: dagger
   tasks:
   - name: compile_all_run_unittests_TG
     distros:
@@ -10924,12 +10923,8 @@ buildvariants:
   batchtime: 1440 # 1 day
   expansions:
     test_flags: --excludeWithAnyTags=requires_mmapv1
-    push_path: linux
-    push_bucket: downloads.10gen.com
-    push_name: linux
     lang_environment: LANG=C
-    push_arch: x86_64-enterprise-ubuntu1604
-    compile_flags: --ssl MONGO_DISTMOD=ubuntu1604 --release -j$(grep -c ^processor /proc/cpuinfo) --variables-files=etc/scons/mongodbtoolchain_gcc.vars --debug=stacktrace VERBOSE=1
+    compile_flags: --ssl MONGO_DISTMOD=ubuntu1604 --release -j$(grep -c ^processor /proc/cpuinfo) --variables-files=etc/scons/mongodbtoolchain_gcc.vars --debug=stacktrace
     num_jobs_available: $(grep -c ^processor /proc/cpuinfo)
     repo_edition: enterprise
     scons_cache_scope: shared
@@ -10939,8 +10934,6 @@ buildvariants:
     additional_targets: dagger
   tasks:
   - name: compile_all_run_unittests_TG
-  - name: push
-
 
 ###########################################
 #          SUSE buildvariants             #
