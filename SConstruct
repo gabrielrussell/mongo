@@ -3373,7 +3373,7 @@ env.Tool("compilation_db")
 
 # If we can, load the dagger tool for build dependency graph introspection.
 # Dagger is only supported on Linux and OSX (not Windows or Solaris).
-should_dagger = ( mongo_platform.is_running_os('osx') or mongo_platform.is_running_os('linux')  ) and "dagger" in COMMAND_LINE_TARGETS
+should_dagger = ( mongo_platform.is_running_os('osx') or mongo_platform.is_running_os('linux')  ) and ( "dagger" in COMMAND_LINE_TARGETS or "library_dependency_graph.json" in COMMAND_LINE_TARGETS )
 
 if should_dagger:
     env.Tool("dagger")
@@ -3562,7 +3562,8 @@ if has_option('jlink'):
 # Do this before we run SConscript because the dagger emitters depend on
 # this env['DEPENDENCY_DB'] existing
 if should_dagger:
-    env['DEPENDENCY_DB'] = env.Alias("dagger", env.Dagger('library_dependency_graph.json') )
+    env['DEPENDENCY_DB'] = env.Dagger('library_dependency_graph.json')
+    env.Alias("dagger", env['DEPENDENCY_DB'])
 
 env.SConscript(
     dirs=[
