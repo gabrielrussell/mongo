@@ -64,7 +64,7 @@
     };
 
 #define MONGO_ATTACH_JS_FUNCTION_WITH_FLAGS(name, flags) \
-    JS_FS(#name, smUtils::wrapFunction<Functions::name>, 0, flags)
+    JS_FN(#name, smUtils::wrapFunction<Functions::name>, 0, flags)
 
 #define MONGO_ATTACH_JS_FUNCTION(name) MONGO_ATTACH_JS_FUNCTION_WITH_FLAGS(name, 0)
 
@@ -231,34 +231,40 @@ public:
           _constructor(),
           _jsclass({T::className,
                     T::classFlags,
+                    &_jsclassOps}),
+          _jsclassOps({
                     T::addProperty != BaseInfo::addProperty ? smUtils::addProperty<T> : nullptr,
                     T::delProperty != BaseInfo::delProperty ? smUtils::delProperty<T> : nullptr,
-                    T::getProperty != BaseInfo::getProperty ? smUtils::getProperty<T> : nullptr,
-                    T::setProperty != BaseInfo::setProperty ? smUtils::setProperty<T> : nullptr,
+                    // T::getProperty != BaseInfo::getProperty ? smUtils::getProperty<T> : nullptr,
+                    // T::setProperty != BaseInfo::setProperty ? smUtils::setProperty<T> : nullptr,
                     // We don't use the regular enumerate because we want the fancy new one
-                    nullptr,
+                    nullptr, // enumerate
+                    nullptr, // newEnumerate
                     T::resolve != BaseInfo::resolve ? smUtils::resolve<T> : nullptr,
                     T::mayResolve != BaseInfo::mayResolve ? T::mayResolve : nullptr,
                     T::finalize != BaseInfo::finalize ? T::finalize : nullptr,
                     T::call != BaseInfo::call ? smUtils::call<T> : nullptr,
                     T::hasInstance != BaseInfo::hasInstance ? smUtils::hasInstance<T> : nullptr,
                     T::construct != BaseInfo::construct ? smUtils::construct<T> : nullptr,
-                    nullptr}) {
+                    nullptr, // trace
+        }){
+
         _installEnumerate(T::enumerate != BaseInfo::enumerate ? smUtils::enumerate<T> : nullptr);
 
         // The global object is different.  We need it for basic setup
         // before the other types are installed.  Might as well just do it
         // in the constructor.
         if (T::classFlags & JSCLASS_GLOBAL_FLAGS) {
-            _jsclass.trace = JS_GlobalObjectTraceHook;
+            _jsclassOps.trace = JS_GlobalObjectTraceHook;
 
             JS::RootedObject proto(_context);
 
             JSAutoRequest ar(_context);
 
+            JS::CompartmentOptions options;
             _proto.init(_context,
                         _assertPtr(JS_NewGlobalObject(
-                            _context, &_jsclass, nullptr, JS::DontFireOnNewGlobalHook)));
+                            _context, &_jsclass, nullptr, JS::DontFireOnNewGlobalHook, options)));
 
             JSAutoCompartment ac(_context, _proto);
             _installFunctions(_proto, T::freeFunctions);
@@ -487,9 +493,9 @@ private:
         if (!enumerate)
             return;
 
-        auto implClass = reinterpret_cast<js::Class*>(&_jsclass);
+        //auto implClass = reinterpret_cast<js::Class*>(&_jsclass);
 
-        implClass->ops.enumerate = enumerate;
+        //implClass->ops.enumerate = enumerate;
     }
 
     // This is for inheriting from something other than Object
@@ -549,6 +555,7 @@ private:
     JS::PersistentRootedObject _proto;
     JS::PersistentRootedObject _constructor;
     JSClass _jsclass;
+    JSClassOps _jsclassOps;
 };
 
 }  // namespace mozjs

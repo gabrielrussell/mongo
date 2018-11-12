@@ -54,7 +54,7 @@ public:
 
     explicit JSExceptionInfo(std::string stack_, Status originalError_)
         : stack(std::move(stack_)), originalError(std::move(originalError_)) {
-        invariant(!stack.empty());
+        //invariant(!stack.empty());
         invariant(!originalError.isOK());
     }
 

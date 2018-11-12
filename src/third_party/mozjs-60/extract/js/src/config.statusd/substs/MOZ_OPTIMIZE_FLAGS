@@ -1,0 +1,4 @@
+[
+    "-freorder-blocks", 
+    "-O3"
+]

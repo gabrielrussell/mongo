@@ -1,0 +1,25 @@
+5
+1python/./config/tests/python.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/config/tests/python.ini
+1python/./python/mach/mach/test/python.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/python/mach/mach/test/python.ini
+1python/./python/mozbuild/dumbmake/test/python.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/python/mozbuild/dumbmake/test/python.ini
+1python/./python/mozbuild/mozbuild/test/python.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/python/mozbuild/mozbuild/test/python.ini
+1python/./python/mozbuild/mozpack/test/python.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/python/mozbuild/mozpack/test/python.ini
+1python/./python/mozlint/test/python.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/python/mozlint/test/python.ini
+1python/./python/mozrelease/test/python.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/python/mozrelease/test/python.ini
+1python/./python/mozterm/test/python.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/python/mozterm/test/python.ini
+1python/./python/mozversioncontrol/test/python.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/python/mozversioncontrol/test/python.ini
+1python/./taskcluster/taskgraph/test/python.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/taskcluster/taskgraph/test/python.ini
+1python/./testing/mozbase/manifestparser/tests/manifest.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/testing/mozbase/manifestparser/tests/manifest.ini
+1python/./testing/mozbase/mozcrash/tests/manifest.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/testing/mozbase/mozcrash/tests/manifest.ini
+1python/./testing/mozbase/mozdebug/tests/manifest.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/testing/mozbase/mozdebug/tests/manifest.ini
+1python/./testing/mozbase/mozfile/tests/manifest.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/testing/mozbase/mozfile/tests/manifest.ini
+1python/./testing/mozbase/mozhttpd/tests/manifest.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/testing/mozbase/mozhttpd/tests/manifest.ini
+1python/./testing/mozbase/mozinfo/tests/manifest.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/testing/mozbase/mozinfo/tests/manifest.ini
+1python/./testing/mozbase/mozinstall/tests/manifest.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/testing/mozbase/mozinstall/tests/manifest.ini
+1python/./testing/mozbase/mozlog/tests/manifest.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/testing/mozbase/mozlog/tests/manifest.ini
+1python/./testing/mozbase/moznetwork/tests/manifest.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/testing/mozbase/moznetwork/tests/manifest.ini
+1python/./testing/mozbase/mozprocess/tests/manifest.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/testing/mozbase/mozprocess/tests/manifest.ini
+1python/./testing/mozbase/mozprofile/tests/manifest.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/testing/mozbase/mozprofile/tests/manifest.ini
+1python/./testing/mozbase/mozrunner/tests/manifest.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/testing/mozbase/mozrunner/tests/manifest.ini
+1python/./testing/mozbase/moztest/tests/manifest.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/testing/mozbase/moztest/tests/manifest.ini
+1python/./testing/mozbase/mozversion/tests/manifest.ini/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/testing/mozbase/mozversion/tests/manifest.ini

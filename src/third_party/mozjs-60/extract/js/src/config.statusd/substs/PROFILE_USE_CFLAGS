@@ -1,0 +1,5 @@
+[
+    "-fprofile-use", 
+    "-fprofile-correction", 
+    "-Wcoverage-mismatch"
+]

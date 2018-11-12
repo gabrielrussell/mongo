@@ -395,7 +395,7 @@ private:
 
     static void _reportError(JSContext* cx, const char* message, JSErrorReport* report);
     static bool _interruptCallback(JSContext* cx);
-    static void _gcCallback(JSRuntime* rt, JSGCStatus status, void* data);
+    static void _gcCallback(JSContext* rt, JSGCStatus status, void* data);
     bool _checkErrorState(bool success, bool reportError = true, bool assertOnError = true);
 
     void installDBAccess();
@@ -407,7 +407,6 @@ private:
     ASANHandles _asanHandles;
     MozJSScriptEngine* _engine;
     MozRuntime _mr;
-    JSRuntime* _runtime;
     JSContext* _context;
     WrapType<GlobalInfo> _globalProto;
     JS::HandleObject _global;
@@ -463,8 +462,11 @@ inline MozJSImplScope* getScope(JSContext* cx) {
 }
 
 inline MozJSImplScope* getScope(JSFreeOp* fop) {
-    return static_cast<MozJSImplScope*>(JS_GetRuntimePrivate(fop->runtime()));
+    // TODO
+    return nullptr;
+    //return static_cast<MozJSImplScope*>(JS_GetContextPrivate(fop->runtime()->contextFromMainThread()));
 }
+
 
 }  // namespace mozjs
 }  // namespace mongo

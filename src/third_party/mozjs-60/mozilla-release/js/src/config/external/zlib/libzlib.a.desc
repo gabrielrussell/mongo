@@ -1,0 +1,1 @@
+LIBS = /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/modules/zlib/src/libmodules_zlib_src.a

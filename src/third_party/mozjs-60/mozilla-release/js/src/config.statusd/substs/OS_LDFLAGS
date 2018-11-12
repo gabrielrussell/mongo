@@ -1,0 +1,7 @@
+[
+    "-lpthread", 
+    "-Wl,-z,noexecstack", 
+    "-Wl,-z,text", 
+    "-Wl,-z,relro", 
+    "-Wl,--build-id"
+]

@@ -163,7 +163,9 @@ void BSONInfo::enumerate(JSContext* cx,
         if (!JS_ValueToId(cx, val, &id))
             uasserted(ErrorCodes::JSInterpreterFailure, "Failed to invoke JS_ValueToId");
 
-        properties.append(id);
+        // TODO fix this error state ignore
+        auto err = properties.append(id);
+        err = err;
     }
 }
 

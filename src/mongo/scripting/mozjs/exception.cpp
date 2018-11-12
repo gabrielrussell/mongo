@@ -35,6 +35,8 @@
 #include <jsfriendapi.h>
 #include <limits>
 
+#include "mongoErrorReportToString.h"
+
 #include "mongo/base/static_assert.h"
 #include "mongo/scripting/mozjs/implscope.h"
 #include "mongo/scripting/mozjs/jsstringwrapper.h"
@@ -82,7 +84,9 @@ Status JSErrorReportToStatus(JSContext* cx,
                              JSErrorReport* report,
                              ErrorCodes::Error altCode,
                              StringData altReason) {
-    JSStringWrapper jsstr(cx, js::ErrorReportToString(cx, report));
+
+
+    JSStringWrapper jsstr(cx, mongoErrorReportToString(cx, report));
     if (!jsstr)
         return Status(altCode, altReason.rawData());
 

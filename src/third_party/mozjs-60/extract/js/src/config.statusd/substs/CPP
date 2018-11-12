@@ -1,0 +1,5 @@
+[
+    "/usr/bin/gcc", 
+    "-E", 
+    "-std=gnu99"
+]

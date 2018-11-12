@@ -125,10 +125,9 @@ void OIDInfo::postInstall(JSContext* cx, JS::HandleObject global, JS::HandleObje
     if (!JS_DefinePropertyById(cx,
                                proto,
                                getScope(cx)->getInternedStringId(InternedString::str),
-                               undef,
-                               JSPROP_ENUMERATE | JSPROP_SHARED,
                                smUtils::wrapConstrainedMethod<Functions::getter, true, OIDInfo>,
-                               nullptr)) {
+                               nullptr,
+                               JSPROP_ENUMERATE)) {
         uasserted(ErrorCodes::JSInterpreterFailure, "Failed to JS_DefinePropertyById");
     }
 }

@@ -1,0 +1,5 @@
+[
+    "-I/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/system_wrappers", 
+    "-include", 
+    "/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/config/gcc_hidden.h"
+]

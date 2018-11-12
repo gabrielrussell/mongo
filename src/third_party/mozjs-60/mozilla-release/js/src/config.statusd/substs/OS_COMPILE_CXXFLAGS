@@ -1,0 +1,5 @@
+[
+    "-DMOZILLA_CLIENT", 
+    "-include", 
+    "/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/js/src/js-confdefs.h"
+]

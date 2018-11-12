@@ -69,23 +69,23 @@ void MongoStatusInfo::fromStatus(JSContext* cx, Status status, JS::MutableHandle
     ObjectWrapper thisvObj(cx, thisv);
     thisvObj.defineProperty(
         InternedString::code,
-        undef,
-        JSPROP_ENUMERATE | JSPROP_SHARED,
-        smUtils::wrapConstrainedMethod<Functions::code, false, MongoStatusInfo>);
+        JSPROP_ENUMERATE,
+        smUtils::wrapConstrainedMethod<Functions::code, false, MongoStatusInfo>,
+        nullptr);
 
     thisvObj.defineProperty(
         InternedString::reason,
-        undef,
-        JSPROP_ENUMERATE | JSPROP_SHARED,
-        smUtils::wrapConstrainedMethod<Functions::reason, false, MongoStatusInfo>);
+        JSPROP_ENUMERATE,
+        smUtils::wrapConstrainedMethod<Functions::reason, false, MongoStatusInfo>,
+        nullptr);
 
     // We intentionally omit JSPROP_ENUMERATE to match how Error.prototype.stack is a non-enumerable
     // property.
     thisvObj.defineProperty(
         InternedString::stack,
-        undef,
-        JSPROP_SHARED,
-        smUtils::wrapConstrainedMethod<Functions::stack, false, MongoStatusInfo>);
+        0,
+        smUtils::wrapConstrainedMethod<Functions::stack, false, MongoStatusInfo>,
+        nullptr);
 
     JS_SetPrivate(thisv, scope->trackedNew<Status>(std::move(status)));
 
@@ -138,7 +138,7 @@ void MongoStatusInfo::Functions::stack::call(JSContext* cx, JS::CallArgs args) {
             .fromStringData(extraInfo->stack + parentWrapper.getString(InternedString::stack));
 
         // We redefine the "stack" property as the combined JavaScript stacktrace. It is important
-        // that we omit JSPROP_SHARED to the thisvObj.defineProperty() call in order to have
+        // that we omit (TODO/FIXME, no more JSPROP_SHARED) JSPROP_SHARED to the thisvObj.defineProperty() call in order to have
         // SpiderMonkey allocate memory for the string value. We also intentionally omit
         // JSPROP_ENUMERATE to match how Error.prototype.stack is a non-enumerable property.
         ObjectWrapper thisvObj(cx, args.thisv());
