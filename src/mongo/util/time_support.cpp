@@ -862,15 +862,14 @@ static unsigned long long resyncTime() {
 }
 
 
-static boost::uint64_t file_time_to_microseconds(FILETIME const ft)
-{
-    // shift is difference between 1970-Jan-01 & 1601-Jan-01
-    // in 100-nanosecond units
-    const boost::uint64_t shift = 116444736000000000ULL; // (27111902 << 32) + 3577643008
-     // 100-nanos since 1601-Jan-01
-    boost::uint64_t ft_as_integer = (static_cast< boost::uint64_t >(ft.dwHighDateTime) << 32) | static_cast< boost::uint64_t >(ft.dwLowDateTime);
-     ft_as_integer -= shift; // filetime is now 100-nanos since 1970-Jan-01
-    return (ft_as_integer / 10U); // truncate to microseconds
+static uint64_t file_time_to_microseconds(FILETIME const ft) {
+    // Microseconds between 1601-01-01 00:00:00 UTC and 1970-01-01 00:00:00 UTC
+    static const uint64_t EPOCH_DIFFERENCE_MICROS = 11644473600000000ull;
+
+    uint64_t total_us = (((uint64_t)filetime->dwHighDateTime << 32) | (uint64_t)filetime->dwLowDateTime) / 10;
+        total_us -= EPOCH_DIFFERENCE_MICROS; // filetime is now 100-nanos since 1970-Jan-01
+
+    return total_us % 1000000;
 }
 
 
