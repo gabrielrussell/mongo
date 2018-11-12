@@ -48,7 +48,6 @@
 #include "mongo/util/concurrency/mutex.h"
 #include "mongo/util/system_tick_source.h"
 #include "mongo/util/timer.h"
-#include <boost/date_time/filetime_functions.hpp>
 #include <mmsystem.h>
 #elif defined(__linux__)
 #include <time.h>
@@ -862,12 +861,25 @@ static unsigned long long resyncTime() {
     return newPerfCounter;
 }
 
+
+static boost::uint64_t file_time_to_microseconds(FILETIME const ft)
+{
+    // shift is difference between 1970-Jan-01 & 1601-Jan-01
+    // in 100-nanosecond units
+    const boost::uint64_t shift = 116444736000000000ULL; // (27111902 << 32) + 3577643008
+     // 100-nanos since 1601-Jan-01
+    boost::uint64_t ft_as_integer = (static_cast< boost::uint64_t >(ft.dwHighDateTime) << 32) | static_cast< boost::uint64_t >(ft.dwLowDateTime);
+     ft_as_integer -= shift; // filetime is now 100-nanos since 1970-Jan-01
+    return (ft_as_integer / 10U); // truncate to microseconds
+}
+
+
 unsigned long long curTimeMicros64() {
     // Windows 8/2012 & later support a <1us time function
     if (GetSystemTimePreciseAsFileTimeFunc != NULL) {
         FILETIME time;
         GetSystemTimePreciseAsFileTimeFunc(&time);
-        return boost::date_time::winapi::file_time_to_microseconds(time);
+        return file_time_to_microseconds(time);
     }
 
     // Get a current value for QueryPerformanceCounter; if it is not time to resync we will
@@ -898,9 +910,13 @@ unsigned long long curTimeMicros64() {
         ((perfCounter - basePerfCounter) * 10 * 1000 * 1000) /
             SystemTickSource::get()->getTicksPerSecond();
 
+    FILETIME fileTimeComputed;
+    fileTimeComputed.dwHighDateTime = computedTime >> 32;
+    fileTimeComputed.dwLowDateTime = computedTime;
+
     // Convert the computed FILETIME into microseconds since the Unix epoch (1/1/1970).
     //
-    return boost::date_time::winapi::file_time_to_microseconds(computedTime);
+    return file_time_to_microseconds(fileTimeComputed);
 }
 
 #else
