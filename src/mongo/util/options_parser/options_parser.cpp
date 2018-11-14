@@ -32,6 +32,7 @@
 
 #include "mongo/util/options_parser/options_parser.h"
 
+#include <stdio.h>
 #include <algorithm>
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
@@ -1094,6 +1095,11 @@ Status OptionsParser::parseCommandLine(const OptionSection& options,
         argc++;
     }
 
+    if (!argc) {
+        argc = 1;
+        argv_buffer.push_back(nullptr);
+    }
+
     /**
      * Style options for boost command line parser
      *
@@ -1122,7 +1128,7 @@ Status OptionsParser::parseCommandLine(const OptionSection& options,
     }
 
     try {
-        po::store(po::command_line_parser(argc, (argc > 0 ? &argv_buffer[0] : NULL))
+        po::store(po::command_line_parser(argc, &argv_buffer[0])
                       .options(boostOptions)
                       .positional(boostPositionalOptions)
                       .style(style)
