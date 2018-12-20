@@ -519,11 +519,13 @@ public:
      */
     virtual Status resyncData(OperationContext* opCtx, bool waitUntilCompleted) = 0;
 
+	static constexpr auto defaultZone= "__default";
+
     /**
      * Handles an incoming isMaster command for a replica set node.  Should not be
      * called on a standalone node.
      */
-    virtual void fillIsMasterForReplSet(IsMasterResponse* result) = 0;
+    virtual void fillIsMasterForReplSet(IsMasterResponse* result, const std::string &zone) = 0;
 
     /**
      * Adds to "result" a description of the slaveInfo data structure used to map RIDs to their

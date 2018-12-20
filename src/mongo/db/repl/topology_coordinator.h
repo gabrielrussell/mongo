@@ -309,7 +309,7 @@ public:
 
     // produce a reply to an ismaster request.  It is only valid to call this if we are a
     // replset.
-    void fillIsMasterForReplSet(IsMasterResponse* response);
+    void fillIsMasterForReplSet(IsMasterResponse* response, const std::string &zone);
 
     // Produce member data for the serverStatus command and diagnostic logging.
     void fillMemberData(BSONObjBuilder* result);

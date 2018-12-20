@@ -178,6 +178,8 @@ public:
      */
     StringData getApplicationName() const;
 
+	StringData getZoneName() const;
+
     /**
      * Get the BSON Document of the client metadata document. In the example above in the class
      * comment, this is the document in the "client" field.
@@ -240,7 +242,6 @@ private:
     Status parseClientMetadataDocument(const BSONObj& doc);
     static Status validateDriverDocument(const BSONObj& doc);
     static Status validateOperatingSystemDocument(const BSONObj& doc);
-    static StatusWith<StringData> parseApplicationDocument(const BSONObj& doc);
 
 private:
     // Parsed Client Metadata document
@@ -251,6 +252,7 @@ private:
     // Application Name extracted from the client metadata document.
     // May be empty
     StringData _appName;
+    StringData _zoneName;
 };
 
 }  // namespace mongo

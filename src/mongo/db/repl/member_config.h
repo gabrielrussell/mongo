@@ -60,6 +60,7 @@ public:
     static const std::string kArbiterOnlyFieldName;
     static const std::string kBuildIndexesFieldName;
     static const std::string kTagsFieldName;
+    static const std::string kZonesFieldName;
     static const std::string kInternalVoterTagName;
     static const std::string kInternalElectableTagName;
     static const std::string kInternalAllTagName;
@@ -97,9 +98,22 @@ public:
      * Gets the canonical name of this member, by which other members and clients
      * will contact it.
      */
-    const HostAndPort& getHostAndPort() const {
-        return _host;
+    const HostAndPort& getHostAndPort( const std::string &zone= "__default" ) const {
+        return zone == "__default" ? this->_host : [&] () -> const HostAndPort & {
+			auto found= this->_altNames.find( zone );
+			if( found == end( this->_altNames ) )
+			{
+				uasserted( ErrorCodes::NoSuchKey, str::stream() << "No zone named " << zone );
+			}
+			return found->second;
+		}();
     }
+
+	const std::map<std::string, HostAndPort> &
+	getAltNames() const
+	{
+		return this->_altNames;
+	}
 
     /**
      * Gets this member's priority.  Higher means more likely to be elected
@@ -165,6 +179,11 @@ public:
      */
     bool hasTags(const ReplSetTagConfig& tagConfig) const;
 
+	bool hasAltNames() const
+	{
+		return !this->_altNames.empty();
+	}
+
     /**
      * Gets a begin iterator over the tags for this member.
      */
@@ -201,6 +220,7 @@ private:
     bool _hidden;                   // if set, don't advertise to drivers in isMaster.
     bool _buildIndexes;             // if false, do not create any non-_id indexes
     std::vector<ReplSetTag> _tags;  // tagging for data center, rack, etc.
+	std::map<std::string, HostAndPort> _altNames;
 };
 
 }  // namespace repl

@@ -156,6 +156,8 @@ public:
         return _members.end();
     }
 
+    const std::vector<MemberConfig> &members() const { return this->_members; }
+
     /**
      * Access a MemberConfig element by index.
      */

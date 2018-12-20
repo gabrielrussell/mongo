@@ -133,7 +133,17 @@ Status bsonExtractTypedField(const BSONObj& object,
                              BSONElement* outElement) {
     return bsonExtractTypedFieldImpl(object, fieldName, type, outElement, false);
 }
+}  // namespace mongo
 
+mongo::BSONElement mongo::bsonExtractTypedField(const BSONObj& object,
+                                                const StringData fieldName,
+                                                const BSONType type) {
+    BSONElement element;
+    uassertStatusOK(bsonExtractTypedField(object, fieldName, type, &element));
+    return element;
+}
+
+namespace mongo {
 Status bsonExtractBooleanField(const BSONObj& object, StringData fieldName, bool* out) {
     BSONElement element;
     Status status = bsonExtractTypedField(object, fieldName, Bool, &element);

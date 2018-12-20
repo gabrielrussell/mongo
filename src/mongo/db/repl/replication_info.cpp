@@ -71,11 +71,12 @@ using std::stringstream;
 
 namespace repl {
 
-void appendReplicationInfo(OperationContext* opCtx, BSONObjBuilder& result, int level) {
+void appendReplicationInfo(OperationContext* opCtx, BSONObjBuilder& result, int level, const
+std::string &zone= ReplicationCoordinator::defaultZone) {
     ReplicationCoordinator* replCoord = ReplicationCoordinator::get(opCtx);
     if (replCoord->getSettings().usingReplSets()) {
         IsMasterResponse isMasterResponse;
-        replCoord->fillIsMasterForReplSet(&isMasterResponse);
+        replCoord->fillIsMasterForReplSet(&isMasterResponse, zone);
         result.appendElements(isMasterResponse.toBSON());
         if (level) {
             replCoord->appendSlaveInfoData(&result);
@@ -203,6 +204,8 @@ public:
     }
 } oplogInfoServerStatus;
 
+namespace
+{
 class CmdIsMaster : public BasicCommand {
 public:
     bool requiresAuth() const override {
@@ -215,17 +218,17 @@ public:
         return "Check if this server is primary for a replica set\n"
                "{ isMaster : 1 }";
     }
-    virtual bool supportsWriteConcern(const BSONObj& cmd) const override {
+    bool supportsWriteConcern(const BSONObj& cmd) const override {
         return false;
     }
-    virtual void addRequiredPrivileges(const std::string& dbname,
+    void addRequiredPrivileges(const std::string& dbname,
                                        const BSONObj& cmdObj,
-                                       std::vector<Privilege>* out) const {}  // No auth required
+                                       std::vector<Privilege>* out) const override {}  // No auth required
+
     CmdIsMaster() : BasicCommand("isMaster", "ismaster") {}
-    virtual bool run(OperationContext* opCtx,
-                     const string&,
-                     const BSONObj& cmdObj,
-                     BSONObjBuilder& result) {
+
+    bool run(OperationContext* opCtx, const string&, const BSONObj& cmdObj,
+                     BSONObjBuilder& result) override {
         /* currently request to arbiter is (somewhat arbitrarily) an ismaster request that is not
            authenticated.
         */
@@ -249,22 +252,23 @@ public:
         }
 
         BSONElement element = cmdObj[kMetadataDocumentName];
+        std::string zone= ReplicationCoordinator::defaultZone;
         if (!element.eoo()) {
             if (seenIsMaster) {
                 uasserted(ErrorCodes::ClientMetadataCannotBeMutated,
                           "The client metadata document may only be sent in the first isMaster");
             }
 
-            auto swParseClientMetadata = ClientMetadata::parse(element);
+            auto parsedClientMetadata = uassertStatusOK(ClientMetadata::parse(element));
 
-            uassertStatusOK(swParseClientMetadata.getStatus());
+            invariant(parsedClientMetadata);
 
-            invariant(swParseClientMetadata.getValue());
+            zone= parsedClientMetadata->getZoneName().toString();
 
-            swParseClientMetadata.getValue().get().logClientMetadata(opCtx->getClient());
+            parsedClientMetadata->logClientMetadata(opCtx->getClient());
 
             clientMetadataIsMasterState.setClientMetadata(
-                opCtx->getClient(), std::move(swParseClientMetadata.getValue()));
+                opCtx->getClient(), std::move(parsedClientMetadata));
         }
 
         // Parse the optional 'internalClient' field. This is provided by incoming connections from
@@ -337,7 +341,7 @@ public:
                 });
         }
 
-        appendReplicationInfo(opCtx, result, 0);
+        appendReplicationInfo(opCtx, result, 0, zone);
 
         if (serverGlobalParams.clusterRole == ClusterRole::ConfigServer) {
             const int configServerModeNumber = 2;
@@ -382,6 +386,7 @@ public:
         return true;
     }
 } cmdismaster;
+}//namespace
 
 OpCounterServerStatusSection replOpCounterServerStatusSection("opcountersRepl", &replOpCounters);
 

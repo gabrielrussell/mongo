@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -2962,7 +2961,7 @@ TEST_F(ReplCoordTest, IsMasterResponseMentionsLackOfReplicaSetConfig) {
     start();
     IsMasterResponse response;
 
-    getReplCoord()->fillIsMasterForReplSet(&response);
+    getReplCoord()->fillIsMasterForReplSet(&response, ReplicationCoordinator::defaultZone);
     ASSERT_FALSE(response.isConfigSet());
     BSONObj responseObj = response.toBSON();
     ASSERT_FALSE(responseObj["ismaster"].Bool());
@@ -3003,7 +3002,7 @@ TEST_F(ReplCoordTest, IsMaster) {
     getReplCoord()->setMyLastAppliedOpTime(opTime);
 
     IsMasterResponse response;
-    getReplCoord()->fillIsMasterForReplSet(&response);
+    getReplCoord()->fillIsMasterForReplSet(&response, ReplicationCoordinator::defaultZone);
 
     ASSERT_EQUALS("mySet", response.getReplSetName());
     ASSERT_EQUALS(2, response.getReplSetVersion());
@@ -3067,7 +3066,7 @@ TEST_F(ReplCoordTest, IsMasterWithCommittedSnapshot) {
     ASSERT_EQUALS(majorityOpTime, getReplCoord()->getCurrentCommittedSnapshotOpTime());
 
     IsMasterResponse response;
-    getReplCoord()->fillIsMasterForReplSet(&response);
+    getReplCoord()->fillIsMasterForReplSet(&response, ReplicationCoordinator::defaultZone);
 
     ASSERT_EQUALS(opTime, response.getLastWriteOpTime());
     ASSERT_EQUALS(lastWriteDate, response.getLastWriteDate());
@@ -3090,7 +3089,8 @@ TEST_F(ReplCoordTest, IsMasterInShutdown) {
     runSingleNodeElection(opCtx.get());
 
     IsMasterResponse responseBeforeShutdown;
-    getReplCoord()->fillIsMasterForReplSet(&responseBeforeShutdown);
+    getReplCoord()->fillIsMasterForReplSet(&responseBeforeShutdown,
+                                           ReplicationCoordinator::defaultZone);
     ASSERT_TRUE(responseBeforeShutdown.isMaster());
     ASSERT_FALSE(responseBeforeShutdown.isSecondary());
 
@@ -3098,7 +3098,8 @@ TEST_F(ReplCoordTest, IsMasterInShutdown) {
 
     // Must not report ourselves as master while we're in shutdown.
     IsMasterResponse responseAfterShutdown;
-    getReplCoord()->fillIsMasterForReplSet(&responseAfterShutdown);
+    getReplCoord()->fillIsMasterForReplSet(&responseAfterShutdown,
+                                           ReplicationCoordinator::defaultZone);
     ASSERT_FALSE(responseAfterShutdown.isMaster());
     ASSERT_FALSE(responseBeforeShutdown.isSecondary());
 }

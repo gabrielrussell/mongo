@@ -508,24 +508,44 @@ void IsMasterResponse::setReplSetVersion(long long version) {
     _setVersion = version;
 }
 
-void IsMasterResponse::addHost(const HostAndPort& host) {
+void IsMasterResponse::addHost(const HostAndPort& host,
+                               const std::map<std::string, HostAndPort>& alts) {
     _hostsSet = true;
     _hosts.push_back(host);
+    for (auto& alt : alts) {
+        _altHosts[alt.first].hosts.push_back(alt.second);
+    }
+    _altHosts["__default"].hosts.push_back( host );
 }
 
-void IsMasterResponse::addPassive(const HostAndPort& passive) {
+void IsMasterResponse::addPassive(const HostAndPort& passive,
+                                  const std::map<std::string, HostAndPort>& alts) {
     _passivesSet = true;
     _passives.push_back(passive);
+    for (auto& alt : alts) {
+        _altHosts[alt.first].passives.push_back(alt.second);
+    }
+    _altHosts["__default"].passives.push_back( passive );
 }
 
-void IsMasterResponse::addArbiter(const HostAndPort& arbiter) {
+void IsMasterResponse::addArbiter(const HostAndPort& arbiter,
+                                  const std::map<std::string, HostAndPort>& alts) {
     _arbitersSet = true;
     _arbiters.push_back(arbiter);
+    for (auto& alt : alts) {
+        _altHosts[alt.first].arbiters.push_back(alt.second);
+    }
+    _altHosts["__default"].arbiters.push_back( arbiter );
 }
 
-void IsMasterResponse::setPrimary(const HostAndPort& primary) {
+void IsMasterResponse::setPrimary(const HostAndPort& primary,
+                                  const std::map<std::string, HostAndPort>& alts) {
     _primarySet = true;
     _primary = primary;
+    for (auto& alt : alts) {
+        _altHosts[alt.first].primary = alt.second;
+    }
+    _altHosts["__default"].primary= primary;
 }
 
 void IsMasterResponse::setIsArbiterOnly(bool arbiterOnly) {

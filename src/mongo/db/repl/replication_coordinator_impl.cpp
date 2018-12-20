@@ -2107,11 +2107,12 @@ Status ReplicationCoordinatorImpl::processReplSetGetStatus(
     return result;
 }
 
-void ReplicationCoordinatorImpl::fillIsMasterForReplSet(IsMasterResponse* response) {
+void ReplicationCoordinatorImpl::fillIsMasterForReplSet(IsMasterResponse* response,
+                                                        const std::string& zone) {
     invariant(getSettings().usingReplSets());
 
     stdx::lock_guard<stdx::mutex> lk(_mutex);
-    _topCoord->fillIsMasterForReplSet(response);
+    _topCoord->fillIsMasterForReplSet(response, zone);
 
     OpTime lastOpTime = _getMyLastAppliedOpTime_inlock();
     response->setLastWrite(lastOpTime, lastOpTime.getTimestamp().getSecs());

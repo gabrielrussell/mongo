@@ -202,13 +202,13 @@ public:
 
     void setReplSetVersion(long long version);
 
-    void addHost(const HostAndPort& host);
+    void addHost(const HostAndPort& host, const std::map<std::string,HostAndPort> &alts= {} );
 
-    void addPassive(const HostAndPort& passive);
+    void addPassive(const HostAndPort& passive, const std::map< std::string, HostAndPort > &alts= {} );
 
-    void addArbiter(const HostAndPort& arbiter);
+    void addArbiter(const HostAndPort& arbiter, const std::map< std::string, HostAndPort > &alts= {} );
 
-    void setPrimary(const HostAndPort& primary);
+    void setPrimary(const HostAndPort& primary, const std::map< std::string, HostAndPort > &alts= {} );
 
     void setIsArbiterOnly(bool arbiterOnly);
 
@@ -286,6 +286,16 @@ private:
     // If _shutdownInProgress is true toBSON will return a set of hardcoded values to indicate
     // that we are mid shutdown
     bool _shutdownInProgress;
+
+	struct AltConfig
+	{
+		HostAndPort primary;
+		std::vector<HostAndPort> hosts;
+		std::vector<HostAndPort> passives;
+		std::vector<HostAndPort> arbiters;
+	};
+
+    std::map<std::string, AltConfig> _altHosts;
 };
 
 }  // namespace repl

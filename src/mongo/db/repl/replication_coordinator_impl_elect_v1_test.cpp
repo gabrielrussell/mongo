@@ -173,11 +173,11 @@ TEST_F(ReplCoordTest, ElectionSucceedsWhenNodeIsTheOnlyElectableNode) {
 
     // Since we're still in drain mode, expect that we report ismaster: false, issecondary:true.
     IsMasterResponse imResponse;
-    getReplCoord()->fillIsMasterForReplSet(&imResponse);
+    getReplCoord()->fillIsMasterForReplSet(&imResponse, ReplicationCoordinator::defaultZone);
     ASSERT_FALSE(imResponse.isMaster()) << imResponse.toBSON().toString();
     ASSERT_TRUE(imResponse.isSecondary()) << imResponse.toBSON().toString();
     signalDrainComplete(&opCtx);
-    getReplCoord()->fillIsMasterForReplSet(&imResponse);
+    getReplCoord()->fillIsMasterForReplSet(&imResponse, ReplicationCoordinator::defaultZone);
     ASSERT_TRUE(imResponse.isMaster()) << imResponse.toBSON().toString();
     ASSERT_FALSE(imResponse.isSecondary()) << imResponse.toBSON().toString();
 }
@@ -235,11 +235,11 @@ TEST_F(ReplCoordTest, ElectionSucceedsWhenNodeIsTheOnlyNode) {
 
     // Since we're still in drain mode, expect that we report ismaster: false, issecondary:true.
     IsMasterResponse imResponse;
-    getReplCoord()->fillIsMasterForReplSet(&imResponse);
+    getReplCoord()->fillIsMasterForReplSet(&imResponse, ReplicationCoordinator::defaultZone);
     ASSERT_FALSE(imResponse.isMaster()) << imResponse.toBSON().toString();
     ASSERT_TRUE(imResponse.isSecondary()) << imResponse.toBSON().toString();
     signalDrainComplete(&opCtx);
-    getReplCoord()->fillIsMasterForReplSet(&imResponse);
+    getReplCoord()->fillIsMasterForReplSet(&imResponse, ReplicationCoordinator::defaultZone);
     ASSERT_TRUE(imResponse.isMaster()) << imResponse.toBSON().toString();
     ASSERT_FALSE(imResponse.isSecondary()) << imResponse.toBSON().toString();
 }
@@ -2197,7 +2197,7 @@ protected:
 
         simulateSuccessfulV1Voting();
         IsMasterResponse imResponse;
-        getReplCoord()->fillIsMasterForReplSet(&imResponse);
+        getReplCoord()->fillIsMasterForReplSet(&imResponse, ReplicationCoordinator::defaultZone);
         ASSERT_FALSE(imResponse.isMaster()) << imResponse.toBSON().toString();
         ASSERT_TRUE(imResponse.isSecondary()) << imResponse.toBSON().toString();
 

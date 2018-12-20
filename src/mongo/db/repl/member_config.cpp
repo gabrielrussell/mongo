@@ -51,6 +51,7 @@ const std::string MemberConfig::kSlaveDelayFieldName = "slaveDelay";
 const std::string MemberConfig::kArbiterOnlyFieldName = "arbiterOnly";
 const std::string MemberConfig::kBuildIndexesFieldName = "buildIndexes";
 const std::string MemberConfig::kTagsFieldName = "tags";
+const std::string MemberConfig::kZonesFieldName = "zones";
 const std::string MemberConfig::kInternalVoterTagName = "$voter";
 const std::string MemberConfig::kInternalElectableTagName = "$electable";
 const std::string MemberConfig::kInternalAllTagName = "$all";
@@ -64,7 +65,8 @@ const std::string kLegalMemberConfigFieldNames[] = {MemberConfig::kIdFieldName,
                                                     MemberConfig::kSlaveDelayFieldName,
                                                     MemberConfig::kArbiterOnlyFieldName,
                                                     MemberConfig::kBuildIndexesFieldName,
-                                                    MemberConfig::kTagsFieldName};
+                                                    MemberConfig::kTagsFieldName,
+                                                    MemberConfig::kZonesFieldName};
 
 const int kVotesFieldDefault = 1;
 const double kPriorityFieldDefault = 1.0;
@@ -77,7 +79,7 @@ const Seconds kMaxSlaveDelay(3600 * 24 * 366);
 
 }  // namespace
 
-Status MemberConfig::initialize(const BSONObj& mcfg, ReplSetTagConfig* tagConfig) {
+Status MemberConfig::initialize(const BSONObj& mcfg, ReplSetTagConfig* tagConfig) try {
     Status status = bsonCheckOnlyHasFields(
         "replica set member configuration", mcfg, kLegalMemberConfigFieldNames);
     if (!status.isOK())
@@ -200,6 +202,31 @@ Status MemberConfig::initialize(const BSONObj& mcfg, ReplSetTagConfig* tagConfig
         return status;
     }
 
+    _altNames.clear();
+    try
+    {
+        BSONElement zonesElement= bsonExtractTypedField( mcfg, kZonesFieldName, Object );
+        const auto &zonesObject= zonesElement.Obj();
+        using std::begin;
+        using std::end;
+        std::transform( begin( zonesObject ), end( zonesObject ), inserter( _altNames, end( _altNames ) ),
+                []( auto &&zone ) -> decltype( _altNames )::value_type
+                {
+                    const auto zoneName= zone.fieldName();
+
+                    if( zone.type() != String ) {uasserted( ErrorCodes::TypeMismatch,
+                              str::stream() << "zone." << zoneName
+                                            << " field has non-object value of type "
+                                            << typeName(zone.type()));}
+
+                    
+                    HostAndPort tmp( zone.valueStringData() );
+
+                    return { zoneName, HostAndPort( tmp.host(), tmp.port() ) };
+                } );
+    }
+    catch( const ExceptionFor< ErrorCodes::NoSuchKey > & ){}
+
     //
     // Add internal tags based on other member properties.
     //
@@ -221,6 +248,10 @@ Status MemberConfig::initialize(const BSONObj& mcfg, ReplSetTagConfig* tagConfig
     }
 
     return Status::OK();
+}
+catch( const DBException &ex )
+{
+    return ex.toStatus();
 }
 
 Status MemberConfig::validate() const {
