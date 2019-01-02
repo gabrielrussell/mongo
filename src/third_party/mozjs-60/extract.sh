@@ -43,6 +43,8 @@ cp mozilla-release/js/src/js/src/frontend/ReservedWordsGenerated.h extract/js/sr
 
 mkdir -p include/gc
 cp extract/js/src/js/src/gc/StatsPhasesGenerated.h include/gc
+mkdir -p extract/js/gc
+cp extract/js/src/js/src/gc/StatsPhasesGenerated.cpp extract/js/gc
 
 # mfbt doesn't change by arch or platform, so keep the same unified cpp
 mkdir -p extract/js/src/mfbt
@@ -95,8 +97,9 @@ rm -rf \
 rm -rf \
     extract/mfbt/decimal \
     extract/mfbt/tests \
-    extract/js/src/vm/make_unicode.py \
-    extract/js/src/vtune
+    extract/js/src/vm/make_unicode.py
+#    extract/js/src/vm/make_unicode.py \
+#    extract/js/src/vtune
 
 # this is all of the EXPORTS files from the moz.build
 mkdir -p include
@@ -133,6 +136,9 @@ cp mozilla-release/modules/fdlibm/src/* extract/modules/fdlibm/
 cp mozilla-release/mozglue/misc/*.h include
 mkdir -p extract/mozglue/misc
 cp mozilla-release/mozglue/misc/*.cpp extract/mozglue/misc
+
+mkdir -p include/vtune
+touch include/vtune/VTuneWrapper.h
 
 ## # Apply a local patch
 ## git apply \
