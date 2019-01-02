@@ -2763,25 +2763,32 @@ JS_DefinePropertyById(JSContext* cx, JS::HandleObject obj, JS::HandleId id, doub
                       unsigned attrs);
 
 extern JS_PUBLIC_API(bool)
-JS_DefineProperty(JSContext* cx, JS::HandleObject obj, const char* name, JS::HandleValue value, unsigned attrs);
+JS_DefineProperty(JSContext* cx, JS::HandleObject obj, const char* name, JS::HandleValue value,
+                  unsigned attrs);
 
 extern JS_PUBLIC_API(bool)
-JS_DefineProperty(JSContext* cx, JS::HandleObject obj, const char* name, JSNative getter, JSNative setter, unsigned attrs);
+JS_DefineProperty(JSContext* cx, JS::HandleObject obj, const char* name, JSNative getter,
+                  JSNative setter, unsigned attrs);
 
 extern JS_PUBLIC_API(bool)
-JS_DefineProperty(JSContext* cx, JS::HandleObject obj, const char* name, JS::HandleObject value, unsigned attrs);
+JS_DefineProperty(JSContext* cx, JS::HandleObject obj, const char* name, JS::HandleObject value,
+                  unsigned attrs);
 
 extern JS_PUBLIC_API(bool)
-JS_DefineProperty(JSContext* cx, JS::HandleObject obj, const char* name, JS::HandleString value, unsigned attrs);
+JS_DefineProperty(JSContext* cx, JS::HandleObject obj, const char* name, JS::HandleString value,
+                  unsigned attrs);
 
 extern JS_PUBLIC_API(bool)
-JS_DefineProperty(JSContext* cx, JS::HandleObject obj, const char* name, int32_t value, unsigned attrs);
+JS_DefineProperty(JSContext* cx, JS::HandleObject obj, const char* name, int32_t value,
+                  unsigned attrs);
 
 extern JS_PUBLIC_API(bool)
-JS_DefineProperty(JSContext* cx, JS::HandleObject obj, const char* name, uint32_t value, unsigned attrs);
+JS_DefineProperty(JSContext* cx, JS::HandleObject obj, const char* name, uint32_t value,
+                  unsigned attrs);
 
 extern JS_PUBLIC_API(bool)
-JS_DefineProperty(JSContext* cx, JS::HandleObject obj, const char* name, double value, unsigned attrs);
+JS_DefineProperty(JSContext* cx, JS::HandleObject obj, const char* name, double value,
+                  unsigned attrs);
 
 extern JS_PUBLIC_API(bool)
 JS_DefineUCProperty(JSContext* cx, JS::HandleObject obj, const char16_t* name, size_t namelen,

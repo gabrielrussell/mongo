@@ -43,8 +43,8 @@ cp mozilla-release/js/src/js/src/frontend/ReservedWordsGenerated.h extract/js/sr
 
 mkdir -p include/gc
 cp extract/js/src/js/src/gc/StatsPhasesGenerated.h include/gc
-mkdir -p extract/js/gc
-cp extract/js/src/js/src/gc/StatsPhasesGenerated.cpp extract/js/gc
+mkdir -p extract/js/src/gc
+cp extract/js/src/js/src/gc/StatsPhasesGenerated.cpp extract/js/src/gc
 
 # mfbt doesn't change by arch or platform, so keep the same unified cpp
 mkdir -p extract/js/src/mfbt
@@ -124,6 +124,7 @@ for i in 'malloc_decls.h' 'mozjemalloc_types.h' 'mozmemory.h' 'mozmemory_wrap.h'
 done
 
 cp -r extract/js/src/dist/include/double-conversion include
+cp -r extract/mfbt/double-conversion/double-conversion/*.h include/double-conversion
 
 for i in 'AutoProfilerLabel.h' 'PlatformConditionVariable.h' 'PlatformMutex.h' 'Printf.h' 'StackWalk.h' 'TimeStamp.h' 'fallible.h' ; do
     cp extract/js/src/dist/include/mozilla/$i include/mozilla
