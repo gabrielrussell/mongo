@@ -31,7 +31,9 @@
 var {ErrorCodes, ErrorCodeStrings} = (function() {
     const handler = {
         get: function(obj, prop) {
-            if (prop !== Symbol.toPrimitive && prop in obj === false && prop in Object === false) {
+            // TODO is this correct? I suspect that the Symbol.toPrimitive check is supposed to
+            // catch that prop is not of type symbol, but it doesn't seam to
+            if (typeof(prop) !== "symbol" && prop !== Symbol.toPrimitive && prop in obj === false && prop in Object === false) {
                 throw new Error('Unknown Error Code: ' + prop.toString());
             }
 
