@@ -122,7 +122,7 @@ for i in 'malloc_decls.h' 'mozjemalloc_types.h' 'mozmemory.h' 'mozmemory_wrap.h'
     cp extract/js/src/dist/include/$i include
 done
 
-cp -r extract/js/src/dist/include/double-conversion include
+mkdir -p include/double-conversion
 cp -r extract/mfbt/double-conversion/double-conversion/*.h include/double-conversion
 
 for i in 'AutoProfilerLabel.h' 'PlatformConditionVariable.h' 'PlatformMutex.h' 'Printf.h' 'StackWalk.h' 'TimeStamp.h' 'fallible.h' ; do

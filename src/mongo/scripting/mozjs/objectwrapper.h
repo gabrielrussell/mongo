@@ -100,7 +100,7 @@ public:
         StringData toStringData(JSContext* cx, JSStringWrapper* jsstr);
 
         union {
-            const char*  _field;
+            const char* _field;
             uint32_t _idx;
             jsid _id;
             InternedString _internedString;
