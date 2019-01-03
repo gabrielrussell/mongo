@@ -239,7 +239,7 @@ public:
                     // T::setProperty != BaseInfo::setProperty ? smUtils::setProperty<T> : nullptr,
                     // We don't use the regular enumerate because we want the fancy new one
                     nullptr, // enumerate
-                    nullptr, // newEnumerate
+                    T::enumerate != BaseInfo::enumerate ? smUtils::enumerate<T> : nullptr, // newEnumerate
                     T::resolve != BaseInfo::resolve ? smUtils::resolve<T> : nullptr,
                     T::mayResolve != BaseInfo::mayResolve ? T::mayResolve : nullptr,
                     T::finalize != BaseInfo::finalize ? T::finalize : nullptr,
@@ -248,8 +248,6 @@ public:
                     T::construct != BaseInfo::construct ? smUtils::construct<T> : nullptr,
                     nullptr, // trace
         }){
-
-        _installEnumerate(T::enumerate != BaseInfo::enumerate ? smUtils::enumerate<T> : nullptr);
 
         // The global object is different.  We need it for basic setup
         // before the other types are installed.  Might as well just do it
@@ -479,23 +477,6 @@ private:
 
         throwCurrentJSException(
             _context, ErrorCodes::JSInterpreterFailure, "Failed to define functions");
-    }
-
-    // We have to do this awkward dance to set the new style enumeration.
-    // You used to be able to set this with JSCLASS_NEW_ENUMERATE in class
-    // flags, in the future you'll probably only set ObjectOps, but for now
-    // we have this.  There are a host of static_asserts in js/Class.h that
-    // ensure that these two structures are equal.
-    //
-    // This is a landmine to watch out for during upgrades
-    using enumerateT = bool (*)(JSContext*, JS::HandleObject, JS::AutoIdVector&, bool);
-    void _installEnumerate(enumerateT enumerate) {
-        if (!enumerate)
-            return;
-
-        //auto implClass = reinterpret_cast<js::Class*>(&_jsclass);
-
-        //implClass->ops.enumerate = enumerate;
     }
 
     // This is for inheriting from something other than Object

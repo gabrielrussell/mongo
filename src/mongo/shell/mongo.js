@@ -57,7 +57,7 @@ Mongo.prototype.getDB = function(name) {
 };
 
 Mongo.prototype._getDatabaseNamesFromPrivileges = function() {
-    //'use strict';
+    'use strict';
 
     const ret = this.adminCommand({connectionStatus: 1, showPrivileges: 1});
     if (!ret.ok) {
@@ -89,6 +89,7 @@ Mongo.prototype.getDBs = function(driverSession = this._getDefaultSession(),
                                   filter = {},
                                   nameOnly = undefined,
                                   authorizedDatabases = undefined) {
+    // TODO
     //'use strict';
 
     let cmdObj = {listDatabases: 1};

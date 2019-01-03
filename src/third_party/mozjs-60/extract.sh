@@ -3,16 +3,11 @@
 set -e
 set -v
 
-#run this with a mozilla-release directory with the untarred firefox download
-
 rm -rf extract include
 
 mkdir extract
 mkdir extract/js
 mkdir -p extract/intl/icu/source/common/unicode
-
-cp -r mozilla-release/js/src mozilla-release/js/public extract/js/
-cp -r mozilla-release/mfbt extract/
 
 # We need these even without ICU
 cp mozilla-release/intl/icu/source/common/unicode/platform.h extract/intl/icu/source/common/unicode
@@ -24,18 +19,22 @@ cp mozilla-release/intl/icu/source/common/unicode/utypes.h extract/intl/icu/sour
 cp mozilla-release/intl/icu/source/common/unicode/uvernum.h extract/intl/icu/source/common/unicode
 cp mozilla-release/intl/icu/source/common/unicode/uversion.h extract/intl/icu/source/common/unicode
 
-## cd mozilla-release/js/src
-## 
-## # skipping icu and relying on posix nspr emulation all helps.  After that we
-## # only need js/src, js/public and mfbt.  Well, we also need 8 of the icu
-## # headers, but only to stub out functions that fail at runtime
-## PYTHON=python ./configure --without-intl-api --enable-posix-nspr-emulation --disable-js-shell --disable-tests
-## 
-## # we have to run make to generate a byte code version of the self hosted js and
-## # a switch table
-## make
-## 
-## cd ../../..
+cd mozilla-release/js/src
+
+# skipping icu and relying on posix nspr emulation all helps.  After that we
+# only need js/src, js/public and mfbt.  Well, we also need 8 of the icu
+# headers, but only to stub out functions that fail at runtime
+PYTHON=python ./configure --without-intl-api --enable-posix-nspr-emulation --disable-js-shell --disable-tests
+
+# we have to run make to generate a byte code version of the self hosted js and
+# a switch table
+make
+
+cd ../../..
+
+cp -r mozilla-release/mfbt extract/
+
+cp -r mozilla-release/js/src mozilla-release/js/public extract/js/
 
 cp mozilla-release/js/src/js/src/selfhosted.out.h extract/js/src
 mkdir -p extract/js/src/frontend
