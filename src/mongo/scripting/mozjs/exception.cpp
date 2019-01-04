@@ -84,8 +84,6 @@ Status JSErrorReportToStatus(JSContext* cx,
                              JSErrorReport* report,
                              ErrorCodes::Error altCode,
                              StringData altReason) {
-
-
     JSStringWrapper jsstr(cx, mongoErrorReportToString(cx, report));
     if (!jsstr)
         return Status(altCode, altReason.rawData());

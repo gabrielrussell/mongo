@@ -54,7 +54,7 @@ void BaseInfo::enumerate(JSContext* cx,
                          JS::HandleObject obj,
                          JS::AutoIdVector& properties,
                          bool enumerableOnly) {}
-void BaseInfo::finalize(JSFreeOp* fop, JSObject* obj) {}
+void BaseInfo::finalize(js::FreeOp* fop, JSObject* obj) {}
 void BaseInfo::getProperty(JSContext* cx,
                            JS::HandleObject obj,
                            JS::HandleId id,

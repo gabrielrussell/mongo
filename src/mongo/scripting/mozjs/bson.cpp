@@ -126,7 +126,7 @@ void BSONInfo::make(
     JS_SetPrivate(obj, scope->trackedNew<BSONHolder>(bson, parent, scope, ro));
 }
 
-void BSONInfo::finalize(JSFreeOp* fop, JSObject* obj) {
+void BSONInfo::finalize(FreeOp* fop, JSObject* obj) {
     auto holder = static_cast<BSONHolder*>(JS_GetPrivate(obj));
 
     if (!holder)
