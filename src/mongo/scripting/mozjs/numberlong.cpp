@@ -58,7 +58,7 @@ const JSFunctionSpec NumberLongInfo::methods[6] = {
 
 const char* const NumberLongInfo::className = "NumberLong";
 
-void NumberLongInfo::finalize(JSFreeOp* fop, JSObject* obj) {
+void NumberLongInfo::finalize(js::FreeOp* fop, JSObject* obj) {
     auto numLong = static_cast<int64_t*>(JS_GetPrivate(obj));
 
     if (numLong)

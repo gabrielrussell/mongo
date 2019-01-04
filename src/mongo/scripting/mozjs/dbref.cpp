@@ -69,7 +69,7 @@ void DBRefInfo::construct(JSContext* cx, JS::CallArgs args) {
     args.rval().setObjectOrNull(out);
 }
 
-void DBRefInfo::finalize(JSFreeOp* fop, JSObject* obj) {
+void DBRefInfo::finalize(js::FreeOp* fop, JSObject* obj) {
     BSONInfo::finalize(fop, obj);
 }
 

@@ -102,7 +102,7 @@ void MongoStatusInfo::construct(JSContext* cx, JS::CallArgs args) {
     args.rval().set(out);
 }
 
-void MongoStatusInfo::finalize(JSFreeOp* fop, JSObject* obj) {
+void MongoStatusInfo::finalize(js::FreeOp* fop, JSObject* obj) {
     auto status = static_cast<Status*>(JS_GetPrivate(obj));
 
     if (status)

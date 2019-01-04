@@ -461,7 +461,7 @@ inline MozJSImplScope* getScope(JSContext* cx) {
     return static_cast<MozJSImplScope*>(JS_GetContextPrivate(cx));
 }
 
-inline MozJSImplScope* getScope(JSFreeOp* fop) {
+inline MozJSImplScope* getScope(js::FreeOp* fop) {
     // TODO
     return nullptr;
     //return static_cast<MozJSImplScope*>(JS_GetContextPrivate(fop->runtime()->contextFromMainThread()));
