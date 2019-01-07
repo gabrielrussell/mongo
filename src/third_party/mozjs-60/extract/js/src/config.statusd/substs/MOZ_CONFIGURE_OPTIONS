@@ -1,1 +1,1 @@
-"--host=x86_64-linux --disable-tests --disable-js-shell --enable-posix-nspr-emulation --without-intl-api"
+"--disable-tests --disable-js-shell --enable-posix-nspr-emulation --without-intl-api"

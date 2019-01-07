@@ -12,6 +12,7 @@ STATIC_LIBS += $(DEPTH)/js/src/libjs_src.a
 STATIC_LIBS += $(DEPTH)/modules/fdlibm/src/libmodules_fdlibm_src.a
 STATIC_LIBS += $(DEPTH)/config/external/nspr/libnspr.a
 STATIC_LIBS += $(DEPTH)/config/external/zlib/libzlib.a
+OS_LIBS += -lz
 OS_LIBS += -lm
 OS_LIBS += -ldl
 FORCE_STATIC_LIB := 1

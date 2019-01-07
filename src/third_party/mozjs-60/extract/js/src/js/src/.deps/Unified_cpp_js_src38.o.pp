@@ -517,9 +517,8 @@ Unified_cpp_js_src38.o: \
  /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/jit/InlinableNatives.h \
  /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/util/StringBuffer.h \
  /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/vm/Compression.h \
- /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/include/zlib.h \
- /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/include/zconf.h \
- /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/include/mozzconf.h \
+ /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/system_wrappers/zlib.h \
+ /usr/include/zlib.h /usr/include/zconf.h \
  /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/system_wrappers/unistd.h \
  /usr/include/unistd.h /usr/include/bits/posix_opt.h \
  /usr/include/bits/environments.h /usr/include/bits/confname.h \
@@ -1836,11 +1835,11 @@ Unified_cpp_js_src38.o: \
 
 /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/vm/Compression.h:
 
-/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/include/zlib.h:
+/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/system_wrappers/zlib.h:
 
-/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/include/zconf.h:
+/usr/include/zlib.h:
 
-/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/include/mozzconf.h:
+/usr/include/zconf.h:
 
 /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/system_wrappers/unistd.h:
 

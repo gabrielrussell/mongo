@@ -196,6 +196,8 @@
 /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/config.statusd/substs/PROFILE_USE_CFLAGS
 /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/config.statusd/substs/PROFILE_USE_LDFLAGS
 /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/config.statusd/substs/PYTHON
+/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/config.statusd/substs/PYTHON3
+/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/config.statusd/substs/PYTHON3_VERSION
 /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/config.statusd/substs/QEMU_CANT_RUN_JS_SHELL
 /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/config.statusd/substs/QEMU_EXE
 /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/config.statusd/substs/RANLIB

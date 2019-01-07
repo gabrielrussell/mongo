@@ -94,8 +94,6 @@
 /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/mfbt/moz.build
 /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/modules/fdlibm/moz.build
 /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/modules/fdlibm/src/moz.build
-/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/modules/zlib/moz.build
-/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/modules/zlib/src/moz.build
 /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/moz.build
 /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/mozglue/build/Makefile.in
 /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/mozglue/build/moz.build

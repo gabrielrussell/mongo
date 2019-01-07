@@ -601,9 +601,8 @@ Unified_cpp_js_src31.o: \
  /usr/include/bits/unistd.h \
  /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/vm/Compression.cpp \
  /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/vm/Compression.h \
- /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/include/zlib.h \
- /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/include/zconf.h \
- /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/include/mozzconf.h
+ /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/system_wrappers/zlib.h \
+ /usr/include/zlib.h /usr/include/zconf.h
 
 /usr/include/stdc-predef.h:
 
@@ -1953,8 +1952,8 @@ Unified_cpp_js_src31.o: \
 
 /home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/vm/Compression.h:
 
-/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/include/zlib.h:
+/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/system_wrappers/zlib.h:
 
-/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/include/zconf.h:
+/usr/include/zlib.h:
 
-/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/js/src/dist/include/mozzconf.h:
+/usr/include/zconf.h:

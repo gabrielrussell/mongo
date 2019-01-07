@@ -167,6 +167,3 @@
 1mozjemalloc_types.h/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/memory/build/mozjemalloc_types.h
 1mozmemory.h/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/memory/build/mozmemory.h
 1mozmemory_wrap.h/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/memory/build/mozmemory_wrap.h
-1mozzconf.h/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/modules/zlib/src/mozzconf.h
-1zconf.h/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/modules/zlib/src/zconf.h
-1zlib.h/home/ec2-user/src/mongo/src/third_party/mozjs-60/mozilla-release/modules/zlib/src/zlib.h
