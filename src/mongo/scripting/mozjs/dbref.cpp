@@ -80,12 +80,13 @@ void DBRefInfo::enumerate(JSContext* cx,
     BSONInfo::enumerate(cx, obj, properties, enumerableOnly);
 }
 
-void DBRefInfo::setProperty(JSContext* cx,
+bool DBRefInfo::setProperty(JSContext* cx,
                             JS::HandleObject obj,
                             JS::HandleId id,
-                            JS::MutableHandleValue vp,
+                            JS::HandleValue vp,
+                            JS::HandleValue receiver,
                             JS::ObjectOpResult& result) {
-    BSONInfo::setProperty(cx, obj, id, vp, result);
+    return BSONInfo::setProperty(cx, obj, id, vp, receiver, result);
 }
 
 void DBRefInfo::delProperty(JSContext* cx,

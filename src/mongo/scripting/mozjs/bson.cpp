@@ -169,17 +169,19 @@ void BSONInfo::enumerate(JSContext* cx,
     }
 }
 
-void BSONInfo::setProperty(JSContext* cx,
-                           JS::HandleObject obj,
-                           JS::HandleId id,
-                           JS::MutableHandleValue vp,
-                           JS::ObjectOpResult& result) {
+bool BSONInfo::setProperty(JSContext* cx,
+		     JS::HandleObject obj,
+		     JS::HandleId id,
+		     JS::HandleValue vp,
+                     JS::HandleValue receiver,
+		     JS::ObjectOpResult& result) {
+
     auto holder = getValidHolder(cx, obj);
 
     if (holder) {
         if (holder->_readOnly) {
             uasserted(ErrorCodes::BadValue, "Read only object");
-            return;
+            return false;
         }
 
         auto iter = holder->_removed.find(IdWrapper(cx, id).toString());
@@ -192,7 +194,7 @@ void BSONInfo::setProperty(JSContext* cx,
     }
 
     ObjectWrapper(cx, obj).defineProperty(id, vp, JSPROP_ENUMERATE);
-    result.succeed();
+    return result.succeed();
 }
 
 void BSONInfo::delProperty(JSContext* cx,

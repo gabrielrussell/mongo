@@ -161,7 +161,7 @@ bool enumerate(JSContext* cx,
 };
 
 template <typename T>
-bool getProperty(JSContext* cx, JS::HandleObject obj, JS::HandleId id, JS::MutableHandleValue vp) {
+bool getProperty(JSContext* cx, JS::HandleObject obj, JS::HandleValue receiver, JS::HandleId id, JS::MutableHandleValue vp) {
     if (JSID_IS_SYMBOL(id)) {
         // Just default to the SpiderMonkey's standard implementations for Symbol methods
         vp.setUndefined();
@@ -169,7 +169,7 @@ bool getProperty(JSContext* cx, JS::HandleObject obj, JS::HandleId id, JS::Mutab
     }
 
     try {
-        T::getProperty(cx, obj, id, vp);
+        T::getProperty(cx, obj, id, receiver, vp);
         return true;
     } catch (...) {
         mongoToJSException(cx);
@@ -192,10 +192,11 @@ template <typename T>
 bool setProperty(JSContext* cx,
                  JS::HandleObject obj,
                  JS::HandleId id,
-                 JS::MutableHandleValue vp,
+                 JS::HandleValue vp,
+		 JS::HandleValue receiver,
                  JS::ObjectOpResult& result) {
     try {
-        T::setProperty(cx, obj, id, vp, result);
+        T::setProperty(cx, obj, id, vp, receiver, result);
         return true;
     } catch (...) {
         mongoToJSException(cx);
@@ -252,8 +253,8 @@ public:
 		nullptr, // lookupProperty
 		nullptr, // defineProperty
 		nullptr, // hasProperty
-		nullptr, // T::getProperty != BaseInfo::getProperty ? smUtils::getProperty<T> : nullptr, // getProperty
-		nullptr, // T::setProperty != BaseInfo::setProperty ? smUtils::setProperty<T> : nullptr, // setProperty
+		T::getProperty != BaseInfo::getProperty ? smUtils::getProperty<T> : nullptr, // getProperty
+		T::setProperty != BaseInfo::setProperty ? smUtils::setProperty<T> : nullptr, // setProperty
 		nullptr, // getOwnPropertyDescriptor
 		nullptr, // deleteProperty
 		nullptr, // getElements

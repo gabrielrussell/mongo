@@ -59,11 +59,12 @@ struct BSONInfo : public BaseInfo {
                           bool enumerableOnly);
     static void finalize(js::FreeOp* fop, JSObject* obj);
     static void resolve(JSContext* cx, JS::HandleObject obj, JS::HandleId id, bool* resolvedp);
-    static void setProperty(JSContext* cx,
-                            JS::HandleObject obj,
-                            JS::HandleId id,
-                            JS::MutableHandleValue vp,
-                            JS::ObjectOpResult& result);
+    static bool setProperty(JSContext* cx,
+		     JS::HandleObject obj,
+		     JS::HandleId id,
+		     JS::HandleValue v,
+                     JS::HandleValue receiver,
+		     JS::ObjectOpResult& result);
 
     static const char* const className;
     static const unsigned classFlags = JSCLASS_HAS_PRIVATE;
