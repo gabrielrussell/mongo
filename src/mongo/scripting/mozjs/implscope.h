@@ -462,9 +462,9 @@ inline MozJSImplScope* getScope(JSContext* cx) {
 }
 
 inline MozJSImplScope* getScope(js::FreeOp* fop) {
-    // TODO
+    // TODO activeContextFromOwnThread ?!?
     return nullptr;
-    //return static_cast<MozJSImplScope*>(JS_GetContextPrivate(fop->runtime()->contextFromMainThread()));
+    // return static_cast<MozJSImplScope*>(JS_GetContextPrivate(fop->runtime()->activeContextFromOwnThread()));
 }
 
 
