@@ -72,11 +72,11 @@ bool BaseInfo::mayResolve(const JSAtomState& names, jsid id, JSObject* maybeObj)
 void BaseInfo::postInstall(JSContext* cx, JS::HandleObject global, JS::HandleObject proto) {}
 void BaseInfo::resolve(JSContext* cx, JS::HandleObject obj, JS::HandleId id, bool* resolvedp) {}
 bool BaseInfo::setProperty(JSContext* cx,
-		     JS::HandleObject obj,
-		     JS::HandleId id,
-		     JS::HandleValue v,
-                     JS::HandleValue receiver,
-		     JS::ObjectOpResult& result) {
+                           JS::HandleObject obj,
+                           JS::HandleId id,
+                           JS::HandleValue v,
+                           JS::HandleValue receiver,
+                           JS::ObjectOpResult& result) {
     return false;
 }
 

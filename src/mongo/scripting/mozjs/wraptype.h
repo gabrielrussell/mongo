@@ -161,7 +161,11 @@ bool enumerate(JSContext* cx,
 };
 
 template <typename T>
-bool getProperty(JSContext* cx, JS::HandleObject obj, JS::HandleValue receiver, JS::HandleId id, JS::MutableHandleValue vp) {
+bool getProperty(JSContext* cx,
+                 JS::HandleObject obj,
+                 JS::HandleValue receiver,
+                 JS::HandleId id,
+                 JS::MutableHandleValue vp) {
     if (JSID_IS_SYMBOL(id)) {
         // Just default to the SpiderMonkey's standard implementations for Symbol methods
         vp.setUndefined();
@@ -193,7 +197,7 @@ bool setProperty(JSContext* cx,
                  JS::HandleObject obj,
                  JS::HandleId id,
                  JS::HandleValue vp,
-		 JS::HandleValue receiver,
+                 JS::HandleValue receiver,
                  JS::ObjectOpResult& result) {
     try {
         T::setProperty(cx, obj, id, vp, receiver, result);
@@ -230,36 +234,37 @@ public:
         : _context(context),
           _proto(),
           _constructor(),
-          _jsclass({
-		T::className,
-                T::classFlags,
-                &_jsclassOps,
-                JS_NULL_CLASS_SPEC,
-                JS_NULL_CLASS_EXT,
-                &_jsoOps}),
-          _jsclassOps{
-                T::addProperty != BaseInfo::addProperty ? smUtils::addProperty<T> : nullptr,
-                T::delProperty != BaseInfo::delProperty ? smUtils::delProperty<T> : nullptr,
-                nullptr, // enumerate
-                T::enumerate != BaseInfo::enumerate ? smUtils::enumerate<T> : nullptr, // newEnumerate
-                T::resolve != BaseInfo::resolve ? smUtils::resolve<T> : nullptr,
-                T::mayResolve != BaseInfo::mayResolve ? T::mayResolve : nullptr,
-                T::finalize != BaseInfo::finalize ? T::finalize : nullptr,
-                T::call != BaseInfo::call ? smUtils::call<T> : nullptr,
-                T::hasInstance != BaseInfo::hasInstance ? smUtils::hasInstance<T> : nullptr,
-                T::construct != BaseInfo::construct ? smUtils::construct<T> : nullptr,
-                nullptr}, // trace
-        _jsoOps{
-		nullptr, // lookupProperty
-		nullptr, // defineProperty
-		nullptr, // hasProperty
-		T::getProperty != BaseInfo::getProperty ? smUtils::getProperty<T> : nullptr, // getProperty
-		T::setProperty != BaseInfo::setProperty ? smUtils::setProperty<T> : nullptr, // setProperty
-		nullptr, // getOwnPropertyDescriptor
-		nullptr, // deleteProperty
-		nullptr, // getElements
-		nullptr  // funToString
-        } {
+          _jsclass({T::className,
+                    T::classFlags,
+                    &_jsclassOps,
+                    JS_NULL_CLASS_SPEC,
+                    JS_NULL_CLASS_EXT,
+                    &_jsoOps}),
+          _jsclassOps{T::addProperty != BaseInfo::addProperty ? smUtils::addProperty<T> : nullptr,
+                      T::delProperty != BaseInfo::delProperty ? smUtils::delProperty<T> : nullptr,
+                      nullptr,  // enumerate
+                      T::enumerate != BaseInfo::enumerate ? smUtils::enumerate<T> : nullptr,
+                      // newEnumerate
+                      T::resolve != BaseInfo::resolve ? smUtils::resolve<T> : nullptr,
+                      T::mayResolve != BaseInfo::mayResolve ? T::mayResolve : nullptr,
+                      T::finalize != BaseInfo::finalize ? T::finalize : nullptr,
+                      T::call != BaseInfo::call ? smUtils::call<T> : nullptr,
+                      T::hasInstance != BaseInfo::hasInstance ? smUtils::hasInstance<T> : nullptr,
+                      T::construct != BaseInfo::construct ? smUtils::construct<T> : nullptr,
+                      nullptr},  // trace
+          _jsoOps{
+              nullptr,  // lookupProperty
+              nullptr,  // defineProperty
+              nullptr,  // hasProperty
+              T::getProperty != BaseInfo::getProperty ? smUtils::getProperty<T> : nullptr,
+              // getProperty
+              T::setProperty != BaseInfo::setProperty ? smUtils::setProperty<T> : nullptr,
+              // setProperty
+              nullptr,  // getOwnPropertyDescriptor
+              nullptr,  // deleteProperty
+              nullptr,  // getElements
+              nullptr   // funToString
+          } {
 
         // The global object is different.  We need it for basic setup
         // before the other types are installed.  Might as well just do it
@@ -273,8 +278,11 @@ public:
 
             JS::CompartmentOptions options;
             _proto.init(_context,
-                        _assertPtr(JS_NewGlobalObject(
-                            _context, js::Jsvalify(&_jsclass), nullptr, JS::DontFireOnNewGlobalHook, options)));
+                        _assertPtr(JS_NewGlobalObject(_context,
+                                                      js::Jsvalify(&_jsclass),
+                                                      nullptr,
+                                                      JS::DontFireOnNewGlobalHook,
+                                                      options)));
 
             JSAutoCompartment ac(_context, _proto);
             _installFunctions(_proto, T::freeFunctions);

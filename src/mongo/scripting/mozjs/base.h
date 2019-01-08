@@ -88,11 +88,11 @@ struct BaseInfo {
     static void postInstall(JSContext* cx, JS::HandleObject global, JS::HandleObject proto);
     static void resolve(JSContext* cx, JS::HandleObject obj, JS::HandleId id, bool* resolvedp);
     static bool setProperty(JSContext* cx,
-		     JS::HandleObject obj,
-		     JS::HandleId id,
-		     JS::HandleValue v,
-                     JS::HandleValue receiver,
-		     JS::ObjectOpResult& result);
+                            JS::HandleObject obj,
+                            JS::HandleId id,
+                            JS::HandleValue v,
+                            JS::HandleValue receiver,
+                            JS::ObjectOpResult& result);
 };
 
 }  // namespace mozjs

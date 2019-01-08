@@ -170,11 +170,11 @@ void BSONInfo::enumerate(JSContext* cx,
 }
 
 bool BSONInfo::setProperty(JSContext* cx,
-		     JS::HandleObject obj,
-		     JS::HandleId id,
-		     JS::HandleValue vp,
-                     JS::HandleValue receiver,
-		     JS::ObjectOpResult& result) {
+                           JS::HandleObject obj,
+                           JS::HandleId id,
+                           JS::HandleValue vp,
+                           JS::HandleValue receiver,
+                           JS::ObjectOpResult& result) {
 
     auto holder = getValidHolder(cx, obj);
 
