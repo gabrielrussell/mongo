@@ -258,12 +258,6 @@ void* js_realloc(void* p, size_t bytes) {
         [](void* ptr, size_t b) { return std::realloc(ptr, b); }, p, bytes);
 }
 
-void
-js::InitMallocAllocator()
-{
-}
+void js::InitMallocAllocator() {}
 
-void
-js::ShutDownMallocAllocator()
-{
-}
+void js::ShutDownMallocAllocator() {}

@@ -138,11 +138,8 @@ void ObjectWrapper::Key::define(JSContext* cx,
     throwCurrentJSException(cx, ErrorCodes::InternalError, "Failed to define value on a JSObject");
 }
 
-void ObjectWrapper::Key::define(JSContext* cx,
-                                JS::HandleObject o,
-                                unsigned attrs,
-                                JSNative getter,
-                                JSNative setter) {
+void ObjectWrapper::Key::define(
+    JSContext* cx, JS::HandleObject o, unsigned attrs, JSNative getter, JSNative setter) {
     switch (_type) {
         case Type::Field:
             if (JS_DefineProperty(cx, o, _field, getter, setter, attrs))
@@ -421,13 +418,11 @@ void ObjectWrapper::setPrototype(JS::HandleObject object) {
     throwCurrentJSException(_context, ErrorCodes::InternalError, "Failed to set prototype");
 }
 
-void ObjectWrapper::defineProperty(
-    Key key, JS::HandleValue val, unsigned attrs) {
+void ObjectWrapper::defineProperty(Key key, JS::HandleValue val, unsigned attrs) {
     key.define(_context, _object, val, attrs);
 }
 
-void ObjectWrapper::defineProperty(
-    Key key, unsigned attrs, JSNative getter, JSNative setter) {
+void ObjectWrapper::defineProperty(Key key, unsigned attrs, JSNative getter, JSNative setter) {
     key.define(_context, _object, attrs, getter, setter);
 }
 
