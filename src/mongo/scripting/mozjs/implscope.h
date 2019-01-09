@@ -33,6 +33,8 @@
 #include <jsapi.h>
 #include <vm/PosixNSPR.h>
 
+#include "freeOpToJSContext.h"
+
 #include "mongo/client/dbclient_cursor.h"
 #include "mongo/scripting/mozjs/bindata.h"
 #include "mongo/scripting/mozjs/bson.h"
@@ -462,9 +464,7 @@ inline MozJSImplScope* getScope(JSContext* cx) {
 }
 
 inline MozJSImplScope* getScope(js::FreeOp* fop) {
-    // TODO activeContextFromOwnThread ?!?
-    return nullptr;
-    // return static_cast<MozJSImplScope*>(JS_GetContextPrivate(fop->runtime()->activeContextFromOwnThread()));
+    return getScope(freeOpToJSContext(fop));
 }
 
 

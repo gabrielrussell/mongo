@@ -101,6 +101,7 @@ env.Prepend(CPPPATH=[
 
 sources = [
     "mongo_sources/mongoErrorReportToString.cpp",
+    "mongo_sources/freeOpToJSContext.cpp",
     "extract/js/src/builtin/RegExp.cpp",
     "extract/js/src/frontend/Parser.cpp",
     "extract/js/src/gc/StoreBuffer.cpp",
