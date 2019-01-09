@@ -90,7 +90,7 @@ Mongo.prototype.getDBs = function(driverSession = this._getDefaultSession(),
                                   nameOnly = undefined,
                                   authorizedDatabases = undefined) {
     // TODO
-    //'use strict';
+    // 'use strict';
 
     let cmdObj = {listDatabases: 1};
     if (filter) {
