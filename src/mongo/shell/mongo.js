@@ -133,7 +133,7 @@ Mongo.prototype.getDBs = function(driverSession = this._getDefaultSession(),
         }
 
         return res;
-    }(driverSession, filter, nameOnly, authorizedDatabases);
+    }.call(this, driverSession, filter, nameOnly, authorizedDatabases);
 };
 
 Mongo.prototype.adminCommand = function(cmd) {

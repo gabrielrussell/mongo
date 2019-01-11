@@ -81,7 +81,7 @@ class ConfigExpandRestServer {
 }
 
 function makeReflectionCmd(arg, opts = {}) {
-    _makeReflectionCmd(arg, ops);
+    _makeReflectionCmd.call(this, arg, ops);
 }
 
 function _makeReflectionCmd(arg, opts) {
