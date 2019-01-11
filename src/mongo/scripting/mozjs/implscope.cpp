@@ -121,9 +121,9 @@ struct MozJSImplScope::MozJSEntry {
     MozJSImplScope* _scope;
 };
 
-void MozJSImplScope::_reportError(JSContext* cx, const char* message, JSErrorReport* report) {
+void MozJSImplScope::_reportError(JSContext* cx, JSErrorReport* report) {
     auto scope = getScope(cx);
-
+    auto message = report->message().c_str();
     if (!JSREPORT_IS_WARNING(report->flags)) {
 
         std::string exceptionMsg;
@@ -231,7 +231,6 @@ bool MozJSImplScope::isJavaScriptProtectionEnabled() const {
 bool MozJSImplScope::_interruptCallback(JSContext* cx) {
     auto scope = getScope(cx);
 
-    // TODO : remember bool return
     JS_DisableInterruptCallback(scope->_context);
     auto guard = MakeGuard([&]() { JS_ResetInterruptCallback(scope->_context, true); });
 
@@ -474,8 +473,7 @@ MozJSImplScope::MozJSImplScope(MozJSScriptEngine* engine)
     JS_SetContextPrivate(_context, this);
     JSAutoRequest ar(_context);
 
-    // TODO REMOVED
-    // JS_SetErrorReporter(_context, _reportError);
+    JS::SetWarningReporter(_context, _reportError);
 
     JSAutoCompartment ac(_context, _global);
 

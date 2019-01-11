@@ -395,7 +395,7 @@ private:
     struct MozJSEntry;
     friend struct MozJSEntry;
 
-    static void _reportError(JSContext* cx, const char* message, JSErrorReport* report);
+    static void _reportError(JSContext* cx, JSErrorReport* report);
     static bool _interruptCallback(JSContext* cx);
     static void _gcCallback(JSContext* rt, JSGCStatus status, void* data);
     bool _checkErrorState(bool success, bool reportError = true, bool assertOnError = true);
