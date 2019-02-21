@@ -593,6 +593,7 @@ env.Library(
     target='rollback_impl',
     source=[
         'rollback_impl.cpp',
+        env.Idlc('rollback_impl.idl')[0],
     ],
     LIBDEPS=[
         '$BUILD_DIR/mongo/db/concurrency/lock_manager',
