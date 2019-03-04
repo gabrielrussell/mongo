@@ -144,7 +144,7 @@ TEST_F(ReplCoordTest, IsMasterIsFalseDuringStepdown) {
 
     // Test that "ismaster" is immediately false, although "secondary" is not yet true.
     IsMasterResponse response;
-    replCoord->fillIsMasterForReplSet(&response);
+    replCoord->fillIsMasterForReplSet(&response, ReplicationCoordinator::defaultZone);
     ASSERT_TRUE(response.isConfigSet());
     BSONObj responseObj = response.toBSON();
     ASSERT_FALSE(responseObj["ismaster"].Bool());
@@ -2464,7 +2464,7 @@ TEST_F(StepDownTest, InterruptingStepDownCommandRestoresWriteAvailability) {
 
     // We should not indicate that we are master, nor that we are secondary.
     IsMasterResponse response;
-    getReplCoord()->fillIsMasterForReplSet(&response);
+    getReplCoord()->fillIsMasterForReplSet(&response, ReplicationCoordinator::defaultZone);
     ASSERT_FALSE(response.isMaster());
     ASSERT_FALSE(response.isSecondary());
 
@@ -2479,7 +2479,7 @@ TEST_F(StepDownTest, InterruptingStepDownCommandRestoresWriteAvailability) {
     ASSERT_TRUE(getReplCoord()->getMemberState().primary());
 
     // We should now report that we are master.
-    getReplCoord()->fillIsMasterForReplSet(&response);
+    getReplCoord()->fillIsMasterForReplSet(&response, ReplicationCoordinator::defaultZone);
     ASSERT_TRUE(response.isMaster());
     ASSERT_FALSE(response.isSecondary());
 
@@ -2516,7 +2516,7 @@ TEST_F(StepDownTest, InterruptingAfterUnconditionalStepdownDoesNotRestoreWriteAv
 
     // We should not indicate that we are master, nor that we are secondary.
     IsMasterResponse response;
-    getReplCoord()->fillIsMasterForReplSet(&response);
+    getReplCoord()->fillIsMasterForReplSet(&response, ReplicationCoordinator::defaultZone);
     ASSERT_FALSE(response.isMaster());
     ASSERT_FALSE(response.isSecondary());
 
@@ -2541,7 +2541,7 @@ TEST_F(StepDownTest, InterruptingAfterUnconditionalStepdownDoesNotRestoreWriteAv
     ASSERT_TRUE(getReplCoord()->getMemberState().secondary());
 
     // We should still be indicating that we are not master.
-    getReplCoord()->fillIsMasterForReplSet(&response);
+    getReplCoord()->fillIsMasterForReplSet(&response, ReplicationCoordinator::defaultZone);
     ASSERT_FALSE(response.isMaster());
 
     // This is the important check, that we didn't accidentally step back up when aborting the
