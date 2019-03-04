@@ -124,6 +124,12 @@ class Task(object):
         for command in self.raw.get("commands", []):
             if command.get("func") == "run tests":
                 return command.get("vars", {}).get("resmoke_args")
+            if command.get("func") == "generate resmoke tasks":
+                task_vars = command.get("vars", {})
+                suite = task_vars.get("task")
+                if "suite" in task_vars:
+                    suite = task_vars["suite"]
+                return "--suites={0} {1}".format(suite, task_vars.get("resmoke_args"))
         return None
 
     @property
@@ -133,6 +139,11 @@ class Task(object):
         if args:
             return ResmokeArgs.get_arg(args, "suites")
         return None
+
+    @property
+    def tags(self):
+        """Get a set of tags this task has been marked with."""
+        return set(self.raw.get("tags", []))
 
     def __str__(self):
         return self.name

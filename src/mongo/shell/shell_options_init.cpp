@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -39,10 +38,6 @@
 #include "mongo/util/quick_exit.h"
 
 namespace mongo {
-MONGO_GENERAL_STARTUP_OPTIONS_REGISTER(MongoShellOptions)(InitializerContext* context) {
-    return addMessageCompressionOptions(&moe::startupOptions, true);
-}
-
 MONGO_STARTUP_OPTIONS_VALIDATE(MongoShellOptions)(InitializerContext* context) {
     if (!handlePreValidationMongoShellOptions(moe::startupOptionsParsed, context->args())) {
         quickExit(EXIT_SUCCESS);

@@ -27,7 +27,7 @@ load('jstests/ssl/libs/ssl_helpers.js');
     const x509_options = {
         tlsMode: 'requireTLS',
         tlsCAFile: CA_CERT,
-        tlsPEMKeyFile: SERVER_CERT,
+        tlsCertificateKeyFile: SERVER_CERT,
         ipv6: "",
         bind_ip_all: ""
     };
@@ -37,7 +37,7 @@ load('jstests/ssl/libs/ssl_helpers.js');
     // Use new toolchain python, if it exists
     let python_binary = '/opt/mongodbtoolchain/v3/bin/python3';
     if (runProgram('/bin/sh', '-c', 'ls ' + python_binary) !== 0) {
-        python_binary = '/opt/mongodbtoolchain/v2/bin/python3';
+        python_binary = '/opt/mongodbtoolchain/v3/bin/python3';
     }
 
     // Run the tls cipher suite enumerator

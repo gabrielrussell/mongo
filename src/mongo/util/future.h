@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -76,8 +75,13 @@ template <typename T>
 extern constexpr bool isFuture = false;
 template <typename T>
 extern constexpr bool isFuture<Future<T>> = true;
+
 template <typename T>
-extern constexpr bool isFuture<SharedSemiFuture<T>> = true;
+extern constexpr bool isFutureLike = false;
+template <typename T>
+extern constexpr bool isFutureLike<Future<T>> = true;
+template <typename T>
+extern constexpr bool isFutureLike<SharedSemiFuture<T>> = true;
 
 // This is used to "normalize" void since it can't be used as an argument and it becomes Status
 // rather than StatusWith<void>.
@@ -248,58 +252,6 @@ struct FutureContinuationResultImpl<Status> {
     using type = void;
 };
 
-/**
- * A base class that handles the ref-count for boost::intrusive_ptr compatibility.
- *
- * This is taken from RefCountable which is used for the aggregation types, adding in a way to set
- * the refcount non-atomically during initialization. Also using explicit memory orderings for all
- * operations on the count.
- * TODO look into merging back.
- */
-class FutureRefCountable {
-    MONGO_DISALLOW_COPYING(FutureRefCountable);
-
-public:
-    /**
-     * Sets the refcount to count, assuming it is currently one less. This should only be used
-     * during logical initialization before another thread could possibly have access to this
-     * object.
-     */
-    void threadUnsafeIncRefCountTo(uint32_t count) const {
-        dassert(_count.load(std::memory_order_relaxed) == (count - 1));
-        _count.store(count, std::memory_order_relaxed);
-    }
-
-    friend void intrusive_ptr_add_ref(const FutureRefCountable* ptr) {
-        // See this for a description of why relaxed is OK here. It is also used in libc++.
-        // http://www.boost.org/doc/libs/1_66_0/doc/html/atomic/usage_examples.html#boost_atomic.usage_examples.example_reference_counters.discussion
-        ptr->_count.fetch_add(1, std::memory_order_relaxed);
-    };
-
-    friend void intrusive_ptr_release(const FutureRefCountable* ptr) {
-        if (ptr->_count.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            delete ptr;
-        }
-    };
-
-protected:
-    FutureRefCountable() = default;
-    virtual ~FutureRefCountable() = default;
-
-private:
-    mutable std::atomic<uint32_t> _count{0};  // NOLINT
-};
-
-template <typename T,
-          typename... Args,
-          typename = std::enable_if_t<std::is_base_of<FutureRefCountable, T>::value>>
-boost::intrusive_ptr<T> make_intrusive(Args&&... args) {
-    auto ptr = new T(std::forward<Args>(args)...);
-    ptr->threadUnsafeIncRefCountTo(1);
-    return boost::intrusive_ptr<T>(ptr, /*add ref*/ false);
-}
-
-
 template <typename T>
 struct SharedStateImpl;
 
@@ -345,7 +297,7 @@ enum class SSBState : uint8_t {
     kFinished,
 };
 
-class SharedStateBase : public FutureRefCountable {
+class SharedStateBase : public RefCountable {
 public:
     SharedStateBase(const SharedStateBase&) = delete;
     SharedStateBase(SharedStateBase&&) = delete;
@@ -667,7 +619,8 @@ public:
     static_assert(!std::is_same<T, Status>::value,
                   "Future<Status> is banned. Use Future<void> instead.");
     static_assert(!isStatusWith<T>, "Future<StatusWith<T>> is banned. Just use Future<T> instead.");
-    static_assert(!isFuture<T>, "Future of Future types is banned. Just use Future<T> instead.");
+    static_assert(!isFutureLike<T>,
+                  "Future of Future types is banned. Just use Future<T> instead.");
     static_assert(!std::is_reference<T>::value, "Future<T&> is banned.");
     static_assert(!std::is_const<T>::value, "Future<const T> is banned.");
     static_assert(!std::is_array<T>::value, "Future<T[]> is banned.");
@@ -943,11 +896,109 @@ public:
     }
 
     /**
+     * Callbacks passed to onCompletion() are called if the input Future completes with or without
+     * an error.
+     *
+     * The callback can either produce a replacement value (which must be a T), return a replacement
+     * Future<T> (such as by retrying), or return/throw a replacement error.
+     */
+    template <
+        // T -> Result, T -> StatusWith<Result>, Status -> Result or Status -> StatusWith<Result>
+        typename Func,
+        typename Result = NormalizedCallResult<Func, Status>,
+        typename = std::enable_if_t<!isFuture<Result>>>
+        Future<Result> onCompletion(Func&& func) && noexcept {
+        static_assert(std::is_same<Result, NormalizedCallResult<Func, T>>::value,
+                      "func passed to Future<T>::onCompletion must return the same type for "
+                      "arguments of Status and T");
+
+        return generalImpl(
+            // on ready success:
+            [&](T&& val) {
+                return Future<Result>::makeReady(
+                    statusCall(std::forward<Func>(func), std::move(val)));
+            },
+            // on ready failure:
+            [&](Status&& status) {
+                return Future<Result>::makeReady(
+                    statusCall(std::forward<Func>(func), std::move(status)));
+            },
+            // on not ready yet:
+            [&] {
+                return makeContinuation<Result>([func = std::forward<Func>(func)](
+                    SharedState<T> * input, SharedState<Result> * output) mutable noexcept {
+                    if (!input->status.isOK())
+                        return output->setFromStatusWith(
+                            statusCall(func, std::move(input->status)));
+
+                    output->setFromStatusWith(statusCall(func, std::move(*input->data)));
+                });
+            });
+    }
+
+    /**
+     * Same as above onCompletion() but for the case where func returns a Future that needs to be
+     * unwrapped.
+     */
+    template <typename Func,  // T -> Future<UnwrappedResult> or Status -> Future<UnwrappedResult>
+              typename RawResult = NormalizedCallResult<Func, Status>,
+              typename = std::enable_if_t<isFuture<RawResult>>,
+              typename UnwrappedResult = typename RawResult::value_type>
+        Future<UnwrappedResult> onCompletion(Func&& func) && noexcept {
+        static_assert(std::is_same<UnwrappedResult,
+                                   typename NormalizedCallResult<Func, T>::value_type>::value,
+                      "func passed to Future<T>::onCompletion must return the same type for "
+                      "arguments of Status and T");
+
+        return generalImpl(
+            // on ready success:
+            [&](T&& val) {
+                try {
+                    return Future<UnwrappedResult>(
+                        throwingCall(std::forward<Func>(func), std::move(val)));
+                } catch (const DBException& ex) {
+                    return Future<UnwrappedResult>::makeReady(ex.toStatus());
+                }
+            },
+            // on ready failure:
+            [&](Status&& status) {
+                try {
+                    return Future<UnwrappedResult>(
+                        throwingCall(std::forward<Func>(func), std::move(status)));
+                } catch (const DBException& ex) {
+                    return Future<UnwrappedResult>::makeReady(ex.toStatus());
+                }
+            },
+            // on not ready yet:
+            [&] {
+                return makeContinuation<UnwrappedResult>([func = std::forward<Func>(func)](
+                    SharedState<T> * input,
+                    SharedState<UnwrappedResult> * output) mutable noexcept {
+                    if (!input->status.isOK()) {
+                        try {
+                            throwingCall(func, std::move(input->status)).propagateResultTo(output);
+                        } catch (const DBException& ex) {
+                            output->setError(ex.toStatus());
+                        }
+
+                        return;
+                    }
+
+                    try {
+                        throwingCall(func, std::move(*input->data)).propagateResultTo(output);
+                    } catch (const DBException& ex) {
+                        output->setError(ex.toStatus());
+                    }
+                });
+            });
+    }
+
+    /**
      * Callbacks passed to onError() are only called if the input Future completes with an error.
      * Otherwise, the successful result propagates automatically, bypassing the callback.
      *
      * The callback can either produce a replacement value (which must be a T), return a replacement
-     * Future<T> (such as a by retrying), or return/throw a replacement error.
+     * Future<T> (such as by retrying), or return/throw a replacement error.
      *
      * Note that this will only catch errors produced by earlier stages; it is not registering a
      * general error handler for the entire chain.
@@ -1039,6 +1090,29 @@ public:
         return std::move(*this).onError([func =
                                              std::forward<Func>(func)](Status && status) mutable {
             if (status != code)
+                uassertStatusOK(status);
+            return throwingCall(func, std::move(status));
+        });
+    }
+
+    /**
+     * Similar to the first two onErrors, but only calls the callback if the category matches
+     * the template parameter. Otherwise lets the error propagate unchanged.
+     */
+    template <ErrorCategory category, typename Func>
+        Future<T> onErrorCategory(Func&& func) && noexcept {
+        using Result = RawNormalizedCallResult<Func, Status>;
+        static_assert(
+            std::is_same<Result, T>::value || std::is_same<Result, Future<T>>::value ||
+                (std::is_same<T, FakeVoid>::value && std::is_same<Result, Future<void>>::value),
+            "func passed to Future<T>::onErrorCategory must return T, StatusWith<T>, or Future<T>");
+
+        if (_immediate || (isReady() && _shared->status.isOK()))
+            return std::move(*this);
+
+        return std::move(*this).onError([func =
+                                             std::forward<Func>(func)](Status && status) mutable {
+            if (!ErrorCodes::isA<category>(status.code()))
                 uassertStatusOK(status);
             return throwingCall(func, std::move(status));
         });
@@ -1316,6 +1390,11 @@ public:
     }
 
     template <typename Func>  // Status -> T or StatusWith<T> or Future<T>
+        auto onCompletion(Func&& func) && noexcept {
+        return std::move(_inner).onCompletion(std::forward<Func>(func));
+    }
+
+    template <typename Func>  // Status -> T or StatusWith<T> or Future<T>
         Future<void> onError(Func&& func) && noexcept {
         return std::move(_inner).onError(std::forward<Func>(func));
     }
@@ -1387,7 +1466,7 @@ public:
         !isStatusWith<T>,
         "SharedSemiFuture<StatusWith<T>> is banned. Just use SharedSemiFuture<T> instead.");
     static_assert(
-        !isFuture<T>,
+        !isFutureLike<T>,
         "SharedSemiFuture of Future types is banned. Just use SharedSemiFuture<T> instead.");
     static_assert(!std::is_reference<T>::value, "SharedSemiFuture<T&> is banned.");
     static_assert(!std::is_const<T>::value, "SharedSemiFuture<const T> is banned.");
@@ -1396,6 +1475,12 @@ public:
     using value_type = T;
 
     SharedSemiFuture() = default;
+
+    /*implicit*/ SharedSemiFuture(const Future<T>& fut) = delete;
+    /*implicit*/ SharedSemiFuture(Future<T>&& fut) : SharedSemiFuture(std::move(fut).share()) {}
+    /*implicit*/ SharedSemiFuture(T val) : SharedSemiFuture(Future<T>(std::move(val))) {}
+    /*implicit*/ SharedSemiFuture(Status error) : SharedSemiFuture(Future<T>(std::move(error))) {}
+    /*implicit*/ SharedSemiFuture(StatusWith<T> sw) : SharedSemiFuture(Future<T>(std::move(sw))) {}
 
     bool isReady() const {
         return _shared->state.load(std::memory_order_acquire) == SSBState::kFinished;
@@ -1451,6 +1536,12 @@ template <>
 class MONGO_WARN_UNUSED_RESULT_CLASS future_details::SharedSemiFuture<void> {
 public:
     using value_type = void;
+
+    SharedSemiFuture() = default;
+
+    /*implicit*/ SharedSemiFuture(const Future<void>& fut) = delete;
+    /*implicit*/ SharedSemiFuture(Future<void>&& fut) : SharedSemiFuture(std::move(fut).share()) {}
+    /*implicit*/ SharedSemiFuture(Status err) : SharedSemiFuture(Future<void>(std::move(err))) {}
 
     bool isReady() const {
         return _inner.isReady();
@@ -1618,8 +1709,8 @@ inline auto makePromiseFuture() {
  * FutureContinuationResult<std::function<int(bool)>, NotBool> SFINAE-safe substitution failure.
  */
 template <typename Func, typename... Args>
-using FutureContinuationResult =
-    typename future_details::FutureContinuationResultImpl<std::result_of_t<Func(Args&&...)>>::type;
+using FutureContinuationResult = typename future_details::FutureContinuationResultImpl<
+    std::invoke_result_t<Func, Args&&...>>::type;
 
 //
 // Implementations of methods that couldn't be defined in the class due to ordering requirements.
@@ -1627,12 +1718,14 @@ using FutureContinuationResult =
 
 template <typename T>
 inline Future<T> Promise<T>::getFuture() noexcept {
+    using namespace future_details;
     _sharedState->threadUnsafeIncRefCountTo(2);
     return Future<T>(boost::intrusive_ptr<SharedState<T>>(_sharedState.get(), /*add ref*/ false));
 }
 
 template <typename T>
 inline void Promise<T>::setFrom(Future<T>&& future) noexcept {
+    using namespace future_details;
     setImpl([&](boost::intrusive_ptr<SharedState<T>>&& sharedState) {
         future.propagateResultTo(sharedState.get());
     });
@@ -1651,6 +1744,7 @@ template <typename T>
 
 template <typename T>
     inline SharedSemiFuture<T> Future<T>::share() && noexcept {
+    using namespace future_details;
     if (!_immediate)
         return SharedSemiFuture<T>(std::move(_shared));
 

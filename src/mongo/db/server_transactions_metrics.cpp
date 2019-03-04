@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -35,6 +34,7 @@
 #include "mongo/db/commands/server_status.h"
 #include "mongo/db/jsobj.h"
 #include "mongo/db/operation_context.h"
+#include "mongo/db/repl/optime.h"
 #include "mongo/db/retryable_writes_stats.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/transactions_stats_gen.h"
@@ -296,26 +296,34 @@ void ServerTransactionsMetrics::updateStats(TransactionsStats* stats, OperationC
         ServerTransactionsMetrics::_getOldestOpenUnpreparedReadTimestamp(opCtx));
     // Acquire _mutex before reading _oldestActiveOplogEntryOpTime.
     stdx::lock_guard<stdx::mutex> lm(_mutex);
-    // To avoid compression loss, we have Timestamp(0, 0) be the default value if no oldest active
-    // transaction optime is stored.
-    Timestamp oldestActiveOplogEntryTimestamp = (_oldestActiveOplogEntryOpTime != boost::none)
-        ? _oldestActiveOplogEntryOpTime->getTimestamp()
-        : Timestamp();
-    stats->setOldestActiveOplogEntryTimestamp(oldestActiveOplogEntryTimestamp);
+    // To avoid compression loss, we use the null OpTime if no oldest active transaction optime is
+    // stored.
+    repl::OpTime oldestActiveOplogEntryOpTime = (_oldestActiveOplogEntryOpTime != boost::none)
+        ? _oldestActiveOplogEntryOpTime.get()
+        : repl::OpTime();
+    stats->setOldestActiveOplogEntryOpTime(oldestActiveOplogEntryOpTime);
 }
 
+void ServerTransactionsMetrics::clearOpTimes() {
+    stdx::lock_guard<stdx::mutex> lm(_mutex);
+    _oldestActiveOplogEntryOpTime = boost::none;
+    _oldestActiveOplogEntryOpTimes.clear();
+    _oldestNonMajorityCommittedOpTimes.clear();
+}
+
+namespace {
 class TransactionsSSS : public ServerStatusSection {
 public:
     TransactionsSSS() : ServerStatusSection("transactions") {}
 
-    virtual ~TransactionsSSS() {}
+    ~TransactionsSSS() override = default;
 
-    virtual bool includeByDefault() const {
+    bool includeByDefault() const override {
         return true;
     }
 
-    virtual BSONObj generateSection(OperationContext* opCtx,
-                                    const BSONElement& configElement) const {
+    BSONObj generateSection(OperationContext* opCtx,
+                            const BSONElement& configElement) const override {
         TransactionsStats stats;
 
         // Retryable writes and multi-document transactions metrics are both included in the same
@@ -328,5 +336,6 @@ public:
     }
 
 } transactionsSSS;
+}  // namespace
 
 }  // namespace mongo

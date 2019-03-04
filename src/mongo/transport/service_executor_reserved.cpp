@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -37,18 +36,14 @@
 #include "mongo/db/server_parameters.h"
 #include "mongo/stdx/thread.h"
 #include "mongo/transport/service_entry_point_utils.h"
+#include "mongo/transport/service_executor_gen.h"
 #include "mongo/transport/service_executor_task_names.h"
-#include "mongo/transport/thread_idle_callback.h"
 #include "mongo/util/log.h"
 #include "mongo/util/processinfo.h"
 
 namespace mongo {
 namespace transport {
 namespace {
-
-// Tasks scheduled with MayRecurse may be called recursively if the recursion depth is below this
-// value.
-MONGO_EXPORT_SERVER_PARAMETER(reservedServiceExecutorRecursionLimit, int, 8);
 
 constexpr auto kThreadsRunning = "threadsRunning"_sd;
 constexpr auto kExecutorLabel = "executor"_sd;
@@ -88,7 +83,7 @@ Status ServiceExecutorReserved::_startWorker() {
     return launchServiceWorkerThread([this] {
         stdx::unique_lock<stdx::mutex> lk(_mutex);
         _numRunningWorkerThreads.addAndFetch(1);
-        auto numRunningGuard = MakeGuard([&] {
+        auto numRunningGuard = makeGuard([&] {
             _numRunningWorkerThreads.subtractAndFetch(1);
             _shutdownCondition.notify_one();
         });
@@ -170,17 +165,6 @@ Status ServiceExecutorReserved::schedule(Task task,
     }
 
     if (!_localWorkQueue.empty()) {
-        /*
-         * In perf testing we found that yielding after running a each request produced
-         * at 5% performance boost in microbenchmarks if the number of worker threads
-         * was greater than the number of available cores.
-         */
-        if (flags & ScheduleFlags::kMayYieldBeforeSchedule) {
-            if ((_localThreadIdleCounter++ & 0xf) == 0) {
-                markThreadIdle();
-            }
-        }
-
         // Execute task directly (recurse) if allowed by the caller as it produced better
         // performance in testing. Try to limit the amount of recursion so we don't blow up the
         // stack, even though this shouldn't happen with this executor that uses blocking network

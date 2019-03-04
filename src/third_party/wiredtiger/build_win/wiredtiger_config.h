@@ -79,6 +79,9 @@
 /* Define to 1 to disable any crc32 hardware support. */
 /* #undef HAVE_NO_CRC32_HARDWARE */
 
+/* Define to 1 to enable writing timestamp version page formats. */
+/* #undef HAVE_PAGE_VERSION_TS */
+
 /* Define to 1 if pthread condition variables support monotonic clocks. */
 /* #undef HAVE_PTHREAD_COND_MONOTONIC */
 
@@ -120,6 +123,9 @@
 
 /* Define to 1 if you have the <sys/types.h> header file. */
 #define HAVE_SYS_TYPES_H 1
+
+/* Define to 1 if you have the `timer_create' function. */
+/* #undef HAVE_TIMER_CREATE */
 
 /* Define to 1 if you have the <unistd.h> header file. */
 /* #undef HAVE_UNISTD_H */

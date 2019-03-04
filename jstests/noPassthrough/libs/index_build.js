@@ -47,6 +47,34 @@ class IndexBuildTest {
             return IndexBuildTest.getIndexBuildOpId(database) === -1;
         }, "Index build operations still running after unblocking or killOp");
     }
+
+    /**
+     * Checks the db.currentOp() output for the index build with opId.
+     */
+    static assertIndexBuildCurrentOpContents(database, opId, expectedBuildingPhaseComplete) {
+        const inprog = database.currentOp({opid: opId}).inprog;
+        assert.eq(1,
+                  inprog.length,
+                  'unable to find opid ' + opId + ' in currentOp() result: ' +
+                      tojson(database.currentOp()));
+        const op = inprog[0];
+        assert.eq(opId, op.opid, 'db.currentOp() returned wrong index build info: ' + tojson(op));
+        assert(op.command.hasOwnProperty('buildUUID'),
+               'expected buildUUID field in index build info: ' + tojson(op));
+        assert(op.command.hasOwnProperty('buildingPhaseComplete'),
+               'expected buildingPhaseComplete field in index build info: ' + tojson(op));
+        assert.eq(expectedBuildingPhaseComplete,
+                  op.command.buildingPhaseComplete,
+                  'invalid buildingPhaseComplete value in index build info: ' + tojson(op));
+        assert(op.command.hasOwnProperty('runTwoPhaseIndexBuild'),
+               'expected runTwoPhaseIndexBuild field in index build info: ' + tojson(op));
+        // TODO: update when two phase index builds are enabled.
+        assert(!op.command.runTwoPhaseIndexBuild,
+               'invalid runTwoPhaseIndexBuild value in index build info: ' + tojson(op));
+        assert(op.command.hasOwnProperty('commitReadyMembers'),
+               'expected commitReadyMembers field in index build info: ' + tojson(op));
+    }
+
     /**
      * Runs listIndexes command on collection.
      * If 'options' is provided, these will be sent along with the command request.
@@ -67,7 +95,11 @@ class IndexBuildTest {
         // A map of index specs keyed by index name.
         const indexMap = res.cursor.firstBatch.reduce(
             (m, spec) => {
-                m[spec.name] = spec;
+                if (spec.hasOwnProperty('buildUUID')) {
+                    m[spec.spec.name] = spec;
+                } else {
+                    m[spec.name] = spec;
+                }
                 return m;
             },
             {});
@@ -85,9 +117,17 @@ class IndexBuildTest {
         for (let name of notReadyIndexes) {
             assert(indexMap.hasOwnProperty(name),
                    'not-ready index ' + name + ' missing from listIndexes result: ' + tojson(res));
+
             const spec = indexMap[name];
-            assert(spec.hasOwnProperty('buildUUID'),
-                   'expected buildUUID field in ' + name + ' index spec: ' + tojson(spec));
+            if (options.includeBuildUUIDs) {
+                assert(spec.hasOwnProperty('spec'),
+                       'expected spec field in ' + name + ': ' + tojson(spec));
+                assert(spec.hasOwnProperty('buildUUID'),
+                       'expected buildUUID field in ' + name + ': ' + tojson(spec));
+            } else {
+                assert(!spec.hasOwnProperty('buildUUID'),
+                       'unexpected buildUUID field in ' + name + ' index spec: ' + tojson(spec));
+            }
         }
     }
 

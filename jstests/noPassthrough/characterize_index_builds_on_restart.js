@@ -1,16 +1,28 @@
 /**
  * Characterizes the actions (rebuilds or drops the index) taken upon unfinished indexes when
- * restarting mongod from (standalone -> standalone) and (replica set memeber -> standalone).
- * @tags: [requires_replication, requires_persistence]
+ * restarting mongod from (standalone -> standalone) and (replica set member -> standalone).
+ * @tags: [requires_replication, requires_persistence, requires_majority_read_concern]
  */
 (function() {
     'use strict';
 
-    const dbName = "test";
-    const collName = "coll";
+    load("jstests/libs/check_log.js");
+    load("jstests/replsets/rslib.js");
+
+    const dbName = "testDb";
+    const collName = "testColl";
 
     const firstIndex = "firstIndex";
     const secondIndex = "secondIndex";
+    const thirdIndex = "thirdIndex";
+    const fourthIndex = "fourthIndex";
+
+    const indexesToBuild = [
+        {key: {i: 1}, name: firstIndex, background: true},
+        {key: {j: 1}, name: secondIndex, background: true},
+        {key: {i: 1, j: 1}, name: thirdIndex, background: true},
+        {key: {i: -1, j: 1, k: -1}, name: fourthIndex, background: true},
+    ];
 
     function startStandalone() {
         let mongod = MongoRunner.runMongod({cleanData: true});
@@ -21,6 +33,7 @@
 
     function restartStandalone(old) {
         jsTest.log("Restarting mongod");
+        MongoRunner.stopMongod(old);
         return MongoRunner.runMongod({restart: true, dbpath: old.dbpath, cleanData: false});
     }
 
@@ -29,18 +42,18 @@
     }
 
     function startReplSet() {
-        let replSet = new ReplSetTest({name: "indexBuilds", nodes: 3});
+        let replSet = new ReplSetTest({name: "indexBuilds", nodes: 3, nodeOptions: {syncdelay: 1}});
         let nodes = replSet.nodeList();
 
         // We need an arbiter to ensure that the primary doesn't step down when we restart the
         // secondary
         replSet.startSet({startClean: true});
         replSet.initiate({
-            "_id": "indexBuilds",
-            "members": [
-                {"_id": 0, "host": nodes[0]},
-                {"_id": 1, "host": nodes[1]},
-                {"_id": 2, "host": nodes[2], "arbiterOnly": true}
+            _id: "indexBuilds",
+            members: [
+                {_id: 0, host: nodes[0]},
+                {_id: 1, host: nodes[1]},
+                {_id: 2, host: nodes[2], arbiterOnly: true}
             ]
         });
 
@@ -57,39 +70,43 @@
         jsTest.log("Creating " + size + " test documents.");
         var bulk = db.getCollection(collName).initializeUnorderedBulkOp();
         for (var i = 0; i < size; ++i) {
-            bulk.insert({i: i});
+            bulk.insert({i: i, j: i * i, k: 1});
         }
         assert.writeOK(bulk.execute());
     }
 
-    function startIndexBuildAndCrash(db, isReplicaNode, w, hangDB) {
-        jsTest.log("Starting and hanging index builds.");
+    function startIndexBuildOnSecondaryAndLeaveUnfinished(primaryDB, writeConcern, secondaryDB) {
+        jsTest.log("Starting an index build on the secondary and leaving it unfinished.");
 
-        if (isReplicaNode) {
-            assert.commandWorked(hangDB.adminCommand(
-                {configureFailPoint: "slowBackgroundIndexBuild", mode: "alwaysOn"}));
+        assert.commandWorked(secondaryDB.adminCommand(
+            {configureFailPoint: "leaveIndexBuildUnfinishedForShutdown", mode: "alwaysOn"}));
 
-            db.runCommand({
+        try {
+            let res = assert.commandWorked(primaryDB.runCommand({
                 createIndexes: collName,
-                indexes: [
-                    {key: {i: 1}, name: firstIndex, background: true},
-                    {key: {i: -1}, name: secondIndex, background: true},
-                ],
-                writeConcern: {w: w}
-            });
-        } else {
-            assert.commandWorked(db.adminCommand(
-                {configureFailPoint: "crashAfterStartingIndexBuild", mode: "alwaysOn"}));
+                indexes: indexesToBuild,
+                writeConcern: {w: writeConcern}
+            }));
 
-            assert.throws(() => {
-                db.runCommand({
-                    createIndexes: collName,
-                    indexes: [
-                        {key: {i: 1}, name: firstIndex, background: true},
-                        {key: {i: -1}, name: secondIndex, background: true},
-                    ]
-                });
+            // Wait till all four index builds hang.
+            checkLog.containsWithCount(
+                secondaryDB,
+                "Index build interrupted due to \'leaveIndexBuildUnfinishedForShutdown\' " +
+                    "failpoint. Mimicing shutdown error code.",
+                4);
+
+            // Wait until the secondary has a checkpoint timestamp beyond the index oplog entry. On
+            // restart, replication recovery will not replay the createIndex oplog entries.
+            jsTest.log("Waiting for unfinished index build to be in checkpoint.");
+            assert.soon(() => {
+                let replSetStatus = assert.commandWorked(
+                    secondaryDB.getSiblingDB("admin").runCommand({replSetGetStatus: 1}));
+                if (replSetStatus.lastStableCheckpointTimestamp >= res.operationTime)
+                    return true;
             });
+        } finally {
+            assert.commandWorked(secondaryDB.adminCommand(
+                {configureFailPoint: "leaveIndexBuildUnfinishedForShutdown", mode: "off"}));
         }
     }
 
@@ -153,12 +170,25 @@
         let collDB = mongod.getDB(dbName);
 
         addTestDocuments(collDB);
-        startIndexBuildAndCrash(collDB, /*isReplicaNode=*/false, /*w=*/null, /*hangDB=*/null);
+
+        jsTest.log("Starting an index build on a standalone and leaving it unfinished.");
+        assert.commandWorked(collDB.adminCommand(
+            {configureFailPoint: "leaveIndexBuildUnfinishedForShutdown", mode: "alwaysOn"}));
+        try {
+            assert.commandFailedWithCode(
+                collDB.runCommand({createIndexes: collName, indexes: indexesToBuild}),
+                ErrorCodes.InterruptedAtShutdown);
+        } finally {
+            assert.commandWorked(collDB.adminCommand(
+                {configureFailPoint: "leaveIndexBuildUnfinishedForShutdown", mode: "off"}));
+        }
 
         mongod = restartStandalone(mongod);
 
         checkForIndexRebuild(mongod, firstIndex, /*shouldExist=*/false);
         checkForIndexRebuild(mongod, secondIndex, /*shouldExist=*/false);
+        checkForIndexRebuild(mongod, thirdIndex, /*shouldExist=*/false);
+        checkForIndexRebuild(mongod, fourthIndex, /*shouldExist=*/false);
 
         shutdownStandalone(mongod);
     }
@@ -172,7 +202,11 @@
         let secondaryDB = secondary.getDB(dbName);
 
         addTestDocuments(primaryDB);
-        startIndexBuildAndCrash(primaryDB, /*isReplicaNode=*/true, /*w=*/2, secondaryDB);
+
+        // Make sure the documents get replicated on the secondary.
+        replSet.awaitReplication();
+
+        startIndexBuildOnSecondaryAndLeaveUnfinished(primaryDB, /*writeConcern=*/2, secondaryDB);
 
         let secondaryId = replSet.getNodeId(secondary);
         replSet.stop(secondaryId);
@@ -182,6 +216,8 @@
 
         checkForIndexRebuild(mongod, firstIndex, /*shouldExist=*/true);
         checkForIndexRebuild(mongod, secondIndex, /*shouldExist=*/true);
+        checkForIndexRebuild(mongod, thirdIndex, /*shouldExist=*/true);
+        checkForIndexRebuild(mongod, fourthIndex, /*shouldExist=*/true);
 
         shutdownStandalone(mongod);
         stopReplSet(replSet);

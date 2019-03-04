@@ -5,7 +5,7 @@ Import("env")
 env = env.Clone()
 
 optsEnv = env.Clone()
-optsEnv.InjectThirdPartyIncludePaths(libraries=['yaml'])
+optsEnv.InjectThirdParty(libraries=['yaml'])
 
 optsEnv.Library(
     target='options_parser',
@@ -27,7 +27,6 @@ optsEnv.Library(
         '$BUILD_DIR/mongo/util/net/http_client',
         '$BUILD_DIR/mongo/util/net/network',
         '$BUILD_DIR/third_party/shim_boost',
-        '$BUILD_DIR/third_party/shim_pcrecpp',
     ],
 )
 

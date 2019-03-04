@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -54,7 +53,9 @@
 #include "mongo/db/service_context.h"
 #include "mongo/util/scopeguard.h"
 
-mongo::Status mongo::emptyCapped(OperationContext* opCtx, const NamespaceString& collectionName) {
+namespace mongo {
+
+Status emptyCapped(OperationContext* opCtx, const NamespaceString& collectionName) {
     AutoGetDb autoDb(opCtx, collectionName.db(), MODE_X);
 
     bool userInitiatedWritesAndNotPrimary = opCtx->writesAreReplicated() &&
@@ -63,7 +64,7 @@ mongo::Status mongo::emptyCapped(OperationContext* opCtx, const NamespaceString&
     if (userInitiatedWritesAndNotPrimary) {
         return Status(ErrorCodes::NotMaster,
                       str::stream() << "Not primary while truncating collection: "
-                                    << collectionName.ns());
+                                    << collectionName);
     }
 
     Database* db = autoDb.getDb();
@@ -77,14 +78,12 @@ mongo::Status mongo::emptyCapped(OperationContext* opCtx, const NamespaceString&
 
     if (collectionName.isSystem() && !collectionName.isSystemDotProfile()) {
         return Status(ErrorCodes::IllegalOperation,
-                      str::stream() << "Cannot truncate a system collection: "
-                                    << collectionName.ns());
+                      str::stream() << "Cannot truncate a system collection: " << collectionName);
     }
 
     if (collectionName.isVirtualized()) {
         return Status(ErrorCodes::IllegalOperation,
-                      str::stream() << "Cannot truncate a virtual collection: "
-                                    << collectionName.ns());
+                      str::stream() << "Cannot truncate a virtual collection: " << collectionName);
     }
 
     if ((repl::ReplicationCoordinator::get(opCtx)->getReplicationMode() !=
@@ -92,7 +91,7 @@ mongo::Status mongo::emptyCapped(OperationContext* opCtx, const NamespaceString&
         collectionName.isOplog()) {
         return Status(ErrorCodes::OplogOperationUnsupported,
                       str::stream() << "Cannot truncate a live oplog while replicating: "
-                                    << collectionName.ns());
+                                    << collectionName);
     }
 
     BackgroundOperation::assertNoBgOpInProgForNs(collectionName.ns());
@@ -104,44 +103,42 @@ mongo::Status mongo::emptyCapped(OperationContext* opCtx, const NamespaceString&
         return status;
     }
 
-    getGlobalServiceContext()->getOpObserver()->onEmptyCapped(
-        opCtx, collection->ns(), collection->uuid());
+    const auto service = opCtx->getServiceContext();
+    service->getOpObserver()->onEmptyCapped(opCtx, collection->ns(), collection->uuid());
 
     wuow.commit();
 
     return Status::OK();
 }
 
-void mongo::cloneCollectionAsCapped(OperationContext* opCtx,
-                                    Database* db,
-                                    const std::string& shortFrom,
-                                    const std::string& shortTo,
-                                    long long size,
-                                    bool temp) {
+void cloneCollectionAsCapped(OperationContext* opCtx,
+                             Database* db,
+                             const std::string& shortFrom,
+                             const std::string& shortTo,
+                             long long size,
+                             bool temp) {
     NamespaceString fromNss(db->name(), shortFrom);
     NamespaceString toNss(db->name(), shortTo);
 
     Collection* fromCollection = db->getCollection(opCtx, fromNss);
     if (!fromCollection) {
         uassert(ErrorCodes::CommandNotSupportedOnView,
-                str::stream() << "cloneCollectionAsCapped not supported for views: "
-                              << fromNss.ns(),
+                str::stream() << "cloneCollectionAsCapped not supported for views: " << fromNss,
                 !db->getViewCatalog()->lookup(opCtx, fromNss.ns()));
 
         uasserted(ErrorCodes::NamespaceNotFound,
-                  str::stream() << "source collection " << fromNss.ns() << " does not exist");
+                  str::stream() << "source collection " << fromNss << " does not exist");
     }
 
     uassert(ErrorCodes::NamespaceNotFound,
-            str::stream() << "source collection " << fromNss.ns()
+            str::stream() << "source collection " << fromNss
                           << " is currently in a drop-pending state.",
             !fromNss.isDropPendingNamespace());
 
     uassert(ErrorCodes::NamespaceExists,
-            str::stream() << "cloneCollectionAsCapped failed - destination collection "
-                          << toNss.ns()
+            str::stream() << "cloneCollectionAsCapped failed - destination collection " << toNss
                           << " already exists. source collection: "
-                          << fromNss.ns(),
+                          << fromNss,
             !db->getCollection(opCtx, toNss));
 
     // create new collection
@@ -203,12 +200,7 @@ void mongo::cloneCollectionAsCapped(OperationContext* opCtx,
                 break;
             }
             default:
-                // Unreachable as:
-                // 1) We require a read lock (at a minimum) on the "from" collection
-                //    and won't yield, preventing collection drop and PlanExecutor::DEAD
-                // 2) PlanExecutor::FAILURE is only returned on PlanStage::FAILURE. The
-                //    CollectionScan PlanStage does not have a FAILURE scenario.
-                // 3) All other PlanExecutor states are handled above
+                // A collection scan plan which does not yield should never fail.
                 MONGO_UNREACHABLE;
         }
 
@@ -245,9 +237,9 @@ void mongo::cloneCollectionAsCapped(OperationContext* opCtx,
     MONGO_UNREACHABLE;
 }
 
-void mongo::convertToCapped(OperationContext* opCtx,
-                            const NamespaceString& collectionName,
-                            long long size) {
+void convertToCapped(OperationContext* opCtx,
+                     const NamespaceString& collectionName,
+                     long long size) {
     StringData dbname = collectionName.db();
     StringData shortSource = collectionName.coll();
 
@@ -257,7 +249,7 @@ void mongo::convertToCapped(OperationContext* opCtx,
         !repl::ReplicationCoordinator::get(opCtx)->canAcceptWritesFor(opCtx, collectionName);
 
     uassert(ErrorCodes::NotMaster,
-            str::stream() << "Not primary while converting " << collectionName.ns()
+            str::stream() << "Not primary while converting " << collectionName
                           << " to a capped collection",
             !userInitiatedWritesAndNotPrimary);
 
@@ -273,7 +265,7 @@ void mongo::convertToCapped(OperationContext* opCtx,
     uassertStatusOKWithContext(tmpNameResult,
                                str::stream()
                                    << "Cannot generate temporary collection namespace to convert "
-                                   << collectionName.ns()
+                                   << collectionName
                                    << " to a capped collection");
 
     const auto& longTmpName = tmpNameResult.getValue();
@@ -286,3 +278,5 @@ void mongo::convertToCapped(OperationContext* opCtx,
     options.stayTemp = false;
     uassertStatusOK(renameCollection(opCtx, longTmpName, collectionName, options));
 }
+
+}  // namespace mongo

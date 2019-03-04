@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -42,43 +41,58 @@
 #include "mongo/db/query/expression_index.h"
 #include "mongo/unittest/unittest.h"
 
-using namespace mongo;
-
 namespace {
 
-using std::unique_ptr;
-using std::numeric_limits;
-using std::string;
-using std::vector;
+using namespace mongo;
 
-double numberMin = -numeric_limits<double>::max();
-double numberMax = numeric_limits<double>::max();
-double negativeInfinity = -numeric_limits<double>::infinity();
-double positiveInfinity = numeric_limits<double>::infinity();
-double NaN = numeric_limits<double>::quiet_NaN();
+using DoubleLimits = std::numeric_limits<double>;
+
+double numberMin = -DoubleLimits::max();
+double numberMax = DoubleLimits::max();
+double negativeInfinity = -DoubleLimits::infinity();
+double positiveInfinity = DoubleLimits::infinity();
+double NaN = DoubleLimits::quiet_NaN();
+
+/**
+ * Make a minimal IndexEntry from just an optional key pattern. A dummy name will be added. An empty
+ * key pattern will be used if none is provided.
+ */
+IndexEntry buildSimpleIndexEntry(const BSONObj& kp = BSONObj()) {
+    return {kp,
+            IndexNames::nameToType(IndexNames::findPluginName(kp)),
+            false,
+            {},
+            {},
+            false,
+            false,
+            CoreIndexInfo::Identifier("test_foo"),
+            nullptr,
+            {},
+            nullptr,
+            nullptr};
+}
 
 /**
  * Utility function to create MatchExpression
  */
-MatchExpression* parseMatchExpression(const BSONObj& obj) {
+std::unique_ptr<MatchExpression> parseMatchExpression(const BSONObj& obj) {
     boost::intrusive_ptr<ExpressionContextForTest> expCtx(new ExpressionContextForTest());
     StatusWithMatchExpression status = MatchExpressionParser::parse(obj, std::move(expCtx));
     ASSERT_TRUE(status.isOK());
-    MatchExpression* expr(status.getValue().release());
-    return expr;
+    return std::unique_ptr<MatchExpression>(status.getValue().release());
 }
 
 /**
  * Given a list of queries in 'toUnion', translate into index bounds and return
  * the union of these bounds in the out-parameter 'oilOut'.
  */
-void testTranslateAndUnion(const vector<BSONObj>& toUnion,
+void testTranslateAndUnion(const std::vector<BSONObj>& toUnion,
                            OrderedIntervalList* oilOut,
                            IndexBoundsBuilder::BoundsTightness* tightnessOut) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
 
-    for (vector<BSONObj>::const_iterator it = toUnion.begin(); it != toUnion.end(); ++it) {
-        unique_ptr<MatchExpression> expr(parseMatchExpression(*it));
+    for (auto it = toUnion.begin(); it != toUnion.end(); ++it) {
+        auto expr = parseMatchExpression(*it);
         BSONElement elt = it->firstElement();
         if (toUnion.begin() == it) {
             IndexBoundsBuilder::translate(expr.get(), elt, testIndex, oilOut, tightnessOut);
@@ -92,13 +106,13 @@ void testTranslateAndUnion(const vector<BSONObj>& toUnion,
  * Given a list of queries in 'toUnion', translate into index bounds and return
  * the intersection of these bounds in the out-parameter 'oilOut'.
  */
-void testTranslateAndIntersect(const vector<BSONObj>& toIntersect,
+void testTranslateAndIntersect(const std::vector<BSONObj>& toIntersect,
                                OrderedIntervalList* oilOut,
                                IndexBoundsBuilder::BoundsTightness* tightnessOut) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
 
-    for (vector<BSONObj>::const_iterator it = toIntersect.begin(); it != toIntersect.end(); ++it) {
-        unique_ptr<MatchExpression> expr(parseMatchExpression(*it));
+    for (auto it = toIntersect.begin(); it != toIntersect.end(); ++it) {
+        auto expr = parseMatchExpression(*it);
         BSONElement elt = it->firstElement();
         if (toIntersect.begin() == it) {
             IndexBoundsBuilder::translate(expr.get(), elt, testIndex, oilOut, tightnessOut);
@@ -116,17 +130,15 @@ void testTranslateAndIntersect(const vector<BSONObj>& toIntersect,
  * they should be unioned. The resulting bounds are returned in the
  * out-parameter 'oilOut'.
  */
-void testTranslate(const vector<std::pair<BSONObj, bool>>& constraints,
+void testTranslate(const std::vector<std::pair<BSONObj, bool>>& constraints,
                    OrderedIntervalList* oilOut,
                    IndexBoundsBuilder::BoundsTightness* tightnessOut) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
 
-    for (vector<std::pair<BSONObj, bool>>::const_iterator it = constraints.begin();
-         it != constraints.end();
-         ++it) {
+    for (auto it = constraints.begin(); it != constraints.end(); ++it) {
         BSONObj obj = it->first;
         bool isIntersect = it->second;
-        unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+        auto expr = parseMatchExpression(obj);
         BSONElement elt = obj.firstElement();
         if (constraints.begin() == it) {
             IndexBoundsBuilder::translate(expr.get(), elt, testIndex, oilOut, tightnessOut);
@@ -156,11 +168,11 @@ bool testSingleInterval(IndexBounds bounds) {
 //
 
 TEST(IndexBoundsBuilderTest, TranslateElemMatchValue) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     // Bounds generated should be the same as the embedded expression
     // except for the tightness.
     BSONObj obj = fromjson("{a: {$elemMatch: {$gt: 2}}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -178,9 +190,9 @@ TEST(IndexBoundsBuilderTest, TranslateElemMatchValue) {
 //
 
 TEST(IndexBoundsBuilderTest, TranslateLteNumber) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$lte: 1}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -194,9 +206,9 @@ TEST(IndexBoundsBuilderTest, TranslateLteNumber) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLteNumberMin) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$lte" << numberMin));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -210,9 +222,9 @@ TEST(IndexBoundsBuilderTest, TranslateLteNumberMin) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLteNegativeInfinity) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$lte: -Infinity}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -226,9 +238,9 @@ TEST(IndexBoundsBuilderTest, TranslateLteNegativeInfinity) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLteObject) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$lte: {b: 1}}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -241,9 +253,9 @@ TEST(IndexBoundsBuilderTest, TranslateLteObject) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLteCode) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$lte" << BSONCode("function(){ return 0; }")));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -257,9 +269,9 @@ TEST(IndexBoundsBuilderTest, TranslateLteCode) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLteCodeWScope) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$lte" << BSONCodeWScope("this.b == c", BSON("c" << 1))));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -274,9 +286,9 @@ TEST(IndexBoundsBuilderTest, TranslateLteCodeWScope) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLteMinKey) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$lte" << MINKEY));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -290,9 +302,9 @@ TEST(IndexBoundsBuilderTest, TranslateLteMinKey) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLteMaxKey) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$lte" << MAXKEY));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -306,9 +318,9 @@ TEST(IndexBoundsBuilderTest, TranslateLteMaxKey) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLtNumber) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$lt: 1}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -322,9 +334,9 @@ TEST(IndexBoundsBuilderTest, TranslateLtNumber) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLtNumberMin) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$lt" << numberMin));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -338,9 +350,9 @@ TEST(IndexBoundsBuilderTest, TranslateLtNumberMin) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLtNegativeInfinity) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$lt: -Infinity}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -351,9 +363,9 @@ TEST(IndexBoundsBuilderTest, TranslateLtNegativeInfinity) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLtDate) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << LT << Date_t::fromMillisSinceEpoch(5000));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -367,9 +379,9 @@ TEST(IndexBoundsBuilderTest, TranslateLtDate) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLtObject) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$lt: {b: 1}}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -383,9 +395,9 @@ TEST(IndexBoundsBuilderTest, TranslateLtObject) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLtCode) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$lt" << BSONCode("function(){ return 0; }")));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -399,9 +411,9 @@ TEST(IndexBoundsBuilderTest, TranslateLtCode) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLtCodeWScope) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$lt" << BSONCodeWScope("this.b == c", BSON("c" << 1))));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -417,9 +429,9 @@ TEST(IndexBoundsBuilderTest, TranslateLtCodeWScope) {
 
 // Nothing can be less than MinKey so the resulting index bounds would be a useless empty range.
 TEST(IndexBoundsBuilderTest, TranslateLtMinKeyDoesNotGenerateBounds) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$lt" << MINKEY));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -430,9 +442,9 @@ TEST(IndexBoundsBuilderTest, TranslateLtMinKeyDoesNotGenerateBounds) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLtMaxKey) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$lt" << MAXKEY));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -446,9 +458,9 @@ TEST(IndexBoundsBuilderTest, TranslateLtMaxKey) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGtTimestamp) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << GT << Timestamp(2, 3));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -465,9 +477,9 @@ TEST(IndexBoundsBuilderTest, TranslateGtTimestamp) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGtNumber) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$gt: 1}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -481,9 +493,9 @@ TEST(IndexBoundsBuilderTest, TranslateGtNumber) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGtNumberMax) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$gt" << numberMax));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -497,9 +509,9 @@ TEST(IndexBoundsBuilderTest, TranslateGtNumberMax) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGtPositiveInfinity) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$gt: Infinity}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -510,9 +522,9 @@ TEST(IndexBoundsBuilderTest, TranslateGtPositiveInfinity) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGtString) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$gt: 'abc'}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -526,9 +538,9 @@ TEST(IndexBoundsBuilderTest, TranslateGtString) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGtObject) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$gt: {b: 1}}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -542,9 +554,9 @@ TEST(IndexBoundsBuilderTest, TranslateGtObject) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGtCode) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$gt" << BSONCode("function(){ return 0; }")));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -558,9 +570,9 @@ TEST(IndexBoundsBuilderTest, TranslateGtCode) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGtCodeWScope) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$gt" << BSONCodeWScope("this.b == c", BSON("c" << 1))));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -574,9 +586,9 @@ TEST(IndexBoundsBuilderTest, TranslateGtCodeWScope) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGtMinKey) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$gt" << MINKEY));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -591,9 +603,9 @@ TEST(IndexBoundsBuilderTest, TranslateGtMinKey) {
 
 // Nothing can be greater than MaxKey so the resulting index bounds would be a useless empty range.
 TEST(IndexBoundsBuilderTest, TranslateGtMaxKeyDoesNotGenerateBounds) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$gt" << MAXKEY));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -604,9 +616,9 @@ TEST(IndexBoundsBuilderTest, TranslateGtMaxKeyDoesNotGenerateBounds) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGteNumber) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$gte: 1}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -620,9 +632,9 @@ TEST(IndexBoundsBuilderTest, TranslateGteNumber) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGteNumberMax) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$gte" << numberMax));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -636,9 +648,9 @@ TEST(IndexBoundsBuilderTest, TranslateGteNumberMax) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGtePositiveInfinity) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$gte: Infinity}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -652,9 +664,9 @@ TEST(IndexBoundsBuilderTest, TranslateGtePositiveInfinity) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGteObject) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$gte: {b: 1}}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -668,9 +680,9 @@ TEST(IndexBoundsBuilderTest, TranslateGteObject) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGteCode) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$gte" << BSONCode("function(){ return 0; }")));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -684,9 +696,9 @@ TEST(IndexBoundsBuilderTest, TranslateGteCode) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGteCodeWScope) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$gte" << BSONCodeWScope("this.b == c", BSON("c" << 1))));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -700,9 +712,9 @@ TEST(IndexBoundsBuilderTest, TranslateGteCodeWScope) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGteMinKey) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$gte" << MINKEY));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -716,9 +728,9 @@ TEST(IndexBoundsBuilderTest, TranslateGteMinKey) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGteMaxKey) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$gte" << MAXKEY));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -732,9 +744,9 @@ TEST(IndexBoundsBuilderTest, TranslateGteMaxKey) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateEqualNan) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: NaN}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -747,9 +759,9 @@ TEST(IndexBoundsBuilderTest, TranslateEqualNan) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLtNan) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$lt: NaN}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -760,9 +772,9 @@ TEST(IndexBoundsBuilderTest, TranslateLtNan) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLteNan) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$lte: NaN}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -775,9 +787,9 @@ TEST(IndexBoundsBuilderTest, TranslateLteNan) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGtNan) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$gt: NaN}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -788,9 +800,9 @@ TEST(IndexBoundsBuilderTest, TranslateGtNan) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGteNan) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$gte: NaN}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -803,9 +815,9 @@ TEST(IndexBoundsBuilderTest, TranslateGteNan) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateEqual) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << 4);
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -820,9 +832,9 @@ TEST(IndexBoundsBuilderTest, TranslateEqual) {
 TEST(IndexBoundsBuilderTest, TranslateExprEqual) {
     BSONObj keyPattern = BSON("a" << 1);
     BSONElement elt = keyPattern.firstElement();
-    IndexEntry testIndex{keyPattern};
+    auto testIndex = buildSimpleIndexEntry(keyPattern);
     BSONObj obj = BSON("a" << BSON("$_internalExprEq" << 4));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
     IndexBoundsBuilder::translate(expr.get(), elt, testIndex, &oil, &tightness);
@@ -837,12 +849,12 @@ TEST(IndexBoundsBuilderTest, TranslateExprEqualToStringRespectsCollation) {
     BSONObj keyPattern = BSON("a" << 1);
     BSONElement elt = keyPattern.firstElement();
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex{keyPattern};
+    auto testIndex = buildSimpleIndexEntry(keyPattern);
     testIndex.collator = &collator;
 
     BSONObj obj = BSON("a" << BSON("$_internalExprEq"
                                    << "foo"));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
     IndexBoundsBuilder::translate(expr.get(), elt, testIndex, &oil, &tightness);
@@ -857,9 +869,9 @@ TEST(IndexBoundsBuilderTest, TranslateExprEqualToStringRespectsCollation) {
 TEST(IndexBoundsBuilderTest, TranslateExprEqualHashedIndex) {
     BSONObj keyPattern = fromjson("{a: 'hashed'}");
     BSONElement elt = keyPattern.firstElement();
-    IndexEntry testIndex{keyPattern};
+    auto testIndex = buildSimpleIndexEntry(keyPattern);
     BSONObj obj = BSON("a" << BSON("$_internalExprEq" << 4));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
     IndexBoundsBuilder::translate(expr.get(), elt, testIndex, &oil, &tightness);
@@ -880,9 +892,9 @@ TEST(IndexBoundsBuilderTest, TranslateExprEqualHashedIndex) {
 TEST(IndexBoundsBuilderTest, TranslateExprEqualToNullIsInexactFetch) {
     BSONObj keyPattern = BSON("a" << 1);
     BSONElement elt = keyPattern.firstElement();
-    IndexEntry testIndex{keyPattern};
+    auto testIndex = buildSimpleIndexEntry(keyPattern);
     BSONObj obj = BSON("a" << BSON("$_internalExprEq" << BSONNULL));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
     IndexBoundsBuilder::translate(expr.get(), elt, testIndex, &oil, &tightness);
@@ -897,9 +909,9 @@ TEST(IndexBoundsBuilderTest, TranslateExprEqualToNullIsInexactFetch) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateArrayEqualBasic) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: [1, 2, 3]}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -915,9 +927,9 @@ TEST(IndexBoundsBuilderTest, TranslateArrayEqualBasic) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateIn) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$in: [8, 44, -1, -3]}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -936,9 +948,9 @@ TEST(IndexBoundsBuilderTest, TranslateIn) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateInArray) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$in: [[1], 2]}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -955,11 +967,11 @@ TEST(IndexBoundsBuilderTest, TranslateInArray) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLteBinData) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson(
         "{a: {$lte: {$binary: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAA',"
         "$type: '00'}}}");
-    std::unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -976,11 +988,11 @@ TEST(IndexBoundsBuilderTest, TranslateLteBinData) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateLtBinData) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson(
         "{a: {$lt: {$binary: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAA',"
         "$type: '00'}}}");
-    std::unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -997,11 +1009,11 @@ TEST(IndexBoundsBuilderTest, TranslateLtBinData) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGtBinData) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson(
         "{a: {$gt: {$binary: '////////////////////////////',"
         "$type: '00'}}}");
-    std::unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -1018,11 +1030,11 @@ TEST(IndexBoundsBuilderTest, TranslateGtBinData) {
 }
 
 TEST(IndexBoundsBuilderTest, TranslateGteBinData) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson(
         "{a: {$gte: {$binary: '////////////////////////////',"
         "$type: '00'}}}");
-    std::unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -1043,9 +1055,9 @@ TEST(IndexBoundsBuilderTest, TranslateGteBinData) {
 //
 
 TEST(IndexBoundsBuilderTest, TypeNumber) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$type: 'number'}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -1070,9 +1082,9 @@ TEST(IndexBoundsBuilderTest, TypeNumber) {
 //
 
 TEST(IndexBoundsBuilderTest, ExistsTrue) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$exists: true}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -1085,9 +1097,9 @@ TEST(IndexBoundsBuilderTest, ExistsTrue) {
 }
 
 TEST(IndexBoundsBuilderTest, ExistsFalse) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$exists: false}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -1100,15 +1112,22 @@ TEST(IndexBoundsBuilderTest, ExistsFalse) {
 }
 
 TEST(IndexBoundsBuilderTest, ExistsTrueSparse) {
-    IndexEntry testIndex = IndexEntry(BSONObj(),
-                                      false,  // multikey
-                                      true,   // sparse
-                                      false,  // unique
-                                      IndexEntry::Identifier{"exists_true_sparse"},
-                                      nullptr,  // filterExpr
-                                      BSONObj());
+    auto keyPattern = BSONObj();
+    IndexEntry testIndex =
+        IndexEntry(keyPattern,
+                   IndexNames::nameToType(IndexNames::findPluginName(keyPattern)),
+                   false,  // multikey
+                   {},
+                   {},
+                   true,   // sparse
+                   false,  // unique
+                   IndexEntry::Identifier{"exists_true_sparse"},
+                   nullptr,  // filterExpr
+                   BSONObj(),
+                   nullptr,
+                   nullptr);
     BSONObj obj = fromjson("{a: {$exists: true}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -1125,8 +1144,8 @@ TEST(IndexBoundsBuilderTest, ExistsTrueSparse) {
 //
 
 TEST(IndexBoundsBuilderTest, UnionTwoLt) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
-    vector<BSONObj> toUnion;
+    auto testIndex = buildSimpleIndexEntry();
+    std::vector<BSONObj> toUnion;
     toUnion.push_back(fromjson("{a: {$lt: 1}}"));
     toUnion.push_back(fromjson("{a: {$lt: 5}}"));
     OrderedIntervalList oil;
@@ -1141,8 +1160,8 @@ TEST(IndexBoundsBuilderTest, UnionTwoLt) {
 }
 
 TEST(IndexBoundsBuilderTest, UnionDupEq) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
-    vector<BSONObj> toUnion;
+    auto testIndex = buildSimpleIndexEntry();
+    std::vector<BSONObj> toUnion;
     toUnion.push_back(fromjson("{a: 1}"));
     toUnion.push_back(fromjson("{a: 5}"));
     toUnion.push_back(fromjson("{a: 1}"));
@@ -1159,8 +1178,8 @@ TEST(IndexBoundsBuilderTest, UnionDupEq) {
 }
 
 TEST(IndexBoundsBuilderTest, UnionGtLt) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
-    vector<BSONObj> toUnion;
+    auto testIndex = buildSimpleIndexEntry();
+    std::vector<BSONObj> toUnion;
     toUnion.push_back(fromjson("{a: {$gt: 1}}"));
     toUnion.push_back(fromjson("{a: {$lt: 3}}"));
     OrderedIntervalList oil;
@@ -1175,8 +1194,8 @@ TEST(IndexBoundsBuilderTest, UnionGtLt) {
 }
 
 TEST(IndexBoundsBuilderTest, UnionTwoEmptyRanges) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
-    vector<std::pair<BSONObj, bool>> constraints;
+    auto testIndex = buildSimpleIndexEntry();
+    std::vector<std::pair<BSONObj, bool>> constraints;
     constraints.push_back(std::make_pair(fromjson("{a: {$gt: 1}}"), true));
     constraints.push_back(std::make_pair(fromjson("{a: {$lte: 0}}"), true));
     constraints.push_back(std::make_pair(fromjson("{a: {$in:[]}}"), false));
@@ -1192,8 +1211,8 @@ TEST(IndexBoundsBuilderTest, UnionTwoEmptyRanges) {
 //
 
 TEST(IndexBoundsBuilderTest, IntersectTwoLt) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
-    vector<BSONObj> toIntersect;
+    auto testIndex = buildSimpleIndexEntry();
+    std::vector<BSONObj> toIntersect;
     toIntersect.push_back(fromjson("{a: {$lt: 1}}"));
     toIntersect.push_back(fromjson("{a: {$lt: 5}}"));
     OrderedIntervalList oil;
@@ -1208,8 +1227,8 @@ TEST(IndexBoundsBuilderTest, IntersectTwoLt) {
 }
 
 TEST(IndexBoundsBuilderTest, IntersectEqGte) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
-    vector<BSONObj> toIntersect;
+    auto testIndex = buildSimpleIndexEntry();
+    std::vector<BSONObj> toIntersect;
     toIntersect.push_back(fromjson("{a: 1}}"));
     toIntersect.push_back(fromjson("{a: {$gte: 1}}"));
     OrderedIntervalList oil;
@@ -1223,8 +1242,8 @@ TEST(IndexBoundsBuilderTest, IntersectEqGte) {
 }
 
 TEST(IndexBoundsBuilderTest, IntersectGtLte) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
-    vector<BSONObj> toIntersect;
+    auto testIndex = buildSimpleIndexEntry();
+    std::vector<BSONObj> toIntersect;
     toIntersect.push_back(fromjson("{a: {$gt: 0}}"));
     toIntersect.push_back(fromjson("{a: {$lte: 10}}"));
     OrderedIntervalList oil;
@@ -1238,8 +1257,8 @@ TEST(IndexBoundsBuilderTest, IntersectGtLte) {
 }
 
 TEST(IndexBoundsBuilderTest, IntersectGtIn) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
-    vector<BSONObj> toIntersect;
+    auto testIndex = buildSimpleIndexEntry();
+    std::vector<BSONObj> toIntersect;
     toIntersect.push_back(fromjson("{a: {$gt: 4}}"));
     toIntersect.push_back(fromjson("{a: {$in: [1,2,3,4,5,6]}}"));
     OrderedIntervalList oil;
@@ -1255,8 +1274,8 @@ TEST(IndexBoundsBuilderTest, IntersectGtIn) {
 }
 
 TEST(IndexBoundsBuilderTest, IntersectionIsPointInterval) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
-    vector<BSONObj> toIntersect;
+    auto testIndex = buildSimpleIndexEntry();
+    std::vector<BSONObj> toIntersect;
     toIntersect.push_back(fromjson("{a: {$gte: 1}}"));
     toIntersect.push_back(fromjson("{a: {$lte: 1}}"));
     OrderedIntervalList oil;
@@ -1270,8 +1289,8 @@ TEST(IndexBoundsBuilderTest, IntersectionIsPointInterval) {
 }
 
 TEST(IndexBoundsBuilderTest, IntersectFullyContained) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
-    vector<BSONObj> toIntersect;
+    auto testIndex = buildSimpleIndexEntry();
+    std::vector<BSONObj> toIntersect;
     toIntersect.push_back(fromjson("{a: {$gt: 5}}"));
     toIntersect.push_back(fromjson("{a: {$lt: 15}}"));
     toIntersect.push_back(fromjson("{a: {$gte: 6}}"));
@@ -1287,8 +1306,8 @@ TEST(IndexBoundsBuilderTest, IntersectFullyContained) {
 }
 
 TEST(IndexBoundsBuilderTest, EmptyIntersection) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
-    vector<BSONObj> toIntersect;
+    auto testIndex = buildSimpleIndexEntry();
+    std::vector<BSONObj> toIntersect;
     toIntersect.push_back(fromjson("{a: 1}}"));
     toIntersect.push_back(fromjson("{a: {$gte: 2}}"));
     OrderedIntervalList oil;
@@ -1303,9 +1322,9 @@ TEST(IndexBoundsBuilderTest, EmptyIntersection) {
 //
 
 TEST(IndexBoundsBuilderTest, TranslateMod) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$mod: [2, 0]}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -1323,122 +1342,126 @@ TEST(IndexBoundsBuilderTest, TranslateMod) {
 //
 
 TEST(SimpleRegexTest, RootedLine) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("^foo", "", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex("^foo", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "foo");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::EXACT);
 }
 
 TEST(SimpleRegexTest, RootedString) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("\\Afoo", "", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex("\\Afoo", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "foo");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::EXACT);
 }
 
 TEST(SimpleRegexTest, RootedOptionalFirstChar) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("^f?oo", "", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex("^f?oo", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::INEXACT_COVERED);
 }
 
 TEST(SimpleRegexTest, RootedOptionalSecondChar) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("^fz?oo", "", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex("^fz?oo", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "f");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::INEXACT_COVERED);
 }
 
 TEST(SimpleRegexTest, RootedMultiline) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("^foo", "m", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex("^foo", "m", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::INEXACT_COVERED);
 }
 
 TEST(SimpleRegexTest, RootedStringMultiline) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("\\Afoo", "m", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex("\\Afoo", "m", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "foo");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::EXACT);
 }
 
 TEST(SimpleRegexTest, RootedCaseInsensitiveMulti) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("\\Afoo", "mi", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex("\\Afoo", "mi", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::INEXACT_COVERED);
 }
 
 TEST(SimpleRegexTest, RootedComplex) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex(
+    std::string prefix = IndexBoundsBuilder::simpleRegex(
         "\\Af \t\vo\n\ro  \\ \\# #comment", "mx", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "foo #");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::INEXACT_COVERED);
 }
 
 TEST(SimpleRegexTest, RootedLiteral) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("^\\Qasdf\\E", "", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex("^\\Qasdf\\E", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "asdf");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::EXACT);
 }
 
 TEST(SimpleRegexTest, RootedLiteralWithExtra) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("^\\Qasdf\\E.*", "", testIndex, &tightness);
+    std::string prefix =
+        IndexBoundsBuilder::simpleRegex("^\\Qasdf\\E.*", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "asdf");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::INEXACT_COVERED);
 }
 
 TEST(SimpleRegexTest, RootedLiteralNoEnd) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("^\\Qasdf", "", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex("^\\Qasdf", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "asdf");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::EXACT);
 }
 
 TEST(SimpleRegexTest, RootedLiteralBackslash) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("^\\Qasdf\\\\E", "", testIndex, &tightness);
+    std::string prefix =
+        IndexBoundsBuilder::simpleRegex("^\\Qasdf\\\\E", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "asdf\\");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::EXACT);
 }
 
 TEST(SimpleRegexTest, RootedLiteralDotStar) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("^\\Qas.*df\\E", "", testIndex, &tightness);
+    std::string prefix =
+        IndexBoundsBuilder::simpleRegex("^\\Qas.*df\\E", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "as.*df");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::EXACT);
 }
 
 TEST(SimpleRegexTest, RootedLiteralNestedEscape) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("^\\Qas\\Q[df\\E", "", testIndex, &tightness);
+    std::string prefix =
+        IndexBoundsBuilder::simpleRegex("^\\Qas\\Q[df\\E", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "as\\Q[df");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::EXACT);
 }
 
 TEST(SimpleRegexTest, RootedLiteralNestedEscapeEnd) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix =
+    std::string prefix =
         IndexBoundsBuilder::simpleRegex("^\\Qas\\E\\\\E\\Q$df\\E", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "as\\E$df");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::EXACT);
@@ -1447,25 +1470,25 @@ TEST(SimpleRegexTest, RootedLiteralNestedEscapeEnd) {
 // An anchored regular expression that uses the "|" operator is not considered "simple" and has
 // non-tight index bounds.
 TEST(SimpleRegexTest, PipeCharacterUsesInexactBounds) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("^(a(a|$)|b", "", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex("^(a(a|$)|b", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::INEXACT_COVERED);
 }
 
 TEST(SimpleRegexTest, PipeCharacterUsesInexactBoundsWithTwoPrefixes) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("^(a(a|$)|^b", "", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex("^(a(a|$)|^b", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::INEXACT_COVERED);
 }
 
 TEST(SimpleRegexTest, PipeCharacterPrecededByEscapedBackslashUsesInexactBounds) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex(R"(^a\\|b)", "", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex(R"(^a\\|b)", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::INEXACT_COVERED);
 
@@ -1477,9 +1500,9 @@ TEST(SimpleRegexTest, PipeCharacterPrecededByEscapedBackslashUsesInexactBounds) 
 // However, a regular expression with an escaped pipe (that is, using no special meaning) can use
 // exact index bounds.
 TEST(SimpleRegexTest, PipeCharacterEscapedWithBackslashUsesExactBounds) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex(R"(^a\|b)", "", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex(R"(^a\|b)", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "a|b");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::EXACT);
 
@@ -1489,44 +1512,44 @@ TEST(SimpleRegexTest, PipeCharacterEscapedWithBackslashUsesExactBounds) {
 }
 
 TEST(SimpleRegexTest, FalsePositiveOnPipeInQEEscapeSequenceUsesInexactBounds) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex(R"(^\Q|\E)", "", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex(R"(^\Q|\E)", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::INEXACT_COVERED);
 }
 
 TEST(SimpleRegexTest, FalsePositiveOnPipeInCharacterClassUsesInexactBounds) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex(R"(^[|])", "", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex(R"(^[|])", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::INEXACT_COVERED);
 }
 
 // SERVER-9035
 TEST(SimpleRegexTest, RootedSingleLineMode) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("^foo", "s", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex("^foo", "s", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "foo");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::EXACT);
 }
 
 // SERVER-9035
 TEST(SimpleRegexTest, NonRootedSingleLineMode) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("foo", "s", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex("foo", "s", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::INEXACT_COVERED);
 }
 
 // SERVER-9035
 TEST(SimpleRegexTest, RootedComplexSingleLineMode) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex(
+    std::string prefix = IndexBoundsBuilder::simpleRegex(
         "\\Af \t\vo\n\ro  \\ \\# #comment", "msx", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "foo #");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::INEXACT_COVERED);
@@ -1534,11 +1557,11 @@ TEST(SimpleRegexTest, RootedComplexSingleLineMode) {
 
 TEST(SimpleRegexTest, RootedRegexCantBeIndexedTightlyIfIndexHasCollation) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     IndexBoundsBuilder::BoundsTightness tightness;
-    string prefix = IndexBoundsBuilder::simpleRegex("^foo", "", testIndex, &tightness);
+    std::string prefix = IndexBoundsBuilder::simpleRegex("^foo", "", testIndex, &tightness);
     ASSERT_EQUALS(prefix, "");
     ASSERT_EQUALS(tightness, IndexBoundsBuilder::INEXACT_FETCH);
 }
@@ -1548,9 +1571,9 @@ TEST(SimpleRegexTest, RootedRegexCantBeIndexedTightlyIfIndexHasCollation) {
 //
 
 TEST(IndexBoundsBuilderTest, SimpleNonPrefixRegex) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: /foo/}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -1565,9 +1588,9 @@ TEST(IndexBoundsBuilderTest, SimpleNonPrefixRegex) {
 }
 
 TEST(IndexBoundsBuilderTest, NonSimpleRegexWithPipe) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: /^foo.*|bar/}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -1582,9 +1605,9 @@ TEST(IndexBoundsBuilderTest, NonSimpleRegexWithPipe) {
 }
 
 TEST(IndexBoundsBuilderTest, SimpleRegexSingleLineMode) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: /^foo/s}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -1600,9 +1623,9 @@ TEST(IndexBoundsBuilderTest, SimpleRegexSingleLineMode) {
 }
 
 TEST(IndexBoundsBuilderTest, SimplePrefixRegex) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: /^foo/}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -1831,9 +1854,9 @@ BSONObj maxKeyIntObj(int start) {
 
 // Expected oil: [MinKey, 3), (3, MaxKey]
 TEST(IndexBoundsBuilderTest, SimpleNE) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = BSON("a" << BSON("$ne" << 3));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -1848,8 +1871,8 @@ TEST(IndexBoundsBuilderTest, SimpleNE) {
 }
 
 TEST(IndexBoundsBuilderTest, IntersectWithNE) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
-    vector<BSONObj> toIntersect;
+    auto testIndex = buildSimpleIndexEntry();
+    std::vector<BSONObj> toIntersect;
     toIntersect.push_back(fromjson("{a: {$gt: 1}}"));
     toIntersect.push_back(fromjson("{a: {$ne: 2}}}"));
     toIntersect.push_back(fromjson("{a: {$lte: 6}}"));
@@ -1866,8 +1889,8 @@ TEST(IndexBoundsBuilderTest, IntersectWithNE) {
 }
 
 TEST(IndexBoundsBuilderTest, UnionizeWithNE) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
-    vector<BSONObj> toUnionize;
+    auto testIndex = buildSimpleIndexEntry();
+    std::vector<BSONObj> toUnionize;
     toUnionize.push_back(fromjson("{a: {$ne: 3}}"));
     toUnionize.push_back(fromjson("{a: {$ne: 4}}}"));
     OrderedIntervalList oil;
@@ -1882,9 +1905,9 @@ TEST(IndexBoundsBuilderTest, UnionizeWithNE) {
 
 // Test $type bounds for Code BSON type.
 TEST(IndexBoundsBuilderTest, CodeTypeBounds) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$type: 13}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -1907,9 +1930,9 @@ TEST(IndexBoundsBuilderTest, CodeTypeBounds) {
 
 // Test $type bounds for Code With Scoped BSON type.
 TEST(IndexBoundsBuilderTest, CodeWithScopeTypeBounds) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$type: 15}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -1932,9 +1955,9 @@ TEST(IndexBoundsBuilderTest, CodeWithScopeTypeBounds) {
 
 // Test $type bounds for double BSON type.
 TEST(IndexBoundsBuilderTest, DoubleTypeBounds) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$type: 1}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -1956,9 +1979,9 @@ TEST(IndexBoundsBuilderTest, DoubleTypeBounds) {
 }
 
 TEST(IndexBoundsBuilderTest, TypeArrayBounds) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$type: 'array'}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -1979,12 +2002,12 @@ TEST(IndexBoundsBuilderTest, TypeArrayBounds) {
 
 TEST(IndexBoundsBuilderTest, TranslateEqualityToStringWithMockCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = BSON("a"
                        << "foo");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2001,11 +2024,11 @@ TEST(IndexBoundsBuilderTest, TranslateEqualityToStringWithMockCollator) {
 
 TEST(IndexBoundsBuilderTest, TranslateEqualityToNonStringWithMockCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = BSON("a" << 3);
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2033,10 +2056,10 @@ void assertBoundsRepresentEqualsNull(const OrderedIntervalList& oil) {
 
 TEST(IndexBoundsBuilderTest, TranslateEqualsToNullShouldBuildInexactBounds) {
     BSONObj indexPattern = BSON("a" << 1);
-    IndexEntry testIndex(indexPattern);
+    auto testIndex = buildSimpleIndexEntry(indexPattern);
 
     BSONObj obj = BSON("a" << BSONNULL);
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
 
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -2050,10 +2073,10 @@ TEST(IndexBoundsBuilderTest, TranslateEqualsToNullShouldBuildInexactBounds) {
 
 TEST(IndexBoundsBuilderTest, TranslateDottedEqualsToNullShouldBuildInexactBounds) {
     BSONObj indexPattern = BSON("a.b" << 1);
-    IndexEntry testIndex(indexPattern);
+    auto testIndex = buildSimpleIndexEntry(indexPattern);
 
     BSONObj obj = BSON("a.b" << BSONNULL);
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
 
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -2067,11 +2090,11 @@ TEST(IndexBoundsBuilderTest, TranslateDottedEqualsToNullShouldBuildInexactBounds
 
 TEST(IndexBoundsBuilderTest, TranslateEqualsToNullMultiKeyShouldBuildInexactBounds) {
     BSONObj indexPattern = BSON("a" << 1);
-    IndexEntry testIndex(indexPattern);
+    auto testIndex = buildSimpleIndexEntry(indexPattern);
     testIndex.multikey = true;
 
     BSONObj obj = BSON("a" << BSONNULL);
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
 
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -2086,11 +2109,11 @@ TEST(IndexBoundsBuilderTest, TranslateEqualsToNullMultiKeyShouldBuildInexactBoun
 TEST(IndexBoundsBuilderTest, TranslateEqualsToNullShouldBuildTwoIntervalsForHashedIndex) {
     BSONObj indexPattern = BSON("a"
                                 << "hashed");
-    IndexEntry testIndex(indexPattern);
+    auto testIndex = buildSimpleIndexEntry(indexPattern);
     testIndex.type = IndexType::INDEX_HASHED;
 
     BSONObj obj = BSON("a" << BSONNULL);
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
 
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -2153,10 +2176,10 @@ void assertBoundsRepresentNotEqualsNull(const OrderedIntervalList& oil) {
 
 TEST(IndexBoundsBuilderTest, TranslateNotEqualToNullShouldBuildExactBoundsIfIndexIsNotMultiKey) {
     BSONObj indexPattern = BSON("a" << 1);
-    IndexEntry testIndex(indexPattern);
+    auto testIndex = buildSimpleIndexEntry(indexPattern);
 
     BSONObj obj = BSON("a" << BSON("$ne" << BSONNULL));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
 
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -2172,11 +2195,11 @@ TEST(IndexBoundsBuilderTest, TranslateNotEqualToNullShouldBuildExactBoundsIfInde
 TEST(IndexBoundsBuilderTest,
      TranslateNotEqualToNullShouldBuildExactBoundsIfIndexIsNotMultiKeyOnRelevantPath) {
     BSONObj indexPattern = BSON("a" << 1 << "b" << 1);
-    IndexEntry testIndex(indexPattern);
+    auto testIndex = buildSimpleIndexEntry(indexPattern);
     testIndex.multikeyPaths = {{}, {0}};  // "a" is not multi-key, but "b" is.
 
     BSONObj obj = BSON("a" << BSON("$ne" << BSONNULL));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
 
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -2191,10 +2214,10 @@ TEST(IndexBoundsBuilderTest,
 
 TEST(IndexBoundsBuilderTest, TranslateNotEqualToNullShouldBuildExactBoundsOnReverseIndex) {
     BSONObj indexPattern = BSON("a" << -1);
-    IndexEntry testIndex(indexPattern);
+    auto testIndex = buildSimpleIndexEntry(indexPattern);
 
     BSONObj obj = BSON("a" << BSON("$ne" << BSONNULL));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
 
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -2209,11 +2232,11 @@ TEST(IndexBoundsBuilderTest, TranslateNotEqualToNullShouldBuildExactBoundsOnReve
 
 TEST(IndexBoundsBuilderTest, TranslateNotEqualToNullShouldBuildInexactBoundsIfIndexIsMultiKey) {
     BSONObj indexPattern = BSON("a" << 1);
-    IndexEntry testIndex(indexPattern);
+    auto testIndex = buildSimpleIndexEntry(indexPattern);
     testIndex.multikey = true;
 
     BSONObj matchObj = BSON("a" << BSON("$ne" << BSONNULL));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(matchObj));
+    auto expr = parseMatchExpression(matchObj);
 
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -2228,11 +2251,11 @@ TEST(IndexBoundsBuilderTest, TranslateNotEqualToNullShouldBuildInexactBoundsIfIn
 TEST(IndexBoundsBuilderTest,
      TranslateDottedElemMatchValueNotEqualToNullShouldBuildExactBoundsIfIsMultiKeyOnThatPath) {
     BSONObj indexPattern = BSON("a.b" << 1);
-    IndexEntry testIndex(indexPattern);
+    auto testIndex = buildSimpleIndexEntry(indexPattern);
     testIndex.multikeyPaths = {{1}};  // "a.b" is multikey.
 
     BSONObj matchObj = BSON("a.b" << BSON("$elemMatch" << BSON("$ne" << BSONNULL)));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(matchObj));
+    auto expr = parseMatchExpression(matchObj);
 
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -2247,11 +2270,11 @@ TEST(IndexBoundsBuilderTest,
 TEST(IndexBoundsBuilderTest,
      TranslateDottedFieldNotEqualToNullShouldBuildInexactBoundsIfIndexIsMultiKey) {
     BSONObj indexPattern = BSON("a.b" << 1);
-    IndexEntry testIndex(indexPattern);
+    auto testIndex = buildSimpleIndexEntry(indexPattern);
     testIndex.multikey = true;
 
     BSONObj matchObj = BSON("a.b" << BSON("$ne" << BSONNULL));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(matchObj));
+    auto expr = parseMatchExpression(matchObj);
 
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -2266,11 +2289,11 @@ TEST(IndexBoundsBuilderTest,
 TEST(IndexBoundsBuilderTest,
      TranslateElemMatchValueNotEqualToNullShouldBuildInexactBoundsIfIndexIsMultiKey) {
     BSONObj indexPattern = BSON("a" << 1);
-    IndexEntry testIndex(indexPattern);
+    auto testIndex = buildSimpleIndexEntry(indexPattern);
     testIndex.multikey = true;
 
     BSONObj obj = BSON("a" << BSON("$elemMatch" << BSON("$ne" << BSONNULL)));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2285,10 +2308,10 @@ TEST(IndexBoundsBuilderTest,
 TEST(IndexBoundsBuilderTest,
      TranslateElemMatchValueNotEqualToNullShouldBuildInExactBoundsIfIndexIsNotMultiKey) {
     BSONObj indexPattern = BSON("a" << 1);
-    IndexEntry testIndex(indexPattern);
+    auto testIndex = buildSimpleIndexEntry(indexPattern);
 
     BSONObj matchObj = BSON("a" << BSON("$elemMatch" << BSON("$ne" << BSONNULL)));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(matchObj));
+    auto expr = parseMatchExpression(matchObj);
 
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -2302,12 +2325,12 @@ TEST(IndexBoundsBuilderTest,
 
 TEST(IndexBoundsBuilderTest, TranslateNotEqualToStringWithMockCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = BSON("a" << BSON("$ne"
                                    << "bar"));
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2338,11 +2361,11 @@ TEST(IndexBoundsBuilderTest, TranslateNotEqualToStringWithMockCollator) {
 
 TEST(IndexBoundsBuilderTest, TranslateEqualToStringElemMatchValueWithMockCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$elemMatch: {$eq: 'baz'}}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2359,11 +2382,11 @@ TEST(IndexBoundsBuilderTest, TranslateEqualToStringElemMatchValueWithMockCollato
 
 TEST(IndexBoundsBuilderTest, TranslateLTEToStringWithMockCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$lte: 'foo'}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2379,11 +2402,11 @@ TEST(IndexBoundsBuilderTest, TranslateLTEToStringWithMockCollator) {
 
 TEST(IndexBoundsBuilderTest, TranslateLTEToNumberWithMockCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$lte: 3}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2400,11 +2423,11 @@ TEST(IndexBoundsBuilderTest, TranslateLTEToNumberWithMockCollator) {
 
 TEST(IndexBoundsBuilderTest, TranslateLTStringWithMockCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$lt: 'foo'}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2420,11 +2443,11 @@ TEST(IndexBoundsBuilderTest, TranslateLTStringWithMockCollator) {
 
 TEST(IndexBoundsBuilderTest, TranslateLTNumberWithMockCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$lt: 3}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2441,11 +2464,11 @@ TEST(IndexBoundsBuilderTest, TranslateLTNumberWithMockCollator) {
 
 TEST(IndexBoundsBuilderTest, TranslateGTStringWithMockCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$gt: 'foo'}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2462,11 +2485,11 @@ TEST(IndexBoundsBuilderTest, TranslateGTStringWithMockCollator) {
 
 TEST(IndexBoundsBuilderTest, TranslateGTNumberWithMockCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$gt: 3}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2483,11 +2506,11 @@ TEST(IndexBoundsBuilderTest, TranslateGTNumberWithMockCollator) {
 
 TEST(IndexBoundsBuilderTest, TranslateGTEToStringWithMockCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$gte: 'foo'}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2503,11 +2526,11 @@ TEST(IndexBoundsBuilderTest, TranslateGTEToStringWithMockCollator) {
 
 TEST(IndexBoundsBuilderTest, TranslateGTEToNumberWithMockCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$gte: 3}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2524,11 +2547,11 @@ TEST(IndexBoundsBuilderTest, TranslateGTEToNumberWithMockCollator) {
 
 TEST(IndexBoundsBuilderTest, SimplePrefixRegexWithMockCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: /^foo/}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2546,11 +2569,11 @@ TEST(IndexBoundsBuilderTest, SimplePrefixRegexWithMockCollator) {
 
 TEST(IndexBoundsBuilderTest, NotWithMockCollatorIsExact) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$ne:  3}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2567,12 +2590,12 @@ TEST(IndexBoundsBuilderTest, NotWithMockCollatorIsExact) {
 
 TEST(IndexBoundsBuilderTest, ExistsTrueWithMockCollatorAndSparseIsExact) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
     testIndex.sparse = true;
 
     BSONObj obj = fromjson("{a: {$exists: true}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2588,11 +2611,11 @@ TEST(IndexBoundsBuilderTest, ExistsTrueWithMockCollatorAndSparseIsExact) {
 
 TEST(IndexBoundsBuilderTest, ExistsFalseWithMockCollatorIsInexactFetch) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$exists: false}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2608,11 +2631,11 @@ TEST(IndexBoundsBuilderTest, ExistsFalseWithMockCollatorIsInexactFetch) {
 
 TEST(IndexBoundsBuilderTest, TypeStringIsInexactFetch) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$type: 'string'}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2628,11 +2651,11 @@ TEST(IndexBoundsBuilderTest, TypeStringIsInexactFetch) {
 
 TEST(IndexBoundsBuilderTest, InWithStringAndCollatorIsExact) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$in: ['foo']}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2649,11 +2672,11 @@ TEST(IndexBoundsBuilderTest, InWithStringAndCollatorIsExact) {
 
 TEST(IndexBoundsBuilderTest, InWithNumberAndStringAndCollatorIsExact) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$in: [2, 'foo']}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2672,11 +2695,11 @@ TEST(IndexBoundsBuilderTest, InWithNumberAndStringAndCollatorIsExact) {
 
 TEST(IndexBoundsBuilderTest, InWithRegexAndCollatorIsInexactFetch) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$in: [/^foo/]}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2694,11 +2717,11 @@ TEST(IndexBoundsBuilderTest, InWithRegexAndCollatorIsInexactFetch) {
 
 TEST(IndexBoundsBuilderTest, InWithNumberAndCollatorIsExact) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$in: [2]}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2713,11 +2736,11 @@ TEST(IndexBoundsBuilderTest, InWithNumberAndCollatorIsExact) {
 
 TEST(IndexBoundsBuilderTest, LTEMaxKeyWithCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$lte: {$maxKey: 1}}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2733,11 +2756,11 @@ TEST(IndexBoundsBuilderTest, LTEMaxKeyWithCollator) {
 
 TEST(IndexBoundsBuilderTest, LTMaxKeyWithCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$lt: {$maxKey: 1}}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2753,11 +2776,11 @@ TEST(IndexBoundsBuilderTest, LTMaxKeyWithCollator) {
 
 TEST(IndexBoundsBuilderTest, GTEMinKeyWithCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$gte: {$minKey: 1}}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2773,11 +2796,11 @@ TEST(IndexBoundsBuilderTest, GTEMinKeyWithCollator) {
 
 TEST(IndexBoundsBuilderTest, GTMinKeyWithCollator) {
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$gt: {$minKey: 1}}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2795,11 +2818,11 @@ TEST(IndexBoundsBuilderTest, StringEqualityAgainstHashedIndexWithCollatorUsesHas
     BSONObj keyPattern = fromjson("{a: 'hashed'}");
     BSONElement elt = keyPattern.firstElement();
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(keyPattern);
+    auto testIndex = buildSimpleIndexEntry(keyPattern);
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: 'foo'}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
 
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -2824,11 +2847,11 @@ TEST(IndexBoundsBuilderTest, EqualityToNumberAgainstHashedIndexWithCollatorUsesH
     BSONObj keyPattern = fromjson("{a: 'hashed'}");
     BSONElement elt = keyPattern.firstElement();
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(keyPattern);
+    auto testIndex = buildSimpleIndexEntry(keyPattern);
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: 3}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
 
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -2851,11 +2874,11 @@ TEST(IndexBoundsBuilderTest, InWithStringAgainstHashedIndexWithCollatorUsesHashO
     BSONObj keyPattern = fromjson("{a: 'hashed'}");
     BSONElement elt = keyPattern.firstElement();
     CollatorInterfaceMock collator(CollatorInterfaceMock::MockType::kReverseString);
-    IndexEntry testIndex = IndexEntry(keyPattern);
+    auto testIndex = buildSimpleIndexEntry(keyPattern);
     testIndex.collator = &collator;
 
     BSONObj obj = fromjson("{a: {$in: ['foo']}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
 
     OrderedIntervalList oil;
     IndexBoundsBuilder::BoundsTightness tightness;
@@ -2877,9 +2900,9 @@ TEST(IndexBoundsBuilderTest, InWithStringAgainstHashedIndexWithCollatorUsesHashO
 }
 
 TEST(IndexBoundsBuilderTest, TypeArrayWithAdditionalTypesHasOpenBounds) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$type: ['array', 'long']}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2894,9 +2917,9 @@ TEST(IndexBoundsBuilderTest, TypeArrayWithAdditionalTypesHasOpenBounds) {
 }
 
 TEST(IndexBoundsBuilderTest, TypeStringOrNumberHasCorrectBounds) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$type: ['string', 'number']}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2914,9 +2937,9 @@ TEST(IndexBoundsBuilderTest, TypeStringOrNumberHasCorrectBounds) {
 }
 
 TEST(IndexBoundsBuilderTest, RedundantTypeNumberHasCorrectBounds) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$type: ['number', 'int', 'long', 'double']}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     BSONElement elt = obj.firstElement();
 
     OrderedIntervalList oil;
@@ -2932,52 +2955,52 @@ TEST(IndexBoundsBuilderTest, RedundantTypeNumberHasCorrectBounds) {
 }
 
 TEST(IndexBoundsBuilderTest, CanUseCoveredMatchingForEqualityPredicate) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$eq: 3}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     ASSERT_TRUE(IndexBoundsBuilder::canUseCoveredMatching(expr.get(), testIndex));
 }
 
 TEST(IndexBoundsBuilderTest, CannotUseCoveredMatchingForEqualityToArrayPredicate) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$eq: [1, 2, 3]}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     ASSERT_FALSE(IndexBoundsBuilder::canUseCoveredMatching(expr.get(), testIndex));
 }
 
 TEST(IndexBoundsBuilderTest, CannotUseCoveredMatchingForEqualityToNullPredicate) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: null}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     ASSERT_FALSE(IndexBoundsBuilder::canUseCoveredMatching(expr.get(), testIndex));
 }
 
 TEST(IndexBoundsBuilderTest, CannotUseCoveredMatchingForTypeArrayPredicate) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$type: 'array'}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     ASSERT_FALSE(IndexBoundsBuilder::canUseCoveredMatching(expr.get(), testIndex));
 }
 
 TEST(IndexBoundsBuilderTest, CannotUseCoveredMatchingForExistsTruePredicate) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$exists: true}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     ASSERT_FALSE(IndexBoundsBuilder::canUseCoveredMatching(expr.get(), testIndex));
 }
 
 TEST(IndexBoundsBuilderTest, CannotUseCoveredMatchingForExistsFalsePredicate) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     BSONObj obj = fromjson("{a: {$exists: false}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     ASSERT_FALSE(IndexBoundsBuilder::canUseCoveredMatching(expr.get(), testIndex));
 }
 
 TEST(IndexBoundsBuilderTest, CanUseCoveredMatchingForExistsTrueWithSparseIndex) {
-    IndexEntry testIndex = IndexEntry(BSONObj());
+    auto testIndex = buildSimpleIndexEntry();
     testIndex.sparse = true;
     BSONObj obj = fromjson("{a: {$exists: true}}");
-    unique_ptr<MatchExpression> expr(parseMatchExpression(obj));
+    auto expr = parseMatchExpression(obj);
     ASSERT_TRUE(IndexBoundsBuilder::canUseCoveredMatching(expr.get(), testIndex));
 }
 

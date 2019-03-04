@@ -35,9 +35,10 @@
 #include <vector>
 
 #include "mongo/bson/bsonobj.h"
+#include "mongo/db/catalog/collection_catalog_entry.h"
+#include "mongo/db/catalog/commit_quorum_options.h"
 #include "mongo/db/index/index_descriptor.h"
 #include "mongo/db/namespace_string.h"
-#include "mongo/db/write_concern_options.h"
 #include "mongo/stdx/condition_variable.h"
 #include "mongo/util/future.h"
 #include "mongo/util/net/hostandport.h"
@@ -45,32 +46,45 @@
 
 namespace mongo {
 
+namespace {
+
+std::vector<std::string> extractIndexNames(const std::vector<BSONObj>& specs) {
+    std::vector<std::string> indexNames;
+    for (const auto& spec : specs) {
+        std::string name = spec.getStringField(IndexDescriptor::kIndexNameFieldName);
+        invariant(!name.empty(),
+                  str::stream() << "Bad spec passed into ReplIndexBuildState constructor, missing '"
+                                << IndexDescriptor::kIndexNameFieldName
+                                << "' field: "
+                                << spec);
+        indexNames.push_back(name);
+    }
+    return indexNames;
+}
+
+}  // namespace
+
 /**
  * Tracks the cross replica set progress of a particular index build identified by a build UUID.
  *
  * This is intended to only be used by the IndexBuildsCoordinator class.
  *
- * TODO: pass in commit quorum setting and FCV to decide the twoPhaseIndexBuild setting.
+ * TODO: pass in commit quorum setting.
  */
 struct ReplIndexBuildState {
     ReplIndexBuildState(const UUID& indexBuildUUID,
                         const UUID& collUUID,
-                        const std::vector<std::string> names,
+                        const std::string& dbName,
                         const std::vector<BSONObj>& specs,
-                        Promise<void> promise)
+                        IndexBuildProtocol protocol,
+                        boost::optional<CommitQuorumOptions> commitQuorum)
         : buildUUID(indexBuildUUID),
           collectionUUID(collUUID),
-          indexNames(names),
-          indexSpecs(specs) {
-        promises.emplace_back(std::move(promise));
-
-        // Verify that the given index names and index specs match.
-        invariant(names.size() == specs.size());
-        for (auto& spec : specs) {
-            std::string name = spec.getStringField(IndexDescriptor::kIndexNameFieldName);
-            invariant(std::find(names.begin(), names.end(), name) != names.end());
-        }
-    }
+          dbName(dbName),
+          indexNames(extractIndexNames(specs)),
+          indexSpecs(specs),
+          protocol(protocol),
+          commitQuorum(commitQuorum) {}
 
     // Uniquely identifies this index build across replica set members.
     const UUID buildUUID;
@@ -78,6 +92,10 @@ struct ReplIndexBuildState {
     // Identifies the collection for which the index is being built. Collections can be renamed, so
     // the collection UUID is used to maintain correct association.
     const UUID collectionUUID;
+
+    // Identifies the database containing the index being built. Unlike collections, databases
+    // cannot be renamed.
+    const std::string dbName;
 
     // The names of the indexes being built.
     const std::vector<std::string> indexNames;
@@ -88,26 +106,30 @@ struct ReplIndexBuildState {
 
     // Whether to do a two phase index build or a single phase index build like in v4.0. The FCV
     // at the start of the index build will determine this setting.
-    bool twoPhaseIndexBuild = false;
+    IndexBuildProtocol protocol;
 
     // Protects the state below.
     mutable stdx::mutex mutex;
 
-    // The quorum required of commit ready replica set members before the index build will be
-    // allowed to commit.
-    WriteConcernOptions commitQuorum;
-
-    // Whether or not the primary replica set member has signaled that it is okay to go ahead and
-    // verify index constraint violations have gone away.
-    bool prepareIndexBuild = false;
+    // Secondaries do not set this information, so it is only set on primaries or on
+    // transition to primary.
+    boost::optional<CommitQuorumOptions> commitQuorum;
 
     // Tracks the members of the replica set that have finished building the index(es) and are ready
     // to commit the index(es).
     std::vector<HostAndPort> commitReadyMembers;
 
+    using IndexCatalogStats = struct {
+        int numIndexesBefore = 0;
+        int numIndexesAfter = 0;
+    };
+
+    // Tracks the index build stats that are returned to the caller upon success.
+    IndexCatalogStats stats;
+
     // Communicates the final outcome of the index build to any callers waiting upon the associated
-    // Future(s).
-    std::vector<Promise<void>> promises;
+    // SharedSemiFuture(s).
+    SharedPromise<IndexCatalogStats> sharedPromise;
 
     // There is a period of time where the index build is registered on the coordinator, but an
     // index builder does not yet exist. Since a signal cannot be set on the index builder at that

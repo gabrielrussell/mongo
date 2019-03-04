@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -54,13 +53,6 @@ struct ValidateResults;
 class ValidateAdaptor;
 
 struct CompactOptions {
-    // padding
-    enum PaddingMode { PRESERVE, NONE, MANUAL } paddingMode = NONE;
-
-    // only used if _paddingMode == MANUAL
-    double paddingFactor = 1;  // what to multiple document size by
-    int paddingBytes = 0;      // what to add to ducment size after multiplication
-
     // other
     bool validateDocuments = true;
 
@@ -521,15 +513,13 @@ public:
     }
 
     /**
-     * @return OK if the validate run successfully
-     *         OK will be returned even if corruption is found
-     *         deatils will be in result
+     * Performs record store specific validation to ensure consistency of underlying data
+     * structures. If corruption is found, details of the errors will be in the results parameter.
      */
-    virtual Status validate(OperationContext* opCtx,
-                            ValidateCmdLevel level,
-                            ValidateAdaptor* adaptor,
-                            ValidateResults* results,
-                            BSONObjBuilder* output) = 0;
+    virtual void validate(OperationContext* opCtx,
+                          ValidateCmdLevel level,
+                          ValidateResults* results,
+                          BSONObjBuilder* output) {}
 
     /**
      * @param scaleSize - amount by which to scale size metrics

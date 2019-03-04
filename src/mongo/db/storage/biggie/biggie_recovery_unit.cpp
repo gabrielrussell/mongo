@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -77,10 +76,7 @@ void RecoveryUnit::commitUnitOfWork() {
         _forked = false;
         _dirty = false;
     } else if (_forked) {
-        DEV {
-            std::pair<uint64_t, StringStore> masterInfo = _KVEngine->getMasterInfo();
-            invariant(masterInfo.second == _workingCopy);
-        }
+        DEV invariant(_mergeBase == _workingCopy);
     }
 
     try {

@@ -1,6 +1,3 @@
-// @file background.cpp
-
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -50,7 +47,6 @@
 #include "mongo/util/mongoutils/str.h"
 #include "mongo/util/timer.h"
 
-using namespace std;
 namespace mongo {
 
 namespace {
@@ -142,19 +138,14 @@ BackgroundJob::BackgroundJob(bool selfDelete) : _selfDelete(selfDelete), _status
 BackgroundJob::~BackgroundJob() {}
 
 void BackgroundJob::jobBody() {
-    const string threadName = name();
+    const std::string threadName = name();
     if (!threadName.empty()) {
         setThreadName(threadName);
     }
 
     LOG(1) << "BackgroundJob starting: " << threadName;
 
-    try {
-        run();
-    } catch (const std::exception& e) {
-        error() << "backgroundjob " << threadName << " exception: " << redact(e.what());
-        throw;
-    }
+    run();
 
     // We must cache this value so that we can use it after we leave the following scope.
     const bool selfDelete = _selfDelete;

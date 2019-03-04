@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -41,21 +40,21 @@
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/client.h"
 #include "mongo/db/commands/test_commands_enabled.h"
+#include "mongo/db/concurrency/replication_state_transition_lock_guard.h"
 #include "mongo/db/concurrency/write_conflict_exception.h"
 #include "mongo/db/dbhelpers.h"
 #include "mongo/db/repl/data_replicator_external_state_impl.h"
 #include "mongo/db/repl/oplog.h"
 #include "mongo/db/repl/oplog_interface_local.h"
 #include "mongo/db/repl/oplog_interface_remote.h"
+#include "mongo/db/repl/repl_server_parameters_gen.h"
 #include "mongo/db/repl/replication_coordinator.h"
 #include "mongo/db/repl/replication_coordinator_impl.h"
 #include "mongo/db/repl/replication_process.h"
-#include "mongo/db/repl/replication_state_transition_lock_guard.h"
 #include "mongo/db/repl/rollback_source_impl.h"
 #include "mongo/db/repl/rs_rollback.h"
 #include "mongo/db/repl/storage_interface.h"
 #include "mongo/db/s/shard_identity_rollback_notifier.h"
-#include "mongo/db/server_parameters.h"
 #include "mongo/rpc/get_status_from_command_result.h"
 #include "mongo/rpc/metadata/repl_set_metadata.h"
 #include "mongo/stdx/memory.h"
@@ -70,36 +69,9 @@ using std::string;
 namespace repl {
 
 namespace {
-const char kHashFieldName[] = "h";
 const int kSleepToAllowBatchingMillis = 2;
 const int kSmallBatchLimitBytes = 40000;
 const Milliseconds kRollbackOplogSocketTimeout(10 * 60 * 1000);
-// 16MB max batch size / 12 byte min doc size * 10 (for good measure) = defaultBatchSize to use.
-const auto defaultBatchSize = (16 * 1024 * 1024) / 12 * 10;
-
-// The batchSize to use for the find/getMore queries called by the OplogFetcher
-MONGO_EXPORT_STARTUP_SERVER_PARAMETER(bgSyncOplogFetcherBatchSize, int, defaultBatchSize);
-
-// The batchSize to use for the find/getMore queries called by the rollback common point resolver.
-// A batchSize of 0 means that the 'find' and 'getMore' commands will be given no batchSize.
-// We set the default to 2000 to prevent the sync source from having to read too much data at once,
-// and reduce the chance of a socket timeout.
-// We choose 2000 for (10 minute timeout) * (60 sec / min) * (50 MB / second) / (16 MB / document).
-constexpr int defaultRollbackBatchSize = 2000;
-MONGO_EXPORT_SERVER_PARAMETER(rollbackRemoteOplogQueryBatchSize, int, defaultRollbackBatchSize)
-    ->withValidator([](const auto& potentialNewValue) {
-        if (potentialNewValue < 0) {
-            return Status(ErrorCodes::BadValue,
-                          "rollbackRemoteOplogQueryBatchSize cannot be negative.");
-        }
-
-        return Status::OK();
-    });
-
-// If 'forceRollbackViaRefetch' is true, always perform rollbacks via the refetch algorithm, even if
-// the storage engine supports rollback via recover to timestamp.
-constexpr bool forceRollbackViaRefetchByDefault = false;
-MONGO_EXPORT_SERVER_PARAMETER(forceRollbackViaRefetch, bool, forceRollbackViaRefetchByDefault);
 
 /**
  * Extends DataReplicatorExternalStateImpl to be member state aware.
@@ -195,7 +167,7 @@ bool BackgroundSync::_inShutdown_inlock() const {
 
 void BackgroundSync::_run() {
     Client::initThread("rsBackgroundSync");
-    AuthorizationSession::get(cc())->grantInternalAuthorization();
+    AuthorizationSession::get(cc())->grantInternalAuthorization(&cc());
 
     while (!inShutdown()) {
         try {
@@ -403,14 +375,12 @@ void BackgroundSync::_produce() {
         }
     }
 
-    long long lastHashFetched;
     {
         stdx::lock_guard<stdx::mutex> lock(_mutex);
         if (_state != ProducerState::Running) {
             return;
         }
         lastOpTimeFetched = _lastOpTimeFetched;
-        lastHashFetched = _lastFetchedHash;
     }
 
     if (!_replCoord->getMemberState().primary()) {
@@ -441,7 +411,7 @@ void BackgroundSync::_produce() {
         // replication coordinator.
         auto oplogFetcherPtr = stdx::make_unique<OplogFetcher>(
             _replicationCoordinatorExternalState->getTaskExecutor(),
-            OpTimeWithHash(lastHashFetched, lastOpTimeFetched),
+            lastOpTimeFetched,
             source,
             NamespaceString::kRsOplogNamespace,
             _replCoord->getConfig(),
@@ -539,8 +509,7 @@ Status BackgroundSync::_enqueueDocuments(Fetcher::Documents::const_iterator begi
         _oplogApplier->enqueue(opCtx.get(), begin, end);
 
         // Update last fetched info.
-        _lastFetchedHash = info.lastDocument.value;
-        _lastOpTimeFetched = info.lastDocument.opTime;
+        _lastOpTimeFetched = info.lastDocument;
         LOG(3) << "batch resetting _lastOpTimeFetched: " << _lastOpTimeFetched;
     }
 
@@ -713,7 +682,6 @@ void BackgroundSync::stop(bool resetLastFetchedOptime) {
     if (resetLastFetchedOptime) {
         invariant(_oplogApplier->getBuffer()->isEmpty());
         _lastOpTimeFetched = OpTime();
-        _lastFetchedHash = 0;
         log() << "Resetting last fetched optimes in bgsync";
     }
 
@@ -727,14 +695,14 @@ void BackgroundSync::stop(bool resetLastFetchedOptime) {
 }
 
 void BackgroundSync::start(OperationContext* opCtx) {
-    OpTimeWithHash lastAppliedOpTimeWithHash;
+    OpTime lastAppliedOpTime;
     ShouldNotConflictWithSecondaryBatchApplicationBlock noConflict(opCtx->lockState());
 
     // Explicitly start future read transactions without a timestamp.
     opCtx->recoveryUnit()->setTimestampReadSource(RecoveryUnit::ReadSource::kNoTimestamp);
 
     do {
-        lastAppliedOpTimeWithHash = _readLastAppliedOpTimeWithHash(opCtx);
+        lastAppliedOpTime = _readLastAppliedOpTime(opCtx);
         stdx::lock_guard<stdx::mutex> lk(_mutex);
         // Double check the state after acquiring the mutex.
         if (_state != ProducerState::Starting) {
@@ -749,52 +717,42 @@ void BackgroundSync::start(OperationContext* opCtx) {
 
         // When a node steps down during drain mode, the last fetched optime would be newer than
         // the last applied.
-        if (_lastOpTimeFetched <= lastAppliedOpTimeWithHash.opTime) {
-            LOG(1) << "Setting bgsync _lastOpTimeFetched=" << lastAppliedOpTimeWithHash.opTime
-                   << " and _lastFetchedHash=" << lastAppliedOpTimeWithHash.value
+        if (_lastOpTimeFetched <= lastAppliedOpTime) {
+            LOG(1) << "Setting bgsync _lastOpTimeFetched=" << lastAppliedOpTime
                    << ". Previous _lastOpTimeFetched: " << _lastOpTimeFetched;
-            _lastOpTimeFetched = lastAppliedOpTimeWithHash.opTime;
-            _lastFetchedHash = lastAppliedOpTimeWithHash.value;
+            _lastOpTimeFetched = lastAppliedOpTime;
         }
         // Reload the last applied optime from disk if it has been changed.
-    } while (lastAppliedOpTimeWithHash.opTime != _replCoord->getMyLastAppliedOpTime());
+    } while (lastAppliedOpTime != _replCoord->getMyLastAppliedOpTime());
 
-    LOG(1) << "bgsync fetch queue set to: " << _lastOpTimeFetched << " " << _lastFetchedHash;
+    LOG(1) << "bgsync fetch queue set to: " << _lastOpTimeFetched;
 }
 
-OpTimeWithHash BackgroundSync::_readLastAppliedOpTimeWithHash(OperationContext* opCtx) {
+OpTime BackgroundSync::_readLastAppliedOpTime(OperationContext* opCtx) {
     BSONObj oplogEntry;
     try {
         bool success = writeConflictRetry(
-            opCtx, "readLastAppliedHash", NamespaceString::kRsOplogNamespace.ns(), [&] {
+            opCtx, "readLastAppliedOpTime", NamespaceString::kRsOplogNamespace.ns(), [&] {
                 Lock::DBLock lk(opCtx, "local", MODE_X);
                 return Helpers::getLast(
                     opCtx, NamespaceString::kRsOplogNamespace.ns().c_str(), oplogEntry);
             });
 
         if (!success) {
-            // This can happen when we are to do an initial sync.  lastHash will be set
-            // after the initial sync is complete.
-            return OpTimeWithHash(0);
+            // This can happen when we are to do an initial sync.
+            return OpTime();
         }
+    } catch (const ExceptionForCat<ErrorCategory::ShutdownError>&) {
+        throw;
     } catch (const DBException& ex) {
         severe() << "Problem reading " << NamespaceString::kRsOplogNamespace.ns() << ": "
                  << redact(ex);
         fassertFailed(18904);
     }
-    long long hash;
-    auto status = bsonExtractIntegerField(oplogEntry, kHashFieldName, &hash);
-    if (!status.isOK()) {
-        severe() << "Most recent entry in " << NamespaceString::kRsOplogNamespace.ns()
-                 << " is missing or has invalid \"" << kHashFieldName
-                 << "\" field. Oplog entry: " << redact(oplogEntry) << ": " << redact(status);
-        fassertFailed(18902);
-    }
 
     OplogEntry parsedEntry(oplogEntry);
-    auto lastOptime = OpTimeWithHash(hash, parsedEntry.getOpTime());
     LOG(1) << "Successfully read last entry of oplog while starting bgsync: " << redact(oplogEntry);
-    return lastOptime;
+    return parsedEntry.getOpTime();
 }
 
 bool BackgroundSync::shouldStopFetching() const {

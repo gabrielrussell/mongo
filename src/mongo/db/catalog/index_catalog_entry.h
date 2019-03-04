@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -75,9 +74,11 @@ public:
 
     virtual const IndexAccessMethod* accessMethod() const = 0;
 
-    virtual bool isBuilding() const = 0;
+    virtual bool isHybridBuilding() const = 0;
 
     virtual IndexBuildInterceptor* indexBuildInterceptor() = 0;
+
+    virtual const IndexBuildInterceptor* indexBuildInterceptor() const = 0;
 
     virtual void setIndexBuildInterceptor(IndexBuildInterceptor* interceptor) = 0;
 
@@ -205,6 +206,10 @@ public:
 
     void add(std::shared_ptr<IndexCatalogEntry>&& entry) {
         _entries.push_back(std::move(entry));
+    }
+
+    std::vector<std::shared_ptr<const IndexCatalogEntry>> getAllEntries() const {
+        return {_entries.begin(), _entries.end()};
     }
 
 private:

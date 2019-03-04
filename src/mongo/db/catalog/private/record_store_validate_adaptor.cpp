@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -66,7 +65,12 @@ KeyString makeWildCardMultikeyMetadataKeyString(const BSONObj& indexKey) {
 Status RecordStoreValidateAdaptor::validate(const RecordId& recordId,
                                             const RecordData& record,
                                             size_t* dataSize) {
-    BSONObj recordBson = record.toBson();
+    BSONObj recordBson;
+    try {
+        recordBson = record.toBson();
+    } catch (...) {
+        return exceptionToStatus();
+    }
 
     const Status status = validateBSON(
         recordBson.objdata(), recordBson.objsize(), Validator<BSONObj>::enabledBSONVersion());
@@ -89,7 +93,7 @@ Status RecordStoreValidateAdaptor::validate(const RecordId& recordId,
         int indexNumber = _indexConsistency->getIndexNumber(indexNs);
         ValidateResults curRecordResults;
 
-        const IndexAccessMethod* iam = _indexCatalog->getIndex(descriptor);
+        const IndexAccessMethod* iam = _indexCatalog->getEntry(descriptor)->accessMethod();
 
         if (descriptor->isPartial()) {
             const IndexCatalogEntry* ice = _indexCatalog->getEntry(descriptor);
@@ -254,7 +258,7 @@ void RecordStoreValidateAdaptor::traverseRecordStore(RecordStore* recordStore,
     output->appendNumber("nrecords", nrecords);
 }
 
-void RecordStoreValidateAdaptor::validateIndexKeyCount(IndexDescriptor* idx,
+void RecordStoreValidateAdaptor::validateIndexKeyCount(const IndexDescriptor* idx,
                                                        int64_t numRecs,
                                                        ValidateResults& results) {
     const std::string indexNs = idx->indexNamespace();

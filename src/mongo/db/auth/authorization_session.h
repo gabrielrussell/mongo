@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -171,12 +170,15 @@ public:
     virtual std::string getAuthenticatedUserNamesToken() = 0;
 
     // Removes any authenticated principals whose authorization credentials came from the given
-    // database, and revokes any privileges that were granted via that principal.
-    virtual void logoutDatabase(StringData dbname) = 0;
+    // database, and revokes any privileges that were granted via that principal. This function
+    // modifies state. Synchronizes with the Client lock.
+    virtual void logoutDatabase(OperationContext* opCtx, StringData dbname) = 0;
 
     // Adds the internalSecurity user to the set of authenticated users.
-    // Used to grant internal threads full access.
-    virtual void grantInternalAuthorization() = 0;
+    // Used to grant internal threads full access. Takes in the Client
+    // as a parameter so it can take out a lock on the client.
+    virtual void grantInternalAuthorization(Client* client) = 0;
+    virtual void grantInternalAuthorization(OperationContext* opCtx) = 0;
 
     // Generates a vector of default privileges that are granted to any user,
     // regardless of which roles that user does or does not possess.
@@ -219,11 +221,12 @@ public:
     virtual Status checkAuthForKillCursors(const NamespaceString& cursorNss,
                                            UserNameIterator cursorOwner) = 0;
 
-    // Checks if this connection has the privileges necessary to run the aggregation pipeline
-    // specified in 'cmdObj' on the namespace 'ns' either directly on mongoD or via mongoS.
-    virtual Status checkAuthForAggregate(const NamespaceString& ns,
-                                         const BSONObj& cmdObj,
-                                         bool isMongos) = 0;
+    // Attempts to get the privileges necessary to run the aggregation pipeline specified in
+    // 'cmdObj' on the namespace 'ns' either directly on mongoD or via mongoS. Returns a non-ok
+    // status if it is unable to parse the pipeline.
+    virtual StatusWith<PrivilegeVector> getPrivilegesForAggregate(const NamespaceString& ns,
+                                                                  const BSONObj& cmdObj,
+                                                                  bool isMongos) = 0;
 
     // Checks if this connection has the privileges necessary to create 'ns' with the options
     // supplied in 'cmdObj' either directly on mongoD or via mongoS.
@@ -244,6 +247,12 @@ public:
     // Checks if this connection has the privileges necessary to revoke the given privilege
     // from a role.
     virtual Status checkAuthorizedToRevokePrivilege(const Privilege& privilege) = 0;
+
+    // Checks if the current session is authorized to list the collections in the given
+    // database. If it is, return a privilegeVector containing the privileges used to authorize
+    // this command.
+    virtual StatusWith<PrivilegeVector> checkAuthorizedToListCollections(StringData dbname,
+                                                                         const BSONObj& cmdObj) = 0;
 
     // Checks if this connection is using the localhost bypass
     virtual bool isUsingLocalhostBypass() = 0;
@@ -270,10 +279,6 @@ public:
     // Returns true if the current session is authenticated as the given user and that user
     // is allowed to change his/her own password
     virtual bool isAuthorizedToChangeOwnPasswordAsUser(const UserName& userName) = 0;
-
-    // Returns true if the current session is authorized to list the collections in the given
-    // database.
-    virtual bool isAuthorizedToListCollections(StringData dbname, const BSONObj& cmdObj) = 0;
 
     // Returns true if the current session is authenticated as the given user and that user
     // is allowed to change his/her own customData.
@@ -336,8 +341,12 @@ public:
     // authenticated user. If either object has impersonated users,
     // those users will be considered as 'authenticated' for the purpose of this check.
     //
-    // The existence of 'opClient' must be guaranteed through locks taken by the caller.
-    virtual bool isCoauthorizedWithClient(Client* opClient) = 0;
+    // The existence of 'opClient' must be guaranteed through locks taken by the caller,
+    // as demonstrated by opClientLock which must be a lock taken on opClient.
+    //
+    // Returns true if the current auth session and the opClient's auth session have users
+    // in common.
+    virtual bool isCoauthorizedWithClient(Client* opClient, WithLock opClientLock) = 0;
 
     // Returns true if the session and 'userNameIter' share an authenticated user, or if both have
     // no authenticated users. Impersonated users are not considered as 'authenticated' for the

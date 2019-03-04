@@ -31,7 +31,47 @@ global:
 
 imports:
     - "mongo/idl/basic_types.idl"
+    - "mongo/s/sharding_types.idl"
 
+structs:
+    TxnRecoveryToken:
+        description: "Contains info for retrying the commit of a sharded transaction"
+        fields:
+            shardId:
+                description: "The id of the shard that can make progress committing the transaction"
+                type: shard_id
+
+    CommitTransactionOplogObject:
+        description: A document representing the 'o' field of a 'commitTransaction' oplog entry.
+        fields:
+            commitTransaction:
+                type: int
+                default: 1
+            commitTimestamp:
+                type: timestamp
+                optional: true
+                description: "Specifies the timestamp at which the multi-document transaction should
+                              be committed.  Required for prepared transactions, not permitted for
+                              unprepared ones."
+            prepare:
+                type: bool
+                optional: true
+                description: "Set to false for a commit for an unprepared transaction.  Implicit
+                              default is true, do not set explicitly to true"
+
+    AbortTransactionOplogObject:
+        description: A document representing the 'o' field of an 'abortTransaction' oplog entry.
+        fields:
+            abortTransaction:
+                type: int
+                default: 1
+
+    PrepareTransactionOplogObject:
+        description: A document representing the 'o' field of a 'prepareTransaction' oplog entry.
+        fields:
+            prepareTransaction:
+                type: int
+                default: 1
 
 commands:
     commitTransaction:
@@ -43,22 +83,8 @@ commands:
                               transactions and illegal for non-prepared ones."
                 optional: true
                 type: timestamp
-
-structs:
-    CommitTransactionOplogObject:
-        description: A document representing the 'o' field of a 'commitTransaction' oplog entry.
-        fields:
-            commitTransaction:
-                type: int
-                default: 1
-            commitTimestamp:
-                type: timestamp
-                description: "Specifies the timestamp at which the multi-document transaction should
-                              be committed."
-
-    AbortTransactionOplogObject:
-        description: A document representing the 'o' field of an 'abortTransaction' oplog entry.
-        fields:
-            abortTransaction:
-                type: int
-                default: 1
+            recoveryToken:
+                description: "A mongos that doesn't know about this transaction can attempt to make
+                              progress on commit by processing using the info in the recoveryToken."
+                optional: true
+                type: TxnRecoveryToken

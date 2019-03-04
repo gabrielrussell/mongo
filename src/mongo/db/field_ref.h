@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -176,6 +175,10 @@ public:
 
     bool empty() const {
         return numParts() == 0;
+    }
+
+    StringData operator[](int index) const {
+        return getPart(index);
     }
 
 private:

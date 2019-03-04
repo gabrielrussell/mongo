@@ -1,6 +1,3 @@
-// processinfo_win32.cpp
-
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -42,9 +39,6 @@
 
 #include "mongo/util/log.h"
 #include "mongo/util/processinfo.h"
-
-using namespace std;
-using std::unique_ptr;
 
 namespace mongo {
 
@@ -216,64 +210,9 @@ bool getFileVersion(const char* filePath, DWORD& fileVersionMS, DWORD& fileVersi
     return true;
 }
 
-// If the version of the ntfs.sys driver shows that the KB2731284 hotfix or a later update
-// is installed, zeroing out data files is unnecessary. The file version numbers used below
-// are taken from the Hotfix File Information at http://support.microsoft.com/kb/2731284.
-// In https://support.microsoft.com/en-us/kb/3121255, the LDR branch prefix for SP1 is now
-// .23xxxx since patch numbers have rolled over to the next range.
-// Windows 7 RTM has not received patches for KB3121255.
-bool isKB2731284OrLaterUpdateInstalled() {
-    UINT pathBufferSize = GetSystemDirectoryA(NULL, 0);
-    if (pathBufferSize == 0) {
-        DWORD gle = GetLastError();
-        warning() << "GetSystemDirectoryA failed with " << errnoWithDescription(gle);
-        return false;
-    }
-
-    std::unique_ptr<char[]> systemDirectory(new char[pathBufferSize]);
-    UINT systemDirectoryPathLen;
-    systemDirectoryPathLen = GetSystemDirectoryA(systemDirectory.get(), pathBufferSize);
-    if (systemDirectoryPathLen == 0) {
-        DWORD gle = GetLastError();
-        warning() << "GetSystemDirectoryA failed with " << errnoWithDescription(gle);
-        return false;
-    }
-
-    if (systemDirectoryPathLen != pathBufferSize - 1) {
-        warning() << "GetSystemDirectoryA returned unexpected path length";
-        return false;
-    }
-
-    string ntfsDotSysPath = systemDirectory.get();
-    if (ntfsDotSysPath.back() != '\\') {
-        ntfsDotSysPath.append("\\");
-    }
-    ntfsDotSysPath.append("drivers\\ntfs.sys");
-    DWORD fileVersionMS;
-    DWORD fileVersionLS;
-    if (getFileVersion(ntfsDotSysPath.c_str(), fileVersionMS, fileVersionLS)) {
-        WORD fileVersionFirstNumber = HIWORD(fileVersionMS);
-        WORD fileVersionSecondNumber = LOWORD(fileVersionMS);
-        WORD fileVersionThirdNumber = HIWORD(fileVersionLS);
-        WORD fileVersionFourthNumber = LOWORD(fileVersionLS);
-
-        if (fileVersionFirstNumber == 6 && fileVersionSecondNumber == 1 &&
-            fileVersionThirdNumber == 7600 && fileVersionFourthNumber >= 21296 &&
-            fileVersionFourthNumber <= 21999) {
-            return true;
-        } else if (fileVersionFirstNumber == 6 && fileVersionSecondNumber == 1 &&
-                   fileVersionThirdNumber == 7601 && fileVersionFourthNumber >= 22083 &&
-                   fileVersionFourthNumber <= 23999) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 void ProcessInfo::SystemInfo::collectSystemInfo() {
     BSONObjBuilder bExtra;
-    stringstream verstr;
+    std::stringstream verstr;
     OSVERSIONINFOEX osvi;   // os version
     MEMORYSTATUSEX mse;     // memory stats
     SYSTEM_INFO ntsysinfo;  // system stats
@@ -332,19 +271,6 @@ void ProcessInfo::SystemInfo::collectSystemInfo() {
                             osName += "Windows 7";
                         else
                             osName += "Windows Server 2008 R2";
-
-                        // Windows 6.1 is either Windows 7 or Windows 2008 R2. There is no SP2 for
-                        // either of these two operating systems, but the check will hold if one
-                        // were released. This code assumes that SP2 will include fix for
-                        // http://support.microsoft.com/kb/2731284.
-                        //
-                        if ((osvi.wServicePackMajor >= 0) && (osvi.wServicePackMajor < 2)) {
-                            if (isKB2731284OrLaterUpdateInstalled()) {
-                                fileZeroNeeded = false;
-                            } else {
-                                fileZeroNeeded = true;
-                            }
-                        }
                         break;
                     case 0:
                         if (osvi.wProductType == VER_NT_WORKSTATION)
@@ -391,7 +317,7 @@ bool ProcessInfo::checkNumaEnabled() {
 
     DWORD returnLength = 0;
     DWORD numaNodeCount = 0;
-    unique_ptr<SYSTEM_LOGICAL_PROCESSOR_INFORMATION[]> buffer;
+    std::unique_ptr<SYSTEM_LOGICAL_PROCESSOR_INFORMATION[]> buffer;
 
     LPFN_GLPI glpi(reinterpret_cast<LPFN_GLPI>(
         GetProcAddress(GetModuleHandleW(L"kernel32"), "GetLogicalProcessorInformation")));
@@ -465,9 +391,9 @@ bool ProcessInfo::blockInMemory(const void* start) {
     return false;
 }
 
-bool ProcessInfo::pagesInMemory(const void* start, size_t numPages, vector<char>* out) {
+bool ProcessInfo::pagesInMemory(const void* start, size_t numPages, std::vector<char>* out) {
     out->resize(numPages);
-    unique_ptr<PSAPI_WORKING_SET_EX_INFORMATION[]> wsinfo(
+    std::unique_ptr<PSAPI_WORKING_SET_EX_INFORMATION[]> wsinfo(
         new PSAPI_WORKING_SET_EX_INFORMATION[numPages]);
 
     const void* startOfFirstPage = alignToStartOfPage(start);

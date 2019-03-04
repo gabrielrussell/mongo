@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -83,6 +82,9 @@ public:
                 bool upsert,
                 bool multi,
                 boost::optional<OID> targetEpoch) final;
+
+    std::unique_ptr<Pipeline, PipelineDeleter> attachCursorSourceToPipeline(
+        const boost::intrusive_ptr<ExpressionContext>& expCtx, Pipeline* pipeline) final;
 };
 
 }  // namespace mongo

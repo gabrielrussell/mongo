@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -161,6 +160,10 @@ public:
         MatchExpression* matchExpr,
         const std::string& path,
         const boost::intrusive_ptr<ExpressionContext>& expCtx);
+
+    boost::optional<MergingLogic> mergingLogic() final {
+        return boost::none;
+    }
 
 protected:
     DocumentSourceMatch(const BSONObj& query,

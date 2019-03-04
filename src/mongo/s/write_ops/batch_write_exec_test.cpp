@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -635,7 +634,8 @@ public:
         _scopedSession.emplace(operationContext());
 
         auto txnRouter = TransactionRouter::get(operationContext());
-        txnRouter->beginOrContinueTxn(operationContext(), kTxnNumber, true);
+        txnRouter->beginOrContinueTxn(
+            operationContext(), kTxnNumber, TransactionRouter::TransactionActions::kStart);
         txnRouter->setDefaultAtClusterTime(operationContext());
     }
 

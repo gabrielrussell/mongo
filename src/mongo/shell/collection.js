@@ -228,12 +228,12 @@ DBCollection.prototype.find = function(query, fields, limit, skip, batchSize, op
     {
         const session = this.getDB().getSession();
 
-        const readPreference = session._serverSession.client.getReadPreference(session);
+        const readPreference = session._getSessionAwareClient().getReadPreference(session);
         if (readPreference !== null) {
             cursor.readPref(readPreference.mode, readPreference.tags);
         }
 
-        const readConcern = session._serverSession.client.getReadConcern(session);
+        const readConcern = session._getSessionAwareClient().getReadConcern(session);
         if (readConcern !== null) {
             cursor.readConcern(readConcern.level);
         }
@@ -624,11 +624,11 @@ DBCollection.prototype._indexSpec = function(keys, options) {
     return ret;
 };
 
-DBCollection.prototype.createIndex = function(keys, options) {
-    return this.createIndexes([keys], options);
+DBCollection.prototype.createIndex = function(keys, options, commitQuorum) {
+    return this.createIndexes([keys], options, commitQuorum);
 };
 
-DBCollection.prototype.createIndexes = function(keys, options) {
+DBCollection.prototype.createIndexes = function(keys, options, commitQuorum) {
     if (!Array.isArray(keys)) {
         throw new Error("createIndexes first argument should be an array");
     }
@@ -641,7 +641,12 @@ DBCollection.prototype.createIndexes = function(keys, options) {
     for (var i = 0; i < indexSpecs.length; i++) {
         delete (indexSpecs[i].ns);  // ns is passed to the first element in the command.
     }
-    return this._db.runCommand({createIndexes: this.getName(), indexes: indexSpecs});
+
+    if (commitQuorum === undefined) {
+        return this._db.runCommand({createIndexes: this.getName(), indexes: indexSpecs});
+    }
+    return this._db.runCommand(
+        {createIndexes: this.getName(), indexes: indexSpecs, commitQuorum: commitQuorum});
 };
 
 DBCollection.prototype.ensureIndex = function(keys, options) {
@@ -664,7 +669,7 @@ DBCollection.prototype.reIndex = function() {
 
 DBCollection.prototype.dropIndexes = function(indexNames) {
     indexNames = indexNames || '*';
-    var res = this._db.runCommand({deleteIndexes: this.getName(), index: indexNames});
+    var res = this._db.runCommand({dropIndexes: this.getName(), index: indexNames});
     assert(res, "no result from dropIndex result");
     if (res.ok)
         return res;
@@ -845,7 +850,7 @@ DBCollection.prototype.hashAllDocs = function() {
  */
 DBCollection.prototype.dropIndex = function(index) {
     assert(index, "need to specify index to dropIndex");
-    var res = this._dbCommand("deleteIndexes", {index: index});
+    var res = this._dbCommand("dropIndexes", {index: index});
     return res;
 };
 

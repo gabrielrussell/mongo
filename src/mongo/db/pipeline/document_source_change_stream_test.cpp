@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -218,7 +217,8 @@ public:
      * Helper for running an applyOps through the pipeline, and getting all of the results.
      */
     std::vector<Document> getApplyOpsResults(const Document& applyOpsDoc,
-                                             const LogicalSessionFromClient& lsid) {
+                                             const LogicalSessionFromClient& lsid,
+                                             bool setPrepareTrue = false) {
         BSONObj applyOpsObj = applyOpsDoc.toBson();
 
         // Create an oplog entry and then glue on an lsid and txnNumber
@@ -231,6 +231,9 @@ public:
         BSONObjBuilder builder(baseOplogEntry.toBSON());
         builder.append("lsid", lsid.toBSON());
         builder.append("txnNumber", 0LL);
+        if (setPrepareTrue) {
+            builder.append("prepare", true);
+        }
         BSONObj oplogEntry = builder.done();
 
         // Create the stages and check that the documents produced matched those in the applyOps.
@@ -356,7 +359,7 @@ TEST_F(ChangeStreamStageTest, ShouldRejectBothStartAtOperationTimeAndResumeAfter
     auto expCtx = getExpCtx();
 
     // Need to put the collection in the UUID catalog so the resume token is valid.
-    Collection collection(stdx::make_unique<CollectionMock>(nss));
+    CollectionMock collection(nss);
     UUIDCatalog::get(expCtx->opCtx).onCreateCollection(expCtx->opCtx, &collection, testUuid());
 
     ASSERT_THROWS_CODE(
@@ -376,7 +379,7 @@ TEST_F(ChangeStreamStageTest, ShouldRejectBothStartAfterAndResumeAfterOptions) {
     auto expCtx = getExpCtx();
 
     // Need to put the collection in the UUID catalog so the resume token is valid.
-    Collection collection(stdx::make_unique<CollectionMock>(nss));
+    CollectionMock collection(nss);
     UUIDCatalog::get(expCtx->opCtx).onCreateCollection(expCtx->opCtx, &collection, testUuid());
 
     ASSERT_THROWS_CODE(
@@ -396,7 +399,7 @@ TEST_F(ChangeStreamStageTest, ShouldRejectBothStartAtOperationTimeAndStartAfterO
     auto expCtx = getExpCtx();
 
     // Need to put the collection in the UUID catalog so the resume token is valid.
-    Collection collection(stdx::make_unique<CollectionMock>(nss));
+    CollectionMock collection(nss);
     UUIDCatalog::get(expCtx->opCtx).onCreateCollection(expCtx->opCtx, &collection, testUuid());
 
     ASSERT_THROWS_CODE(
@@ -416,7 +419,7 @@ TEST_F(ChangeStreamStageTest, ShouldRejectResumeAfterWithResumeTokenMissingUUID)
     auto expCtx = getExpCtx();
 
     // Need to put the collection in the UUID catalog so the resume token is valid.
-    Collection collection(stdx::make_unique<CollectionMock>(nss));
+    CollectionMock collection(nss);
     UUIDCatalog::get(expCtx->opCtx).onCreateCollection(expCtx->opCtx, &collection, testUuid());
 
     ASSERT_THROWS_CODE(
@@ -857,6 +860,35 @@ TEST_F(ChangeStreamStageTest, TransformApplyOpsWithEntriesOnDifferentNs) {
     ASSERT_EQ(results.size(), 0u);
 }
 
+TEST_F(ChangeStreamStageTest, PreparedTransactionApplyOpsEntriesAreIgnored) {
+    Document applyOpsDoc = Document{{"applyOps",
+                                     Value{std::vector<Document>{Document{
+                                         {"op", "i"_sd},
+                                         {"ns", nss.ns()},
+                                         {"ui", testUuid()},
+                                         {"o", Value{Document{{"_id", 123}, {"x", "hallo"_sd}}}},
+                                         {"prepare", true}}}}}};
+    LogicalSessionFromClient lsid = testLsid();
+    vector<Document> results = getApplyOpsResults(applyOpsDoc, lsid, true);
+
+    // applyOps entries that are part of a prepared transaction are ignored. These entries will be
+    // fetched for changeStreams delivery as part of transaction commit.
+    ASSERT_EQ(results.size(), 0u);
+}
+
+// TODO SERVER-39675: This test should be replaced with one that validates a prepared transaction
+// event sequence.
+TEST_F(ChangeStreamStageTest, CommitTransactionReturnsInvalidate) {
+    OplogEntry oplogEntry = createCommand(BSON("commitTransaction" << 1));
+
+    Document expectedResult{
+        {DSChangeStream::kIdField, makeResumeToken(kDefaultTs)},
+        {DSChangeStream::kOperationTypeField, DSChangeStream::kInvalidateOpType},
+        {DSChangeStream::kClusterTimeField, kDefaultTs},
+    };
+
+    checkTransformation(oplogEntry, expectedResult);
+}
 
 TEST_F(ChangeStreamStageTest, TransformApplyOps) {
     // Doesn't use the checkTransformation() pattern that other tests use since we expect multiple
@@ -1066,7 +1098,7 @@ TEST_F(ChangeStreamStageTest, DocumentKeyShouldIncludeShardKeyFromResumeToken) {
     const auto opTime = repl::OpTime(ts, term);
     const auto uuid = testUuid();
 
-    Collection collection(stdx::make_unique<CollectionMock>(nss));
+    CollectionMock collection(nss);
     UUIDCatalog::get(getExpCtx()->opCtx).onCreateCollection(getExpCtx()->opCtx, &collection, uuid);
 
     BSONObj o2 = BSON("_id" << 1 << "shardKey" << 2);
@@ -1111,7 +1143,7 @@ TEST_F(ChangeStreamStageTest, DocumentKeyShouldNotIncludeShardKeyFieldsIfNotPres
     const auto opTime = repl::OpTime(ts, term);
     const auto uuid = testUuid();
 
-    Collection collection(stdx::make_unique<CollectionMock>(nss));
+    CollectionMock collection(nss);
     UUIDCatalog::get(getExpCtx()->opCtx).onCreateCollection(getExpCtx()->opCtx, &collection, uuid);
 
     BSONObj o2 = BSON("_id" << 1 << "shardKey" << 2);
@@ -1153,7 +1185,7 @@ TEST_F(ChangeStreamStageTest, ResumeAfterFailsIfResumeTokenDoesNotContainUUID) {
     const Timestamp ts(3, 45);
     const auto uuid = testUuid();
 
-    Collection collection(stdx::make_unique<CollectionMock>(nss));
+    CollectionMock collection(nss);
     UUIDCatalog::get(getExpCtx()->opCtx).onCreateCollection(getExpCtx()->opCtx, &collection, uuid);
 
     // Create a resume token from only the timestamp.
@@ -1206,7 +1238,7 @@ TEST_F(ChangeStreamStageTest, ResumeAfterWithTokenFromInvalidateShouldFail) {
     auto expCtx = getExpCtx();
 
     // Need to put the collection in the UUID catalog so the resume token is valid.
-    Collection collection(stdx::make_unique<CollectionMock>(nss));
+    CollectionMock collection(nss);
     UUIDCatalog::get(expCtx->opCtx).onCreateCollection(expCtx->opCtx, &collection, testUuid());
 
     const auto resumeTokenInvalidate =
@@ -1223,6 +1255,81 @@ TEST_F(ChangeStreamStageTest, ResumeAfterWithTokenFromInvalidateShouldFail) {
                            expCtx),
                        AssertionException,
                        ErrorCodes::InvalidResumeToken);
+}
+
+TEST_F(ChangeStreamStageTest, UsesResumeTokenAsSortKeyIfNeedsMergeIsFalse) {
+    auto insert = makeOplogEntry(OpTypeEnum::kInsert,           // op type
+                                 nss,                           // namespace
+                                 BSON("x" << 2 << "_id" << 1),  // o
+                                 testUuid(),                    // uuid
+                                 boost::none,                   // fromMigrate
+                                 boost::none);                  // o2
+
+    auto stages = makeStages(insert.toBSON(), kDefaultSpec);
+
+    getExpCtx()->mongoProcessInterface =
+        std::make_unique<MockMongoInterface>(std::vector<FieldPath>{{"x"}, {"_id"}});
+
+    getExpCtx()->mergeByPBRT = false;
+    getExpCtx()->needsMerge = false;
+
+    auto next = stages.back()->getNext();
+
+    auto expectedSortKey =
+        makeResumeToken(kDefaultTs, testUuid(), BSON("x" << 2 << "_id" << 1)).toBson();
+
+    ASSERT_TRUE(next.isAdvanced());
+    ASSERT_BSONOBJ_EQ(next.releaseDocument().getSortKeyMetaField(), expectedSortKey);
+}
+
+TEST_F(ChangeStreamStageTest, UsesResumeTokenAsSortKeyIfMergeByPBRTIsTrue) {
+    auto insert = makeOplogEntry(OpTypeEnum::kInsert,           // op type
+                                 nss,                           // namespace
+                                 BSON("x" << 2 << "_id" << 1),  // o
+                                 testUuid(),                    // uuid
+                                 boost::none,                   // fromMigrate
+                                 boost::none);                  // o2
+
+    auto stages = makeStages(insert.toBSON(), kDefaultSpec);
+
+    getExpCtx()->mongoProcessInterface =
+        std::make_unique<MockMongoInterface>(std::vector<FieldPath>{{"x"}, {"_id"}});
+
+    getExpCtx()->mergeByPBRT = true;
+    getExpCtx()->needsMerge = true;
+
+    auto next = stages.back()->getNext();
+
+    auto expectedSortKey =
+        makeResumeToken(kDefaultTs, testUuid(), BSON("x" << 2 << "_id" << 1)).toBson();
+
+    ASSERT_TRUE(next.isAdvanced());
+    ASSERT_BSONOBJ_EQ(next.releaseDocument().getSortKeyMetaField(), expectedSortKey);
+}
+
+TEST_F(ChangeStreamStageTest, UsesOldSortKeyFormatIfMergeByPBRTIsFalse) {
+    auto insert = makeOplogEntry(OpTypeEnum::kInsert,           // op type
+                                 nss,                           // namespace
+                                 BSON("x" << 2 << "_id" << 1),  // o
+                                 testUuid(),                    // uuid
+                                 boost::none,                   // fromMigrate
+                                 boost::none);                  // o2
+
+    auto stages = makeStages(insert.toBSON(), kDefaultSpec);
+
+    getExpCtx()->mongoProcessInterface =
+        std::make_unique<MockMongoInterface>(std::vector<FieldPath>{{"x"}, {"_id"}});
+
+    getExpCtx()->mergeByPBRT = false;
+    getExpCtx()->needsMerge = true;
+
+    auto next = stages.back()->getNext();
+
+    auto expectedSortKey =
+        BSON("" << kDefaultTs << "" << testUuid() << "" << BSON("x" << 2 << "_id" << 1));
+
+    ASSERT_TRUE(next.isAdvanced());
+    ASSERT_BSONOBJ_EQ(next.releaseDocument().getSortKeyMetaField(), expectedSortKey);
 }
 
 //
@@ -1543,7 +1650,7 @@ TEST_F(ChangeStreamStageDBTest, DocumentKeyShouldIncludeShardKeyFromResumeToken)
     const auto opTime = repl::OpTime(ts, term);
     const auto uuid = testUuid();
 
-    Collection collection(stdx::make_unique<CollectionMock>(nss));
+    CollectionMock collection(nss);
     UUIDCatalog::get(getExpCtx()->opCtx).onCreateCollection(getExpCtx()->opCtx, &collection, uuid);
 
     BSONObj o2 = BSON("_id" << 1 << "shardKey" << 2);
@@ -1579,7 +1686,7 @@ TEST_F(ChangeStreamStageDBTest, DocumentKeyShouldNotIncludeShardKeyFieldsIfNotPr
     const auto opTime = repl::OpTime(ts, term);
     const auto uuid = testUuid();
 
-    Collection collection(stdx::make_unique<CollectionMock>(nss));
+    CollectionMock collection(nss);
     UUIDCatalog::get(getExpCtx()->opCtx).onCreateCollection(getExpCtx()->opCtx, &collection, uuid);
 
     BSONObj o2 = BSON("_id" << 1 << "shardKey" << 2);
@@ -1616,7 +1723,7 @@ TEST_F(ChangeStreamStageDBTest, DocumentKeyShouldNotIncludeShardKeyIfResumeToken
     const auto opTime = repl::OpTime(ts, term);
     const auto uuid = testUuid();
 
-    Collection collection(stdx::make_unique<CollectionMock>(nss));
+    CollectionMock collection(nss);
     UUIDCatalog::get(getExpCtx()->opCtx).onCreateCollection(getExpCtx()->opCtx, &collection, uuid);
 
     // Create a resume token from only the timestamp.
@@ -1652,7 +1759,7 @@ TEST_F(ChangeStreamStageDBTest, ResumeAfterWithTokenFromInvalidateShouldFail) {
     auto expCtx = getExpCtx();
 
     // Need to put the collection in the UUID catalog so the resume token is valid.
-    Collection collection(stdx::make_unique<CollectionMock>(nss));
+    CollectionMock collection(nss);
     UUIDCatalog::get(expCtx->opCtx).onCreateCollection(expCtx->opCtx, &collection, testUuid());
 
     const auto resumeTokenInvalidate =
@@ -1673,7 +1780,7 @@ TEST_F(ChangeStreamStageDBTest, ResumeAfterWithTokenFromInvalidateShouldFail) {
 TEST_F(ChangeStreamStageDBTest, ResumeAfterWithTokenFromDropDatabase) {
     const auto uuid = testUuid();
 
-    Collection collection(stdx::make_unique<CollectionMock>(nss));
+    CollectionMock collection(nss);
     UUIDCatalog::get(getExpCtx()->opCtx).onCreateCollection(getExpCtx()->opCtx, &collection, uuid);
 
     // Create a resume token from only the timestamp, similar to a 'dropDatabase' entry.
@@ -1702,7 +1809,7 @@ TEST_F(ChangeStreamStageDBTest, ResumeAfterWithTokenFromDropDatabase) {
 TEST_F(ChangeStreamStageDBTest, StartAfterSucceedsEvenIfResumeTokenDoesNotContainUUID) {
     const auto uuid = testUuid();
 
-    Collection collection(stdx::make_unique<CollectionMock>(nss));
+    CollectionMock collection(nss);
     UUIDCatalog::get(getExpCtx()->opCtx).onCreateCollection(getExpCtx()->opCtx, &collection, uuid);
 
     // Create a resume token from only the timestamp, similar to a 'dropDatabase' entry.

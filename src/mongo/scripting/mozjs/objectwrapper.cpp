@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -109,29 +108,57 @@ void ObjectWrapper::Key::set(JSContext* cx, JS::HandleObject o, JS::HandleValue 
 void ObjectWrapper::Key::define(JSContext* cx,
                                 JS::HandleObject o,
                                 JS::HandleValue value,
-                                unsigned attrs,
-                                JSNative getter,
-                                JSNative setter) {
+                                unsigned attrs) {
     switch (_type) {
         case Type::Field:
-            if (JS_DefineProperty(cx, o, _field, value, attrs, getter, setter))
+            if (JS_DefineProperty(cx, o, _field, value, attrs))
                 return;
             break;
         case Type::Index:
-            if (JS_DefineElement(cx, o, _idx, value, attrs, getter, setter))
+            if (JS_DefineElement(cx, o, _idx, value, attrs))
                 return;
             break;
         case Type::Id: {
             JS::RootedId id(cx, _id);
 
-            if (JS_DefinePropertyById(cx, o, id, value, attrs, getter, setter))
+            if (JS_DefinePropertyById(cx, o, id, value, attrs))
                 return;
             break;
         }
         case Type::InternedString: {
             InternedStringId id(cx, _internedString);
 
-            if (JS_DefinePropertyById(cx, o, id, value, attrs, getter, setter))
+            if (JS_DefinePropertyById(cx, o, id, value, attrs))
+                return;
+            break;
+        }
+    }
+
+    throwCurrentJSException(cx, ErrorCodes::InternalError, "Failed to define value on a JSObject");
+}
+
+void ObjectWrapper::Key::define(
+    JSContext* cx, JS::HandleObject o, unsigned attrs, JSNative getter, JSNative setter) {
+    switch (_type) {
+        case Type::Field:
+            if (JS_DefineProperty(cx, o, _field, getter, setter, attrs))
+                return;
+            break;
+        case Type::Index:
+            if (JS_DefineElement(cx, o, _idx, getter, setter, attrs))
+                return;
+            break;
+        case Type::Id: {
+            JS::RootedId id(cx, _id);
+
+            if (JS_DefinePropertyById(cx, o, id, getter, setter, attrs))
+                return;
+            break;
+        }
+        case Type::InternedString: {
+            InternedStringId id(cx, _internedString);
+
+            if (JS_DefinePropertyById(cx, o, id, getter, setter, attrs))
                 return;
             break;
         }
@@ -176,6 +203,41 @@ bool ObjectWrapper::Key::hasOwn(JSContext* cx, JS::HandleObject o) {
 
     switch (_type) {
         case Type::Field:
+            if (JS_HasOwnProperty(cx, o, _field, &has))
+                return has;
+            break;
+        case Type::Index: {
+            JS::RootedId id(cx);
+
+            // This is a little different because there is no JS_HasOwnElement
+            if (JS_IndexToId(cx, _idx, &id) && JS_HasOwnPropertyById(cx, o, id, &has))
+                return has;
+            break;
+        }
+        case Type::Id: {
+            JS::RootedId id(cx, _id);
+
+            if (JS_HasOwnPropertyById(cx, o, id, &has))
+                return has;
+            break;
+        }
+        case Type::InternedString: {
+            InternedStringId id(cx, _internedString);
+
+            if (JS_HasOwnPropertyById(cx, o, id, &has))
+                return has;
+            break;
+        }
+    }
+
+    throwCurrentJSException(cx, ErrorCodes::InternalError, "Failed to hasOwn value on a JSObject");
+}
+
+bool ObjectWrapper::Key::alreadyHasOwn(JSContext* cx, JS::HandleObject o) {
+    bool has;
+
+    switch (_type) {
+        case Type::Field:
             if (JS_AlreadyHasOwnProperty(cx, o, _field, &has))
                 return has;
             break;
@@ -199,7 +261,8 @@ bool ObjectWrapper::Key::hasOwn(JSContext* cx, JS::HandleObject o) {
         }
     }
 
-    throwCurrentJSException(cx, ErrorCodes::InternalError, "Failed to hasOwn value on a JSObject");
+    throwCurrentJSException(
+        cx, ErrorCodes::InternalError, "Failed to alreadyHasOwn value on a JSObject");
 }
 
 void ObjectWrapper::Key::del(JSContext* cx, JS::HandleObject o) {
@@ -390,9 +453,12 @@ void ObjectWrapper::setPrototype(JS::HandleObject object) {
     throwCurrentJSException(_context, ErrorCodes::InternalError, "Failed to set prototype");
 }
 
-void ObjectWrapper::defineProperty(
-    Key key, JS::HandleValue val, unsigned attrs, JSNative getter, JSNative setter) {
-    key.define(_context, _object, val, attrs, getter, setter);
+void ObjectWrapper::defineProperty(Key key, JS::HandleValue val, unsigned attrs) {
+    key.define(_context, _object, val, attrs);
+}
+
+void ObjectWrapper::defineProperty(Key key, unsigned attrs, JSNative getter, JSNative setter) {
+    key.define(_context, _object, attrs, getter, setter);
 }
 
 void ObjectWrapper::deleteProperty(Key key) {
@@ -424,6 +490,10 @@ bool ObjectWrapper::hasField(Key key) {
 
 bool ObjectWrapper::hasOwnField(Key key) {
     return key.hasOwn(_context, _object);
+}
+
+bool ObjectWrapper::alreadyHasOwnField(Key key) {
+    return key.alreadyHasOwn(_context, _object);
 }
 
 void ObjectWrapper::callMethod(const char* field,

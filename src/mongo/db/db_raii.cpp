@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -37,6 +36,7 @@
 #include "mongo/db/catalog/database_holder.h"
 #include "mongo/db/concurrency/locker.h"
 #include "mongo/db/curop.h"
+#include "mongo/db/db_raii_gen.h"
 #include "mongo/db/repl/replication_coordinator.h"
 #include "mongo/db/s/collection_sharding_state.h"
 #include "mongo/db/server_parameters.h"
@@ -49,10 +49,6 @@ namespace {
 const boost::optional<int> kDoNotChangeProfilingLevel = boost::none;
 
 }  // namespace
-
-// If true, do not take the PBWM lock in AutoGetCollectionForRead on secondaries during batch
-// application.
-MONGO_EXPORT_SERVER_PARAMETER(allowSecondaryReadsDuringBatchApplication, bool, true);
 
 AutoStatsTracker::AutoStatsTracker(OperationContext* opCtx,
                                    const NamespaceString& nss,
@@ -94,11 +90,11 @@ AutoGetCollectionForRead::AutoGetCollectionForRead(OperationContext* opCtx,
                                                    Date_t deadline) {
     // Don't take the ParallelBatchWriterMode lock when the server parameter is set and our
     // storage engine supports snapshot reads.
-    if (allowSecondaryReadsDuringBatchApplication.load() &&
+    if (gAllowSecondaryReadsDuringBatchApplication.load() &&
         opCtx->getServiceContext()->getStorageEngine()->supportsReadConcernSnapshot()) {
         _shouldNotConflictWithSecondaryBatchApplicationBlock.emplace(opCtx->lockState());
     }
-    const auto collectionLockMode = getLockModeForQuery(opCtx);
+    const auto collectionLockMode = getLockModeForQuery(opCtx, nsOrUUID.nss());
     _autoColl.emplace(opCtx, nsOrUUID, collectionLockMode, viewMode, deadline);
 
     // If the read source is explicitly set to kNoTimestamp, we read the most up to date data and do
@@ -164,7 +160,7 @@ AutoGetCollectionForRead::AutoGetCollectionForRead(OperationContext* opCtx,
         // the PBWM lock and retry.
         if (lastAppliedTimestamp) {
             LOG(2) << "Tried reading at last-applied time: " << *lastAppliedTimestamp
-                   << " on nss: " << nss.ns() << ", but future catalog changes are pending at time "
+                   << " on ns: " << nss.ns() << ", but future catalog changes are pending at time "
                    << *minSnapshot << ". Trying again without reading at last-applied time.";
             // Destructing the block sets _shouldConflictWithSecondaryBatchApplication back to the
             // previous value. If the previous value is false (because there is another
@@ -172,6 +168,10 @@ AutoGetCollectionForRead::AutoGetCollectionForRead(OperationContext* opCtx,
             // does not take the PBWM lock.
             _shouldNotConflictWithSecondaryBatchApplicationBlock = boost::none;
             invariant(opCtx->lockState()->shouldConflictWithSecondaryBatchApplication());
+
+            // Cannot change ReadSource while a RecoveryUnit is active, which may result from
+            // calling getPointInTimeReadTimestamp().
+            opCtx->recoveryUnit()->abandonSnapshot();
             opCtx->recoveryUnit()->setTimestampReadSource(RecoveryUnit::ReadSource::kUnset);
         }
 
@@ -279,11 +279,11 @@ AutoGetCollectionForReadCommand::AutoGetCollectionForReadCommand(
 }
 
 OldClientContext::OldClientContext(OperationContext* opCtx, const std::string& ns, bool doVersion)
-    : _opCtx(opCtx), _db(DatabaseHolder::getDatabaseHolder().get(opCtx, ns)) {
+    : _opCtx(opCtx), _db(DatabaseHolder::get(opCtx)->getDb(opCtx, ns)) {
     if (!_db) {
         const auto dbName = nsToDatabaseSubstring(ns);
         invariant(_opCtx->lockState()->isDbLockedForMode(dbName, MODE_X));
-        _db = DatabaseHolder::getDatabaseHolder().openDb(_opCtx, dbName, &_justCreated);
+        _db = DatabaseHolder::get(opCtx)->openDb(_opCtx, dbName, &_justCreated);
         invariant(_db);
     }
 
@@ -326,12 +326,15 @@ OldClientContext::~OldClientContext() {
                 currentOp->getReadWriteType());
 }
 
-LockMode getLockModeForQuery(OperationContext* opCtx) {
+LockMode getLockModeForQuery(OperationContext* opCtx, const boost::optional<NamespaceString>& nss) {
     invariant(opCtx);
 
     // Use IX locks for autocommit:false multi-statement transactions; otherwise, use IS locks.
     auto txnParticipant = TransactionParticipant::get(opCtx);
-    if (txnParticipant && txnParticipant->inMultiDocumentTransaction()) {
+    if (txnParticipant && txnParticipant.inMultiDocumentTransaction()) {
+        uassert(51071,
+                "Cannot query system.views within a transaction",
+                !nss || !nss->isSystemDotViews());
         return MODE_IX;
     }
     return MODE_IS;

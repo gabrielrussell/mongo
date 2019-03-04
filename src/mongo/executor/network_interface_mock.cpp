@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -67,15 +66,26 @@ NetworkInterfaceMock::~NetworkInterfaceMock() {
 
 void NetworkInterfaceMock::logQueues() {
     stdx::unique_lock<stdx::mutex> lk(_mutex);
-    _logQueues_inlock();
+    const std::vector<std::pair<std::string, const NetworkOperationList*>> queues{
+        {"unscheduled", &_unscheduled},
+        {"scheduled", &_scheduled},
+        {"processing", &_processing},
+        {"blackholes", &_blackHoled}};
+
+    for (auto&& queue : queues) {
+        if (queue.second->empty()) {
+            continue;
+        }
+
+        log() << "**** queue: " << queue.first << " ****";
+        for (auto&& item : *queue.second) {
+            log() << "\t\t " << item.getDiagnosticString();
+        }
+    }
 }
 
 std::string NetworkInterfaceMock::getDiagnosticString() {
     stdx::unique_lock<stdx::mutex> lk(_mutex);
-    return _getDiagnosticString_inlock();
-}
-
-std::string NetworkInterfaceMock::_getDiagnosticString_inlock() const {
     return str::stream() << "NetworkInterfaceMock -- waitingToRunMask:" << _waitingToRunMask
                          << ", now:" << _now_inlock().toString() << ", hasStarted:" << _hasStarted
                          << ", inShutdown: " << _inShutdown.load()
@@ -84,25 +94,6 @@ std::string NetworkInterfaceMock::_getDiagnosticString_inlock() const {
                          << ", blackHoled: " << _blackHoled.size()
                          << ", unscheduled: " << _unscheduled.size();
 }
-
-void NetworkInterfaceMock::_logQueues_inlock() const {
-    std::vector<std::pair<std::string, const NetworkOperationList*>> queues{
-        {"unscheduled", &_unscheduled},
-        {"scheduled", &_scheduled},
-        {"processing", &_processing},
-        {"blackholes", &_blackHoled}};
-    for (auto&& queue : queues) {
-        if (queue.second->empty()) {
-            continue;
-        }
-        log() << "**** queue: " << queue.first << " ****";
-        for (auto&& item : *queue.second) {
-            log() << "\t\t " << item.getDiagnosticString();
-        }
-    }
-}
-
-void NetworkInterfaceMock::appendConnectionStats(ConnectionPoolStats* stats) const {}
 
 Date_t NetworkInterfaceMock::now() {
     stdx::lock_guard<stdx::mutex> lk(_mutex);
@@ -116,7 +107,7 @@ std::string NetworkInterfaceMock::getHostName() {
 Status NetworkInterfaceMock::startCommand(const CallbackHandle& cbHandle,
                                           RemoteCommandRequest& request,
                                           RemoteCommandCompletionFn&& onFinish,
-                                          const transport::BatonHandle& baton) {
+                                          const BatonHandle& baton) {
     if (inShutdown()) {
         return {ErrorCodes::ShutdownInProgress, "NetworkInterfaceMock shutdown in progress"};
     }
@@ -148,8 +139,7 @@ void NetworkInterfaceMock::setHandshakeReplyForHost(
     }
 }
 
-void NetworkInterfaceMock::cancelCommand(const CallbackHandle& cbHandle,
-                                         const transport::BatonHandle& baton) {
+void NetworkInterfaceMock::cancelCommand(const CallbackHandle& cbHandle, const BatonHandle& baton) {
     invariant(!inShutdown());
 
     stdx::lock_guard<stdx::mutex> lk(_mutex);
@@ -163,7 +153,7 @@ void NetworkInterfaceMock::cancelCommand(const CallbackHandle& cbHandle,
 
 void NetworkInterfaceMock::_interruptWithResponse_inlock(
     const CallbackHandle& cbHandle,
-    const std::vector<NetworkOperationList*> queuesToCheck,
+    const std::vector<NetworkOperationList*>& queuesToCheck,
     const ResponseStatus& response) {
 
     auto matchFn = [&cbHandle](const auto& ops) { return ops.isForCallback(cbHandle); };
@@ -179,9 +169,9 @@ void NetworkInterfaceMock::_interruptWithResponse_inlock(
     }
 }
 
-Status NetworkInterfaceMock::setAlarm(const Date_t when,
-                                      unique_function<void()> action,
-                                      const transport::BatonHandle& baton) {
+Status NetworkInterfaceMock::setAlarm(const TaskExecutor::CallbackHandle& cbHandle,
+                                      const Date_t when,
+                                      unique_function<void(Status)> action) {
     if (inShutdown()) {
         return {ErrorCodes::ShutdownInProgress, "NetworkInterfaceMock shutdown in progress"};
     }
@@ -190,11 +180,25 @@ Status NetworkInterfaceMock::setAlarm(const Date_t when,
 
     if (when <= _now_inlock()) {
         lk.unlock();
-        action();
+        action(Status::OK());
         return Status::OK();
     }
-    _alarms.emplace(when, std::move(action));
+    _alarms.emplace(cbHandle, when, std::move(action));
 
+    return Status::OK();
+}
+
+void NetworkInterfaceMock::cancelAlarm(const TaskExecutor::CallbackHandle& cbHandle) {
+    // Alarms live in a priority queue, so removing them isn't worth it
+    // Thus we add the handle to a map and check at fire time
+    _canceledAlarms.insert(cbHandle);
+}
+
+Status NetworkInterfaceMock::schedule(unique_function<void(Status)> action) {
+    // Call the task immediately, we have no out-of-line executor
+    action(Status::OK());
+
+    // Say we scheduled the task fine, because we ran it inline
     return Status::OK();
 }
 
@@ -428,6 +432,16 @@ Date_t NetworkInterfaceMock::runUntil(Date_t until) {
     return _now_inlock();
 }
 
+void NetworkInterfaceMock::advanceTime(Date_t newTime) {
+    stdx::unique_lock<stdx::mutex> lk(_mutex);
+    invariant(_currentlyRunning == kNetworkThread);
+    invariant(newTime > _now_inlock());
+    _now = newTime;
+
+    _waitingToRunMask |= kExecutorThread;
+    _runReadyNetworkOperations_inlock(&lk);
+}
+
 void NetworkInterfaceMock::runReadyNetworkOperations() {
     stdx::unique_lock<stdx::mutex> lk(_mutex);
     invariant(_currentlyRunning == kNetworkThread);
@@ -467,14 +481,15 @@ void NetworkInterfaceMock::_enqueueOperation_inlock(
 
     if (timeout != RemoteCommandRequest::kNoTimeout) {
         invariant(timeout >= Milliseconds(0));
-        ResponseStatus rs(ErrorCodes::NetworkTimeout, "Network timeout", Milliseconds(0));
+        ResponseStatus rs(
+            ErrorCodes::NetworkInterfaceExceededTimeLimit, "Network timeout", Milliseconds(0));
         std::vector<NetworkOperationList*> queuesToCheck{&_unscheduled, &_blackHoled, &_scheduled};
-        _alarms.emplace(_now_inlock() + timeout, [
+        _alarms.emplace(cbh, _now_inlock() + timeout, [
             this,
             cbh = std::move(cbh),
             queuesToCheck = std::move(queuesToCheck),
             rs = std::move(rs)
-        ] { _interruptWithResponse_inlock(cbh, queuesToCheck, rs); });
+        ](Status) { _interruptWithResponse_inlock(cbh, queuesToCheck, rs); });
     }
 }
 
@@ -569,11 +584,19 @@ void NetworkInterfaceMock::signalWorkAvailable() {
 
 void NetworkInterfaceMock::_runReadyNetworkOperations_inlock(stdx::unique_lock<stdx::mutex>* lk) {
     while (!_alarms.empty() && _now_inlock() >= _alarms.top().when) {
-        auto fn = std::move(_alarms.top().action);
+        auto& alarm = _alarms.top();
+
+        // If the handle isn't cancelled, then run it
+        auto iter = _canceledAlarms.find(alarm.handle);
+        if (iter == _canceledAlarms.end()) {
+            lk->unlock();
+            alarm.action(Status::OK());
+            lk->lock();
+        } else {
+            _canceledAlarms.erase(iter);
+        }
+
         _alarms.pop();
-        lk->unlock();
-        fn();
-        lk->lock();
     }
     while (!_scheduled.empty() && _scheduled.front().getResponseDate() <= _now_inlock()) {
         invariant(_currentlyRunning == kNetworkThread);

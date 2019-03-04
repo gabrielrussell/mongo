@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -48,6 +47,9 @@ ScopedGlobalServiceContextForTest::ScopedGlobalServiceContextForTest() {
 }
 
 ScopedGlobalServiceContextForTest::~ScopedGlobalServiceContextForTest() {
+    if (hasGlobalServiceContext()) {
+        getGlobalServiceContext()->waitForClientsToFinish();
+    }
     setGlobalServiceContext({});
 }
 

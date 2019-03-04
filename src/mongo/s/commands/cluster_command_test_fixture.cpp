@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -42,6 +41,7 @@
 #include "mongo/db/logical_session_cache_noop.h"
 #include "mongo/db/logical_time_validator.h"
 #include "mongo/s/cluster_last_error_info.h"
+#include "mongo/util/fail_point_service.h"
 #include "mongo/util/log.h"
 
 namespace mongo {
@@ -67,6 +67,9 @@ void ClusterCommandTestFixture::setUp() {
     LogicalSessionCache::set(getServiceContext(), stdx::make_unique<LogicalSessionCacheNoop>());
 
     loadRoutingTableWithTwoChunksAndTwoShards(kNss);
+
+    _staleVersionAndSnapshotRetriesBlock = stdx::make_unique<FailPointEnableBlock>(
+        "enableStaleVersionAndSnapshotRetriesWithinTransactions");
 }
 
 BSONObj ClusterCommandTestFixture::_makeCmd(BSONObj cmdObj, bool includeAfterClusterTime) {
@@ -128,9 +131,9 @@ void ClusterCommandTestFixture::runCommandSuccessful(BSONObj cmd, bool isTargete
     future.timed_get(kFutureTimeout);
 }
 
-void ClusterCommandTestFixture::runCommandOneError(BSONObj cmd,
-                                                   ErrorCodes::Error code,
-                                                   bool isTargeted) {
+void ClusterCommandTestFixture::runTxnCommandOneError(BSONObj cmd,
+                                                      ErrorCodes::Error code,
+                                                      bool isTargeted) {
     auto future = launchAsync([&] {
         // Shouldn't throw.
         runCommand(cmd);
@@ -140,6 +143,13 @@ void ClusterCommandTestFixture::runCommandOneError(BSONObj cmd,
     for (size_t i = 0; i < numMocks; i++) {
         expectReturnsError(code);
     }
+
+    // In a transaction, when the router encounters a retryable error it sends abortTransaction to
+    // each pending participant shard before retrying.
+    for (size_t i = 0; i < numMocks; i++) {
+        expectAbortTransaction();
+    }
+
     for (size_t i = 0; i < numMocks; i++) {
         expectReturnsSuccess(i % numShards);
     }
@@ -173,15 +183,26 @@ void ClusterCommandTestFixture::runTxnCommandMaxErrors(BSONObj cmd,
                                                        bool isTargeted) {
     auto future = launchAsync([&] { runCommand(cmd); });
 
-    size_t numRetries =
-        isTargeted ? kMaxNumStaleVersionRetries : kMaxNumStaleVersionRetries * numShards;
-    for (size_t i = 0; i < numRetries; i++) {
+    size_t numTargetedShards = isTargeted ? 1 : numShards;
+    for (size_t i = 0; i < kMaxNumStaleVersionRetries - 1; i++) {
+        for (size_t j = 0; j < numTargetedShards; j++) {
+            expectReturnsError(code);
+        }
+
+        // In a transaction, when the router encounters a retryable error it sends abortTransaction
+        // to each pending participant shard before retrying.
+        for (size_t j = 0; j < numTargetedShards; j++) {
+            expectAbortTransaction();
+        }
+    }
+
+    // The router should exhaust its retries here.
+    for (size_t j = 0; j < numTargetedShards; j++) {
         expectReturnsError(code);
     }
 
     // In a transaction, each targeted shard is sent abortTransaction when the router exhausts its
     // retries.
-    size_t numTargetedShards = isTargeted ? 1 : 2;
     for (size_t i = 0; i < numTargetedShards; i++) {
         expectAbortTransaction();
     }
@@ -203,13 +224,13 @@ void ClusterCommandTestFixture::testNoErrors(BSONObj targetedCmd, BSONObj scatte
 void ClusterCommandTestFixture::testRetryOnSnapshotError(BSONObj targetedCmd,
                                                          BSONObj scatterGatherCmd) {
     // Target one shard.
-    runCommandOneError(_makeCmd(targetedCmd), ErrorCodes::SnapshotUnavailable, true);
-    runCommandOneError(_makeCmd(targetedCmd), ErrorCodes::SnapshotTooOld, true);
+    runTxnCommandOneError(_makeCmd(targetedCmd), ErrorCodes::SnapshotUnavailable, true);
+    runTxnCommandOneError(_makeCmd(targetedCmd), ErrorCodes::SnapshotTooOld, true);
 
     // Target all shards
     if (!scatterGatherCmd.isEmpty()) {
-        runCommandOneError(_makeCmd(scatterGatherCmd), ErrorCodes::SnapshotUnavailable, false);
-        runCommandOneError(_makeCmd(scatterGatherCmd), ErrorCodes::SnapshotTooOld, false);
+        runTxnCommandOneError(_makeCmd(scatterGatherCmd), ErrorCodes::SnapshotUnavailable, false);
+        runTxnCommandOneError(_makeCmd(scatterGatherCmd), ErrorCodes::SnapshotTooOld, false);
     }
 }
 

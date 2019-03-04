@@ -1,6 +1,3 @@
-// assert_util.cpp
-
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -74,7 +71,7 @@ void AssertionCount::condrollover(int newvalue) {
         rollover();
 }
 
-AtomicBool DBException::traceExceptions(false);
+AtomicWord<bool> DBException::traceExceptions(false);
 
 void DBException::traceIfNeeded(const DBException& e) {
     if (traceExceptions.load()) {

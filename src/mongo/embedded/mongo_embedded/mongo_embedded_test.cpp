@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -39,6 +38,7 @@
 #include "mongo/db/commands/test_commands_enabled.h"
 #include "mongo/db/json.h"
 #include "mongo/db/server_options.h"
+#include "mongo/embedded/mongo_embedded/mongo_embedded_test_gen.h"
 #include "mongo/rpc/message.h"
 #include "mongo/rpc/op_msg.h"
 #include "mongo/stdx/thread.h"
@@ -240,9 +240,10 @@ TEST_F(MongodbCAPITest, CreateIndex) {
     auto inputOpMsg = mongo::OpMsgRequest::fromDBAndBody("index_db", inputObj);
     auto output = performRpc(client, inputOpMsg);
 
-    ASSERT(output.hasField("ok"));
-    ASSERT(output.getField("ok").numberDouble() == 1.0);
-    ASSERT(output.getIntField("numIndexesAfter") == output.getIntField("numIndexesBefore") + 1);
+    ASSERT(output.hasField("ok")) << output;
+    ASSERT(output.getField("ok").numberDouble() == 1.0) << output;
+    ASSERT(output.getIntField("numIndexesAfter") == output.getIntField("numIndexesBefore") + 1)
+        << output;
 }
 
 TEST_F(MongodbCAPITest, CreateBackgroundIndex) {
@@ -267,8 +268,8 @@ TEST_F(MongodbCAPITest, CreateBackgroundIndex) {
     auto inputOpMsg = mongo::OpMsgRequest::fromDBAndBody("background_index_db", inputObj);
     auto output = performRpc(client, inputOpMsg);
 
-    ASSERT(output.hasField("ok"));
-    ASSERT(output.getField("ok").numberDouble() != 1.0);
+    ASSERT(output.hasField("ok")) << output;
+    ASSERT(output.getField("ok").numberDouble() != 1.0) << output;
 }
 
 TEST_F(MongodbCAPITest, CreateTTLIndex) {
@@ -293,8 +294,8 @@ TEST_F(MongodbCAPITest, CreateTTLIndex) {
     auto inputOpMsg = mongo::OpMsgRequest::fromDBAndBody("ttl_index_db", inputObj);
     auto output = performRpc(client, inputOpMsg);
 
-    ASSERT(output.hasField("ok"));
-    ASSERT(output.getField("ok").numberDouble() != 1.0);
+    ASSERT(output.hasField("ok")) << output;
+    ASSERT(output.getField("ok").numberDouble() != 1.0) << output;
 }
 
 TEST_F(MongodbCAPITest, TrimMemory) {
@@ -575,7 +576,6 @@ TEST_F(MongodbCAPITest, RunListCommands) {
         "getLastError",
         "getMore",
         "getParameter",
-        "getPrevError",
         "insert",
         "isMaster",
         "killCursors",
@@ -608,6 +608,7 @@ TEST_F(MongodbCAPITest, RunListCommands) {
         "sleep",
         "startSession",
         "trimMemory",
+        "twoPhaseCreateIndexes",
         "update",
         "validate",
     };
@@ -673,11 +674,14 @@ int main(const int argc, const char* const* const argv) {
     moe::Environment environment;
     moe::OptionSection options;
 
-    options.addOptionChaining(
-        "tempPath", "tempPath", moe::String, "directory to place mongo::TempDir subdirectories");
+    auto ret = mongo::embedded::addMongoEmbeddedTestOptions(&options);
+    if (!ret.isOK()) {
+        std::cerr << ret << std::endl;
+        return EXIT_FAILURE;
+    }
 
     std::map<std::string, std::string> env;
-    mongo::Status ret = moe::OptionsParser().run(
+    ret = moe::OptionsParser().run(
         options, std::vector<std::string>(argv, argv + argc), env, &environment);
     if (!ret.isOK()) {
         std::cerr << options.helpString();

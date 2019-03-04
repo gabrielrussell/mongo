@@ -72,6 +72,7 @@ env.Library(
         'base/simple_string_data_comparator.cpp',
         'base/status.cpp',
         'base/string_data.cpp',
+        'base/transaction_error.cpp',
         'base/validate_locale.cpp',
         'bson/bson_comparator_interface_base.cpp',
         'bson/bson_depth.cpp',
@@ -316,6 +317,7 @@ mongod = env.Program(
         '$BUILD_DIR/third_party/shim_snappy',
         'base',
         'db/auth/authmongod',
+        'db/auth/auth_op_observer',
         'db/background',
         'db/bson/dotted_path_support',
         'db/catalog/catalog_impl',
@@ -341,13 +343,14 @@ mongod = env.Program(
         'db/ftdc/ftdc_mongod',
         'db/fts/ftsmongod',
         'db/index/index_access_method',
-        'db/index_builds_coordinator',
+        'db/index_builds_coordinator_mongod',
         'db/index/index_descriptor',
         'db/index_d',
         'db/initialize_snmp',
         'db/introspect',
         'db/keys_collection_client_direct',
         'db/kill_sessions_local',
+        'db/traffic_recorder',
         'db/logical_session_cache_factory_mongod',
         'db/logical_time_metadata_hook',
         'db/matcher/expressions_mongod_only',
@@ -401,12 +404,14 @@ mongod = env.Program(
         'db/update/update_driver',
         'db/update_index_data',
         'db/views/views_mongod',
+        'db/windows_options' if env.TargetOSIs('windows') else [],
         'executor/network_interface_factory',
         'mongod_options_init',
         'rpc/rpc',
         's/catalog/sharding_catalog_client_impl',
         's/commands/shared_cluster_commands',
         'scripting/scripting_server',
+        'transport/message_compressor_options_server',
         'transport/service_entry_point',
         'transport/transport_layer_manager',
         'util/clock_sources',
@@ -449,6 +454,23 @@ if env.TargetOSIs('windows'):
     env.Alias('generated-sources', generatedServerManifest)
     env.Depends("s/server.res", generatedServerManifest)
 
+
+mongotrafficreader = env.Program(
+    target="mongotrafficreader",
+    source=[
+        "db/traffic_reader_main.cpp"
+    ],
+    LIBDEPS=[
+        'base',
+        'db/traffic_reader',
+        'rpc/protocol',
+        'util/signal_handlers'
+    ],
+)
+
+if not hygienic:
+    env.Install('#/', mongotrafficreader)
+
 # mongos
 mongos = env.Program(
     target='mongos',
@@ -456,6 +478,7 @@ mongos = env.Program(
         's/cluster_cursor_stats.cpp',
         's/mongos_options.cpp',
         's/mongos_options_init.cpp',
+        env.Idlc('s/mongos_options.idl')[0],
         's/s_sharding_server_status.cpp',
         's/server.cpp',
         's/service_entry_point_mongos.cpp',
@@ -473,8 +496,10 @@ mongos = env.Program(
         'db/logical_time_metadata_hook',
         'db/mongodandmongos',
         'db/server_options',
+        'db/server_options_base',
         'db/startup_warnings_common',
         'db/stats/counters',
+        'db/windows_options' if env.TargetOSIs('windows') else [],
         's/commands/cluster_commands',
         's/commands/shared_cluster_commands',
         's/committed_optime_metadata_hook',
@@ -484,14 +509,18 @@ mongos = env.Program(
         's/sharding_initialization',
         's/sharding_router_api',
         's/query/cluster_cursor_cleanup_job',
+        'transport/message_compressor_options_server',
         'transport/service_entry_point',
         'transport/transport_layer_manager',
         'util/clock_sources',
         'util/fail_point',
         'util/net/ssl_options_server' if get_option('ssl') == 'on' else '',
         'util/ntservice',
-        'util/options_parser/options_parser_init',
         'util/version_impl',
+    ],
+    LIBDEPS_PRIVATE=[
+        'util/options_parser/options_parser_init',
+        'util/options_parser/options_parser',
     ],
     INSTALL_ALIAS=[
         'servers',
@@ -530,11 +559,13 @@ if not has_option('noshell') and usemozjs:
                     'db/query/command_request_response',
                     'db/query/query_request',
                     'db/server_options_core',
+                    'db/traffic_reader',
                     'linenoise_utf8',
                     'rpc/protocol',
                     'scripting/scripting',
                     'shell/benchrun',
                     'shell/mongojs',
+                    'shell/shell_options_storage',
                     'transport/message_compressor',
                     'transport/transport_layer_manager',
                     'util/net/network',
@@ -579,7 +610,6 @@ if not has_option('noshell') and usemozjs:
             "shell/dbshell.cpp",
             "shell/mongodbcr.cpp",
             "shell/shell_options_init.cpp",
-            env.Idlc('shell/shell_options.idl')[0],
         ] + env.WindowsResourceFile("shell/shell.rc"),
         LIBDEPS=[
             "$BUILD_DIR/third_party/shim_pcrecpp",
@@ -587,8 +617,12 @@ if not has_option('noshell') and usemozjs:
             "db/server_options_core",
             "client/clientdriver_network",
             "$BUILD_DIR/mongo/util/password",
+            '$BUILD_DIR/mongo/db/storage/duplicate_key_error_info',
+            "$BUILD_DIR/mongo/db/views/resolved_view",
         ],
         LIBDEPS_PRIVATE=[
+            'shell/shell_options_register',
+            'transport/message_compressor_options_client',
             "$BUILD_DIR/mongo/client/connection_string",
             '$BUILD_DIR/mongo/util/net/ssl_options_client' if get_option('ssl') == 'on' else '',
         ],
@@ -645,17 +679,20 @@ def installBinary( e, name ):
             name,
             debug_sym_cmd
         )
+        e.NoCache(debug_sym)
         e.Install("#/", debug_sym)
         e.Alias('debugsymbols', debug_sym)
         distDebugSymbols.append(debug_sym)
 
     if env.TargetOSIs('linux', 'solaris') and (not has_option("nostrip")):
+        stripped_name = 'stripped/%s' % name
         strip_cmd = e.Command(
-            'stripped/%s' % name,
+            stripped_name,
             [name, debug_sym],
             '${OBJCOPY} --strip-debug --add-gnu-debuglink ${SOURCES[1]} ${SOURCES[0]} $TARGET'
         )
-        distBinaries.append('stripped/%s' % name)
+        e.NoCache(stripped_name)
+        distBinaries.append(stripped_name)
     else:
         distBinaries.append(name)
 
@@ -779,7 +816,7 @@ if env.TargetOSIs('posix'):
 # "dist" target is valid only when --use-new-tools is specified
 # Attempts to build release artifacts without tools must fail
 if has_option("use-new-tools"):
-    env.Command(
+    server_archive = env.Command(
         target='#/${SERVER_ARCHIVE}',
         source=['#buildscripts/make_archive.py'] + env["MODULE_BANNERS"] + env["ARCHIVE_ADDITIONS"] + distBinaries,
         action=' '.join(
@@ -800,7 +837,8 @@ if has_option("use-new-tools"):
         BUILD_DIR=env.Dir('$BUILD_DIR').path
     )
 
-    env.Alias("dist", source='#/${SERVER_ARCHIVE}')
+    env.Alias("dist", server_archive)
+    env.NoCache(server_archive)
 else:
     def failDist(env, target, source):
         env.FatalError("ERROR: 'dist' target only valid with --use-new-tools.")
@@ -822,6 +860,7 @@ debug_symbols_dist = env.Command(
 )
 
 env.Alias('dist-debugsymbols', debug_symbols_dist)
+env.NoCache(debug_symbols_dist)
 
 #final alias
 if not hygienic:

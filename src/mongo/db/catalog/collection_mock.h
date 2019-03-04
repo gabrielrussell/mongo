@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -38,7 +37,7 @@ namespace mongo {
 /**
  * This class comprises a mock Collection for use by UUIDCatalog unit tests.
  */
-class CollectionMock : virtual public Collection::Impl, virtual CappedCallback {
+class CollectionMock : public Collection {
 public:
     CollectionMock(const NamespaceString& ns) : CollectionMock(ns, {}) {}
     CollectionMock(const NamespaceString& ns, std::unique_ptr<IndexCatalog> indexCatalog)
@@ -49,20 +48,6 @@ public:
         std::abort();
     }
 
-private:
-    DatabaseCatalogEntry* dbce() const {
-        std::abort();
-    }
-
-    CollectionCatalogEntry* details() const {
-        std::abort();
-    }
-
-    Status aboutToDeleteCapped(OperationContext* opCtx, const RecordId& loc, RecordData data) {
-        std::abort();
-    }
-
-public:
     const NamespaceString& ns() const {
         return _ns;
     }
@@ -102,19 +87,15 @@ public:
         std::abort();
     }
 
-    CursorManager* getCursorManager() const {
-        std::abort();
-    }
-
     bool requiresIdIndex() const {
         std::abort();
     }
 
-    Snapshotted<BSONObj> docFor(OperationContext* opCtx, const RecordId& loc) const {
+    Snapshotted<BSONObj> docFor(OperationContext* opCtx, RecordId loc) const {
         std::abort();
     }
 
-    bool findDoc(OperationContext* opCtx, const RecordId& loc, Snapshotted<BSONObj>* out) const {
+    bool findDoc(OperationContext* opCtx, RecordId loc, Snapshotted<BSONObj>* out) const {
         std::abort();
     }
 
@@ -124,7 +105,7 @@ public:
 
     void deleteDocument(OperationContext* opCtx,
                         StmtId stmtId,
-                        const RecordId& loc,
+                        RecordId loc,
                         OpDebug* opDebug,
                         bool fromMigrate,
                         bool noWarn,
@@ -161,7 +142,7 @@ public:
     }
 
     RecordId updateDocument(OperationContext* opCtx,
-                            const RecordId& oldLocation,
+                            RecordId oldLocation,
                             const Snapshotted<BSONObj>& oldDoc,
                             const BSONObj& newDoc,
                             bool indexesAffected,
@@ -175,7 +156,7 @@ public:
     }
 
     StatusWith<RecordData> updateDocumentWithDamages(OperationContext* opCtx,
-                                                     const RecordId& loc,
+                                                     RecordId loc,
                                                      const Snapshotted<RecordData>& oldRec,
                                                      const char* damageSource,
                                                      const mutablebson::DamageVector& damages,
@@ -245,6 +226,10 @@ public:
         std::abort();
     }
 
+    CappedCallback* getCappedCallback() {
+        std::abort();
+    }
+
     std::shared_ptr<CappedInsertNotifier> getCappedInsertNotifier() const {
         std::abort();
     }
@@ -254,6 +239,10 @@ public:
     }
 
     uint64_t dataSize(OperationContext* opCtx) const {
+        std::abort();
+    }
+
+    int averageObjectSize(OperationContext* const opCtx) const {
         std::abort();
     }
 
@@ -269,15 +258,12 @@ public:
         std::abort();
     }
 
-    bool haveCappedWaiters() {
-        return false;
-    }
-
-    void notifyCappedWaitersIfNeeded() {
+    const CollatorInterface* getDefaultCollator() const {
         std::abort();
     }
 
-    const CollatorInterface* getDefaultCollator() const {
+    StatusWith<std::vector<BSONObj>> addCollationDefaultsToIndexSpecsForCreate(
+        OperationContext* opCtx, const std::vector<BSONObj>& indexSpecs) const {
         std::abort();
     }
 
@@ -288,8 +274,16 @@ public:
         std::abort();
     }
 
+    void establishOplogCollectionForLogging(OperationContext* opCtx) {
+        std::abort();
+    }
+
+    DatabaseCatalogEntry* dbce() const {
+        std::abort();
+    }
+
     OptionalCollectionUUID uuid() const {
-        return UUID::gen();
+        return _uuid;
     }
 
     void indexBuildSuccess(OperationContext* opCtx, IndexCatalogEntry* index) {
@@ -297,7 +291,9 @@ public:
     }
 
 private:
+    OptionalCollectionUUID _uuid = UUID::gen();
     NamespaceString _ns;
     std::unique_ptr<IndexCatalog> _indexCatalog;
 };
+
 }  // namespace mongo

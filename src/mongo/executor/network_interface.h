@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -42,9 +41,6 @@
 #include "mongo/util/future.h"
 
 namespace mongo {
-
-class BSONObjBuilder;
-
 namespace executor {
 
 MONGO_FAIL_POINT_DECLARE(networkInterfaceDiscardCommandsBeforeAcquireConn);
@@ -147,12 +143,11 @@ public:
     virtual Status startCommand(const TaskExecutor::CallbackHandle& cbHandle,
                                 RemoteCommandRequest& request,
                                 RemoteCommandCompletionFn&& onFinish,
-                                const transport::BatonHandle& baton = nullptr) = 0;
+                                const BatonHandle& baton = nullptr) = 0;
 
-    Future<TaskExecutor::ResponseStatus> startCommand(
-        const TaskExecutor::CallbackHandle& cbHandle,
-        RemoteCommandRequest& request,
-        const transport::BatonHandle& baton = nullptr) {
+    Future<TaskExecutor::ResponseStatus> startCommand(const TaskExecutor::CallbackHandle& cbHandle,
+                                                      RemoteCommandRequest& request,
+                                                      const BatonHandle& baton = nullptr) {
         auto pf = makePromiseFuture<TaskExecutor::ResponseStatus>();
 
         auto status = startCommand(
@@ -174,7 +169,7 @@ public:
      * completed.
      */
     virtual void cancelCommand(const TaskExecutor::CallbackHandle& cbHandle,
-                               const transport::BatonHandle& baton = nullptr) = 0;
+                               const BatonHandle& baton = nullptr) = 0;
 
     /**
      * Sets an alarm, which schedules "action" to run no sooner than "when".
@@ -190,9 +185,20 @@ public:
      * Any callbacks invoked from setAlarm must observe onNetworkThread to
      * return true. See that method for why.
      */
-    virtual Status setAlarm(Date_t when,
-                            unique_function<void()> action,
-                            const transport::BatonHandle& baton = nullptr) = 0;
+    virtual Status setAlarm(const TaskExecutor::CallbackHandle& cbHandle,
+                            Date_t when,
+                            unique_function<void(Status)> action) = 0;
+
+    /**
+     * Requests cancellation of the alarm associated with "cbHandle" if it has not yet completed.
+     */
+    virtual void cancelAlarm(const TaskExecutor::CallbackHandle& cbHandle) = 0;
+
+    /**
+     * Schedules the specified action to run as soon as possible on the network interface's
+     * execution resource
+     */
+    virtual Status schedule(unique_function<void(Status)> action) = 0;
 
     /**
      * Returns true if called from a thread dedicated to networking. I.e. not a

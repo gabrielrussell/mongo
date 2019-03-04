@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -33,21 +32,14 @@
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/repl/repl_settings.h"
-#include "mongo/db/server_parameters.h"
 
+#include "mongo/db/repl/repl_server_parameters_gen.h"
+#include "mongo/db/repl/repl_settings_gen.h"
 #include "mongo/util/log.h"
 
 namespace mongo {
 namespace repl {
-namespace {
 
-// Tells the server to perform replication recovery as a standalone.
-constexpr bool recoverFromOplogAsStandaloneDefault = false;
-MONGO_EXPORT_STARTUP_SERVER_PARAMETER(recoverFromOplogAsStandalone,
-                                      bool,
-                                      recoverFromOplogAsStandaloneDefault);
-
-}  // namespace
 
 std::string ReplSettings::ourSetName() const {
     size_t sl = _replSetString.find('/');
@@ -76,14 +68,6 @@ bool ReplSettings::shouldRecoverFromOplogAsStandalone() {
     return recoverFromOplogAsStandalone;
 }
 
-ReplSettings::IndexPrefetchConfig ReplSettings::getPrefetchIndexMode() const {
-    return _prefetchIndexMode;
-}
-
-bool ReplSettings::isPrefetchIndexModeSet() const {
-    return _prefetchIndexMode != IndexPrefetchConfig::UNINITIALIZED;
-}
-
 /**
  * Setters
  */
@@ -94,24 +78,6 @@ void ReplSettings::setOplogSizeBytes(long long oplogSizeBytes) {
 
 void ReplSettings::setReplSetString(std::string replSetString) {
     _replSetString = replSetString;
-}
-
-void ReplSettings::setPrefetchIndexMode(std::string prefetchIndexModeString) {
-    if (prefetchIndexModeString.empty()) {
-        _prefetchIndexMode = IndexPrefetchConfig::UNINITIALIZED;
-    } else {
-        if (prefetchIndexModeString == "none")
-            _prefetchIndexMode = IndexPrefetchConfig::PREFETCH_NONE;
-        else if (prefetchIndexModeString == "_id_only")
-            _prefetchIndexMode = IndexPrefetchConfig::PREFETCH_ID_ONLY;
-        else if (prefetchIndexModeString == "all")
-            _prefetchIndexMode = IndexPrefetchConfig::PREFETCH_ALL;
-        else {
-            _prefetchIndexMode = IndexPrefetchConfig::PREFETCH_ALL;
-            warning() << "unrecognized indexPrefetchMode setting \"" << prefetchIndexModeString
-                      << "\", defaulting to \"all\"";
-        }
-    }
 }
 
 }  // namespace repl

@@ -1,6 +1,3 @@
-// wiredtiger_record_store.h
-
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -190,11 +187,10 @@ public:
         return true;
     }
 
-    virtual Status validate(OperationContext* opCtx,
-                            ValidateCmdLevel level,
-                            ValidateAdaptor* adaptor,
-                            ValidateResults* results,
-                            BSONObjBuilder* output);
+    virtual void validate(OperationContext* opCtx,
+                          ValidateCmdLevel level,
+                          ValidateResults* results,
+                          BSONObjBuilder* output);
 
     virtual void appendCustomStats(OperationContext* opCtx,
                                    BSONObjBuilder* result,
@@ -349,8 +345,8 @@ private:
     const int64_t _cappedMaxSizeSlack;  // when to start applying backpressure
     const int64_t _cappedMaxDocs;
     RecordId _cappedFirstRecord;
-    AtomicInt64 _cappedSleep;
-    AtomicInt64 _cappedSleepMS;
+    AtomicWord<long long> _cappedSleep;
+    AtomicWord<long long> _cappedSleepMS;
     CappedCallback* _cappedCallback;
     bool _shuttingDown;
     mutable stdx::mutex _cappedCallbackMutex;  // guards _cappedCallback and _shuttingDown
@@ -359,7 +355,7 @@ private:
     int _cappedDeleteCheckCount;
     mutable stdx::timed_mutex _cappedDeleterMutex;
 
-    AtomicInt64 _nextIdNum;
+    AtomicWord<long long> _nextIdNum;
 
     WiredTigerSizeStorer* _sizeStorer;  // not owned, can be NULL
     std::shared_ptr<WiredTigerSizeStorer::SizeInfo> _sizeInfo;
@@ -463,6 +459,13 @@ protected:
 
 private:
     bool isVisible(const RecordId& id);
+
+    /**
+     * This value is used for visibility calculations on what oplog entries can be returned to a
+     * client. This value *must* be initialized/updated *before* a WiredTiger snapshot is
+     * established.
+     */
+    boost::optional<std::int64_t> _oplogVisibleTs = boost::none;
 };
 
 class WiredTigerRecordStoreStandardCursor final : public WiredTigerRecordStoreCursorBase {

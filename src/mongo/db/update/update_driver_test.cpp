@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -156,11 +155,12 @@ TEST(Collator, SetCollationUpdatesModifierInterfaces) {
 
     const bool validateForStorage = true;
     const FieldRefSet emptyImmutablePaths;
+    const bool isInsert = false;
     bool modified = false;
     mutablebson::Document doc(fromjson("{a: 'cba'}"));
     driver.setCollator(&reverseStringCollator);
-    driver.update(StringData(), &doc, validateForStorage, emptyImmutablePaths, nullptr, &modified)
-        .transitional_ignore();
+    ASSERT_OK(driver.update(
+        StringData(), &doc, validateForStorage, emptyImmutablePaths, isInsert, nullptr, &modified));
 
     ASSERT_TRUE(modified);
 }
@@ -548,11 +548,13 @@ public:
 
         const bool validateForStorage = true;
         const FieldRefSet emptyImmutablePaths;
+        const bool isInsert = false;
         FieldRefSetWithStorage modifiedPaths;
         ASSERT_OK(driver.update(matchedField,
                                 doc,
                                 validateForStorage,
                                 emptyImmutablePaths,
+                                isInsert,
                                 nullptr,
                                 nullptr,
                                 &modifiedPaths));
@@ -560,6 +562,12 @@ public:
         return modifiedPaths.toString();
     }
 };
+
+TEST_F(ModifiedPathsTestFixture, ReplaceFullDocumentReturnsEmptySet) {
+    BSONObj spec = fromjson("{a: 1, b: 1}}");
+    mutablebson::Document doc(fromjson("{a: 0, b: 0}"));
+    ASSERT_EQ(getModifiedPaths(&doc, spec), "{}");
+}
 
 TEST_F(ModifiedPathsTestFixture, SetFieldInRoot) {
     BSONObj spec = fromjson("{$set: {a: 1}}");

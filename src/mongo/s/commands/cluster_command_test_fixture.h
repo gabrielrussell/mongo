@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -63,7 +62,7 @@ protected:
 
     void runCommandSuccessful(BSONObj cmd, bool isTargeted);
 
-    void runCommandOneError(BSONObj cmd, ErrorCodes::Error code, bool isTargeted);
+    void runTxnCommandOneError(BSONObj cmd, ErrorCodes::Error code, bool isTargeted);
 
     void runCommandInspectRequests(BSONObj cmd, InspectionCallback cb, bool isTargeted);
 
@@ -105,6 +104,11 @@ private:
      * is true, also appends afterClusterTime to the read concern.
      */
     BSONObj _makeCmd(BSONObj cmdObj, bool includeAfterClusterTime = false);
+
+    // Enables the transaction router to retry within a transaction on stale version and snapshot
+    // errors for the duration of each test.
+    // TODO SERVER-39704: Remove this failpoint block.
+    std::unique_ptr<FailPointEnableBlock> _staleVersionAndSnapshotRetriesBlock;
 };
 
 }  // namespace mongo

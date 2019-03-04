@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -106,12 +105,6 @@ public:
     OID clusterId();
 
     /**
-     * Returns true if this node is a shard and if the currently runnint operation must engage the
-     * sharding subsystem (i.e., perform version checking, orphan filtering, etc).
-     */
-    bool needCollectionMetadata(OperationContext* opCtx, const std::string& ns);
-
-    /**
      * For testing only. This is a workaround for the fact that it is not possible to get a clean
      * ServiceContext in between test executions. Because of this, tests which require that they get
      * started with a clean (uninitialized) ShardingState must invoke this in their tearDown method.
@@ -146,7 +139,7 @@ private:
     stdx::mutex _mutex;
 
     // State of the initialization of the sharding state along with any potential errors
-    AtomicUInt32 _initializationState{static_cast<uint32_t>(InitializationState::kNew)};
+    AtomicWord<unsigned> _initializationState{static_cast<uint32_t>(InitializationState::kNew)};
 
     // Sets the shard name for this host (comes through setShardVersion)
     ShardId _shardId;

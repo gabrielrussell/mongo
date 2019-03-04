@@ -1,6 +1,3 @@
-// debug_util.h
-
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -38,9 +35,9 @@
 namespace mongo {
 
 #if defined(MONGO_CONFIG_DEBUG_BUILD)
-const bool kDebugBuild = true;
+constexpr bool kDebugBuild = true;
 #else
-const bool kDebugBuild = false;
+constexpr bool kDebugBuild = false;
 #endif
 
 #define MONGO_DEV if (kDebugBuild)
@@ -55,7 +52,7 @@ public:
     }
 
 private:
-    AtomicInt64 _count{0};
+    AtomicWord<long long> _count{0};
 };
 
 struct Occasionally : SampleEveryNth<16> {};

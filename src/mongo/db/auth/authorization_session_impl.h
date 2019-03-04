@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -95,9 +94,11 @@ public:
 
     std::string getAuthenticatedUserNamesToken() override;
 
-    void logoutDatabase(StringData dbname) override;
+    void logoutDatabase(OperationContext* opCtx, StringData dbname) override;
 
-    void grantInternalAuthorization() override;
+    void grantInternalAuthorization(Client* client) override;
+
+    void grantInternalAuthorization(OperationContext* opCtx) override;
 
     PrivilegeVector getDefaultPrivileges() override;
 
@@ -122,9 +123,9 @@ public:
     Status checkAuthForKillCursors(const NamespaceString& cursorNss,
                                    UserNameIterator cursorOwner) override;
 
-    Status checkAuthForAggregate(const NamespaceString& ns,
-                                 const BSONObj& cmdObj,
-                                 bool isMongos) override;
+    StatusWith<PrivilegeVector> getPrivilegesForAggregate(const NamespaceString& ns,
+                                                          const BSONObj& cmdObj,
+                                                          bool isMongos) override;
 
     Status checkAuthForCreate(const NamespaceString& ns,
                               const BSONObj& cmdObj,
@@ -133,6 +134,9 @@ public:
     Status checkAuthForCollMod(const NamespaceString& ns,
                                const BSONObj& cmdObj,
                                bool isMongos) override;
+
+    StatusWith<PrivilegeVector> checkAuthorizedToListCollections(StringData dbname,
+                                                                 const BSONObj& cmdObj) override;
 
     Status checkAuthorizedToGrantPrivilege(const Privilege& privilege) override;
 
@@ -151,8 +155,6 @@ public:
     bool isAuthorizedToChangeAsUser(const UserName& userName, ActionType actionType) override;
 
     bool isAuthorizedToChangeOwnPasswordAsUser(const UserName& userName) override;
-
-    bool isAuthorizedToListCollections(StringData dbname, const BSONObj& cmdObj) override;
 
     bool isAuthorizedToChangeOwnCustomDataAsUser(const UserName& userName) override;
 
@@ -186,7 +188,7 @@ public:
 
     void clearImpersonatedUserData() override;
 
-    bool isCoauthorizedWithClient(Client* opClient) override;
+    bool isCoauthorizedWithClient(Client* opClient, WithLock opClientLock) override;
 
     bool isCoauthorizedWith(UserNameIterator userNameIter) override;
 

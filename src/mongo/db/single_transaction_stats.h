@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -172,6 +171,9 @@ public:
     /**
      * Returns the OpDebug object stored in this SingleTransactionStats instance.
      */
+    const OpDebug* getOpDebug() const {
+        return &_opDebug;
+    }
     OpDebug* getOpDebug() {
         return &_opDebug;
     }

@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -188,7 +187,7 @@ public:
      */
     virtual void validate(OperationContext* opCtx,
                           int64_t* numKeys,
-                          ValidateResults* fullResults) = 0;
+                          ValidateResults* fullResults) const = 0;
 
     /**
      * Add custom statistics about this index to BSON object builder, for display.
@@ -286,7 +285,6 @@ public:
 
     virtual Status commitBulk(OperationContext* opCtx,
                               BulkBuilder* bulk,
-                              bool mayInterrupt,
                               bool dupsAllowed,
                               std::set<RecordId>* dupRecords,
                               std::vector<BSONObj>* dupKeys) = 0;
@@ -500,7 +498,9 @@ public:
 
     Status touch(OperationContext* opCtx) const final;
 
-    void validate(OperationContext* opCtx, int64_t* numKeys, ValidateResults* fullResults) final;
+    void validate(OperationContext* opCtx,
+                  int64_t* numKeys,
+                  ValidateResults* fullResults) const final;
 
     bool appendCustomStats(OperationContext* opCtx,
                            BSONObjBuilder* result,
@@ -518,7 +518,6 @@ public:
 
     Status commitBulk(OperationContext* opCtx,
                       BulkBuilder* bulk,
-                      bool mayInterrupt,
                       bool dupsAllowed,
                       std::set<RecordId>* dupRecords,
                       std::vector<BSONObj>* dupKeys) final;

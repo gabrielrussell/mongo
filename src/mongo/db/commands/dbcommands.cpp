@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -448,7 +447,7 @@ public:
                 keyPattern = Helpers::inferKeyPattern(min);
             }
 
-            IndexDescriptor* idx =
+            const IndexDescriptor* idx =
                 collection->getIndexCatalog()->findShardKeyPrefixedIndex(opCtx,
                                                                          keyPattern,
                                                                          true);  // requireSingleKey
@@ -496,7 +495,7 @@ public:
             }
         }
 
-        if (PlanExecutor::FAILURE == state || PlanExecutor::DEAD == state) {
+        if (PlanExecutor::FAILURE == state) {
             warning() << "Internal error while reading " << ns;
             uassertStatusOK(WorkingSetCommon::getMemberObjectStatus(obj).withContext(
                 "Executor error while reading during dataSize command"));

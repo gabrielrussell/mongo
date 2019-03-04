@@ -331,20 +331,15 @@ TestData.skipAwaitingReplicationOnShardsBeforeCheckingUUIDs = true;
         }));
 
         // Test that $currentOp fails if a non-local readConcern is specified for any data-bearing
-        // target. When run on a mongoS with {localOps:true}, read concern is not applicable and is
-        // therefore ignored.
+        // target.
         const linearizableAggCmd = {
             aggregate: 1,
             pipeline: [{$currentOp: curOpSpec}],
             readConcern: {level: "linearizable"},
             cursor: {}
         };
-        if (isLocalMongosCurOp) {
-            assert.commandWorked(adminDB.runCommand(linearizableAggCmd));
-        } else {
-            assert.commandFailedWithCode(adminDB.runCommand(linearizableAggCmd),
-                                         ErrorCodes.InvalidOptions);
-        }
+        assert.commandFailedWithCode(adminDB.runCommand(linearizableAggCmd),
+                                     ErrorCodes.InvalidOptions);
 
         // Test that {idleConnections: false} returns only active connections.
         const idleConn = new Mongo(conn.host);
@@ -736,8 +731,6 @@ TestData.skipAwaitingReplicationOnShardsBeforeCheckingUUIDs = true;
     assert.commandWorked(sessionDB.adminCommand(
         {setParameter: 1, transactionLifetimeLimitSeconds: transactionLifeTime}));
 
-    const timeBeforeTransactionStarts = new ISODate();
-
     // Start but do not complete a transaction.
     assert.commandWorked(sessionDB.runCommand({
         insert: "test",
@@ -786,7 +779,6 @@ TestData.skipAwaitingReplicationOnShardsBeforeCheckingUUIDs = true;
     assert.eq(transactionDocument.parameters.autocommit, false);
     assert.eq(transactionDocument.parameters.readConcern, {level: "snapshot"});
     assert.gte(transactionDocument.readTimestamp, operationTime);
-    assert.gte(ISODate(transactionDocument.startWallClockTime), timeBeforeTransactionStarts);
     // We round timeOpenMicros up to the nearest multiple of 1000 to avoid occasional assertion
     // failures caused by timeOpenMicros having microsecond precision while
     // timeBeforeCurrentOp/timeAfterTransactionStarts only have millisecond precision.
@@ -795,6 +787,9 @@ TestData.skipAwaitingReplicationOnShardsBeforeCheckingUUIDs = true;
     assert.gte(transactionDocument.timeActiveMicros, 0);
     assert.gte(transactionDocument.timeInactiveMicros, 0);
     assert.gte(transactionDocument.timePreparedMicros, 0);
+    // Not worried about its specific value, validate that in general we return some non-zero &
+    // valid time greater than epoch time.
+    assert.gt(ISODate(transactionDocument.startWallClockTime), ISODate("1970-01-01T00:00:00.000Z"));
     assert.eq(
         ISODate(transactionDocument.expiryTime).getTime(),
         ISODate(transactionDocument.startWallClockTime).getTime() + transactionLifeTime * 1000);

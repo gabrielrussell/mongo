@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -61,6 +60,14 @@ class ParsedUpdate {
     MONGO_DISALLOW_COPYING(ParsedUpdate);
 
 public:
+    /**
+     * Parses the array filters portion of the update request.
+     */
+    static StatusWith<std::map<StringData, std::unique_ptr<ExpressionWithPlaceholder>>>
+    parseArrayFilters(const std::vector<BSONObj>& rawArrayFiltersIn,
+                      OperationContext* opCtx,
+                      CollatorInterface* collator);
+
     /**
      * Constructs a parsed update.
      *
@@ -142,11 +149,6 @@ private:
      * Parses the update-descriptor portion of the update request.
      */
     void parseUpdate();
-
-    /**
-     * Parses the array filters portion of the update request.
-     */
-    Status parseArrayFilters();
 
     // Unowned pointer to the transactional context.
     OperationContext* _opCtx;

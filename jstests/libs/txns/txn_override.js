@@ -7,30 +7,13 @@
 (function() {
     'use strict';
 
+    load("jstests/libs/error_code_utils.js");
     load("jstests/libs/override_methods/read_and_write_concern_helpers.js");
     load('jstests/libs/override_methods/override_helpers.js');
     load("jstests/libs/retryable_writes_util.js");
+    load("jstests/libs/transactions_util.js");
 
     const runCommandOriginal = Mongo.prototype.runCommand;
-
-    const kCmdsSupportingTransactions = new Set([
-        'aggregate',
-        'delete',
-        'find',
-        'findAndModify',
-        'findandmodify',
-        'getMore',
-        'insert',
-        'update',
-    ]);
-
-    const kCmdsThatWrite = new Set([
-        'insert',
-        'update',
-        'findAndModify',
-        'findandmodify',
-        'delete',
-    ]);
 
     const kCmdsThatInsert = new Set([
         'insert',
@@ -53,6 +36,10 @@
     // it to our ops array multple times.
     let retryOp = false;
 
+    // True if the current command returned a transient transaction error and its entire transaction
+    // is being retried.
+    let retryingOnTransientTransactionError = false;
+
     // Set the max number of operations to run in a transaction. Once we've
     // hit this number of operations, we will commit the transaction. This is to
     // prevent having to retry an extremely long running transaction.
@@ -68,6 +55,46 @@
     // the entire transaction. For help with debugging.
     let transientErrorToLog;
 
+    // Default read concern level to use for transactions. Snapshot read concern is not supported in
+    // sharded transactions when majority reads are disabled.
+    const kDefaultTransactionReadConcernLevel =
+        TestData.hasOwnProperty("defaultTransactionReadConcernLevel")
+        ? TestData.defaultTransactionReadConcernLevel
+        : (TestData.enableMajorityReadConcern !== false ? "snapshot" : "local");
+
+    const kDefaultTransactionWriteConcernW =
+        TestData.hasOwnProperty("defaultTransactionWriteConcernW")
+        ? TestData.defaultTransactionWriteConcernW
+        : "majority";
+
+    // Default read concern level to use for commands that are not transactions.
+    const kDefaultReadConcernLevel = (function() {
+        if (TestData.hasOwnProperty("defaultReadConcernLevel")) {
+            return TestData.defaultReadConcernLevel;
+        }
+
+        // Use majority if the suite didn't specify a level, unless the variant doesn't support it.
+        return TestData.enableMajorityReadConcern !== false ? "majority" : "local";
+    })();
+
+    // Default write concern w to use for both transactions and non-transactions.
+    const kDefaultWriteConcernW = TestData.hasOwnProperty("defaultWriteConcernW")
+        ? TestData.defaultWriteConcernW
+        : "majority";
+
+    // Use a "signature" value that won't typically match a value assigned in normal use. This way
+    // the wtimeout set by this override is distinguishable in the server logs.
+    const kDefaultWtimeout = 5 * 60 * 1000 + 456;
+
+    function isTransientTransactionError(res) {
+        return res.hasOwnProperty('errorLabels') &&
+            res.errorLabels.includes('TransientTransactionError');
+    }
+
+    function isRetryingOnNetworkOrTransientTransactionError() {
+        return TestData.retryingOnNetworkError || retryingOnTransientTransactionError;
+    }
+
     function logFailedCommandAndError(cmdObj, cmdName, res) {
         if (cmdObj !== lastLoggedOp) {
             try {
@@ -81,32 +108,6 @@
                 jsTestLog("Error that caused retry of transaction " + tojson(transientErrorToLog));
             }
         }
-    }
-
-    function commandSupportsTxn(dbName, cmdName, cmdObj) {
-        if (cmdName === 'commitTransaction' || cmdName === 'abortTransaction') {
-            return true;
-        }
-
-        if (!kCmdsSupportingTransactions.has(cmdName)) {
-            return false;
-        }
-
-        if (dbName === 'local' || dbName === 'config' || dbName === 'admin') {
-            return false;
-        }
-
-        if (kCmdsThatWrite.has(cmdName)) {
-            if (cmdObj[cmdName].startsWith('system.')) {
-                return false;
-            }
-        }
-
-        if (cmdObj.lsid === undefined) {
-            return false;
-        }
-
-        return true;
     }
 
     function getTxnOptionsForClient(conn) {
@@ -142,7 +143,7 @@
     }
 
     function appendReadAndWriteConcern(conn, dbName, commandName, commandObj) {
-        if (TestData.retryingOnNetworkError) {
+        if (isRetryingOnNetworkOrTransientTransactionError()) {
             return;
         }
 
@@ -158,12 +159,6 @@
                 shouldForceWriteConcern = false;
             }
         } else if (commandName === "aggregate") {
-            if (OverrideHelpers.isAggregationWithListLocalCursorsStage(commandName, commandObj)) {
-                // The $listLocalCursors stage can only be used with readConcern={level:
-                // "local"}.
-                shouldForceReadConcern = false;
-            }
-
             if (OverrideHelpers.isAggregationWithListLocalSessionsStage(commandName, commandObj)) {
                 // The $listLocalSessions stage can only be used with readConcern={level:
                 // "local"}.
@@ -192,21 +187,30 @@
         if (shouldForceReadConcern) {
             let readConcernLevel;
             if (commandObj.startTransaction === true) {
-                readConcernLevel = "snapshot";
-            } else if (jsTest.options().enableMajorityReadConcern !== false) {
-                readConcernLevel = "majority";
+                readConcernLevel = kDefaultTransactionReadConcernLevel;
+            } else {
+                readConcernLevel = kDefaultReadConcernLevel;
             }
 
-            if (commandObj.readConcern && commandObj.readConcern.level !== readConcernLevel) {
+            if (commandObj.hasOwnProperty("readConcern") &&
+                commandObj.readConcern.hasOwnProperty("level") &&
+                commandObj.readConcern.level !== readConcernLevel) {
                 throw new Error("refusing to override existing readConcern " +
                                 commandObj.readConcern.level + " with readConcern " +
                                 readConcernLevel);
-            } else if (readConcernLevel) {
+            } else {
                 commandObj.readConcern = {level: readConcernLevel};
+            }
 
+            // Only attach afterClusterTime if causal consistency is explicitly enabled. Note, it is
+            // OK to send a readConcern with only afterClusterTime, which is interpreted as local
+            // read concern by the server.
+            if (TestData.hasOwnProperty("sessionOptions") &&
+                TestData.sessionOptions.causalConsistency === true) {
                 const driverSession = conn.getDB(dbName).getSession();
                 const operationTime = driverSession.getOperationTime();
                 if (operationTime !== undefined) {
+                    // The command object should always have a readConcern by this point.
                     commandObj.readConcern.afterClusterTime = operationTime;
                 }
             }
@@ -217,16 +221,20 @@
                 let writeConcern = commandObj.writeConcern;
                 if (typeof writeConcern !== "object" || writeConcern === null ||
                     (writeConcern.hasOwnProperty("w") &&
-                     bsonWoCompare({_: writeConcern.w}, {_: "majority"}) !== 0)) {
+                     bsonWoCompare({_: writeConcern.w}, {_: kDefaultWriteConcernW}) !== 0)) {
                     throw new Error("Cowardly refusing to override write concern of command: " +
                                     tojson(commandObj));
                 }
             }
 
-            // Use a "signature" value that won't typically match a value assigned in normal
-            // use. This way the wtimeout set by this override is distinguishable in the server
-            // logs.
-            commandObj.writeConcern = {w: "majority", wtimeout: 5 * 60 * 1000 + 456};
+            if (kCommandsSupportingWriteConcernInTransaction.has(commandName)) {
+                commandObj.writeConcern = {
+                    w: kDefaultTransactionWriteConcernW,
+                    wtimeout: kDefaultWtimeout
+                };
+            } else {
+                commandObj.writeConcern = {w: kDefaultWriteConcernW, wtimeout: kDefaultWtimeout};
+            }
         }
     }
 
@@ -238,7 +246,7 @@
             // retry the command. If the collection did exist, we'll return the original
             // response because it failed for a different reason. Tests that expect collections
             // to not exist will have to be skipped.
-            if (res.code === ErrorCodes.OperationNotSupportedInTransaction) {
+            if (includesErrorCode(res, ErrorCodes.OperationNotSupportedInTransaction)) {
                 const createCmdRes = runCommandOriginal.call(conn,
                                                              dbName,
                                                              {
@@ -249,9 +257,10 @@
                                                              0);
 
                 if (createCmdRes.ok !== 1) {
-                    if (createCmdRes.code !== ErrorCodes.NamespaceExists) {
-                        // The collection still does not exist. So we just return the original
-                        // response to the caller,
+                    // If the error is retryable, we retry the entire transaction. Otherwise, we
+                    // return the original error to the caller.
+                    if (createCmdRes.code !== ErrorCodes.NamespaceExists &&
+                        !RetryableWritesUtil.isRetryableCode(createCmdRes.code)) {
                         logFailedCommandAndError(commandObj, commandName, createCmdRes);
                         return res;
                     }
@@ -299,6 +308,7 @@
         const res = conn.adminCommand({
             commitTransaction: 1,
             autocommit: false, lsid, txnNumber,
+            writeConcern: {w: kDefaultWriteConcernW, wtimeout: kDefaultWtimeout},
         });
         assert.commandWorked(res);
         conn.txnOverrideState = TransactionStates.kInactive;
@@ -310,15 +320,15 @@
     function abortTransaction(conn, lsid, txnNumber) {
         // If there's been an error, we abort the transaction. It doesn't matter if the
         // abort call succeeds or not.
-        runCommandOriginal.call(conn,
-                                'admin',
-                                {
-                                  abortTransaction: 1,
-                                  autocommit: false,
-                                  lsid: lsid,
-                                  txnNumber: txnNumber,
-                                },
-                                0);
+        runCommandOriginal.call(
+            conn,
+            'admin',
+            {
+              abortTransaction: 1,
+              autocommit: false, lsid, txnNumber,
+              writeConcern: {w: kDefaultWriteConcernW, wtimeout: kDefaultWtimeout},
+            },
+            0);
         conn.txnOverrideState = TransactionStates.kInactive;
     }
 
@@ -326,6 +336,7 @@
         if (conn.txnOverrideState === TransactionStates.kInactive) {
             // First command in a transaction.
             txnOptions.txnNumber = new NumberLong(txnOptions.txnNumber + 1);
+            conn.getDB(dbName).getSession().setTxnNumber_forTesting(txnOptions.txnNumber);
             txnOptions.stmtId = new NumberInt(0);
 
             cmdObj.startTransaction = true;
@@ -340,11 +351,26 @@
         cmdObj.autocommit = false;
         delete cmdObj.writeConcern;
 
-        // We only want to add this op to the ops array if we have not already added it. If
-        // retryingOnNetworkError is true, this op will already have been added. If retryOp
-        // is false, this op is a write command that we are retrying thus this op has already
-        // been added to the ops array.
-        if (!TestData.retryingOnNetworkError && !retryOp) {
+        // We only want to add this op to the ops array if we have not already added it. If we're
+        // retrying on a transient txn or network error, this op will already have been added. If
+        // retryOp is false, this op is a write command that we are retrying thus this op has
+        // already been added to the ops array.
+        if (!isRetryingOnNetworkOrTransientTransactionError() && !retryOp) {
+            // If the command object was created in a causally consistent session but did not
+            // specify a readConcern level, it may have a readConcern object with only
+            // afterClusterTime. The correct read concern options are added in
+            // appendReadAndWriteConcern, so remove the readConcern before saving the operation in
+            // this case.
+            if (cmdObj.hasOwnProperty("readConcern")) {
+                // Only remove the readConcern if it only contains afterClusterTime.
+                const readConcernKeys = Object.keys(cmdObj.readConcern);
+                if (readConcernKeys.length !== 1 || readConcernKeys[0] !== "afterClusterTime") {
+                    throw new Error("Refusing to remove existing readConcern from command: " +
+                                    tojson(cmdObj));
+                }
+                delete cmdObj.readConcern;
+            }
+
             ops.push({dbName, cmdName, cmdObj, makeFuncArgs});
         }
 
@@ -352,7 +378,7 @@
     }
 
     function runCommandInTransactionIfNeeded(
-        conn, dbName, commandName, commandObj, func, makeFuncArgs) {
+        conn, dbName, commandName, commandObj, runCmdFunc, makeFuncArgs) {
         let cmdObjUnwrapped = commandObj;
         let cmdNameUnwrapped = commandName;
 
@@ -363,7 +389,7 @@
         }
 
         const commandSupportsTransaction =
-            commandSupportsTxn(dbName, cmdNameUnwrapped, cmdObjUnwrapped);
+            TransactionsUtil.commandSupportsTxn(dbName, cmdNameUnwrapped, cmdObjUnwrapped);
 
         const txnOptions = getTxnOptionsForClient(conn);
         if (commandSupportsTransaction) {
@@ -371,10 +397,13 @@
                 appendReadAndWriteConcern(conn, dbName, cmdNameUnwrapped, cmdObjUnwrapped);
                 cmdObjUnwrapped.txnNumber = txnOptions.txnNumber;
             } else {
-                // Commit the transaction if we've run `maxOpsInTransaction` commands as a part of
-                // this transaction to avoid having to retry really long running transactions.
-                if ((TestData.retryingOnNetworkError === false) &&
-                    (ops.length >= maxOpsInTransaction) &&
+                // If running in a suite that expects network errors, commit the transaction if
+                // we've run `maxOpsInTransaction` commands as a part of this transaction to avoid
+                // having to retry really long running transactions. Do not commit if the current
+                // command is getMore, because getMore cannot start a transaction.
+                if (TestData.retryingOnNetworkError !== undefined &&
+                    !isRetryingOnNetworkOrTransientTransactionError() &&
+                    (commandName !== "getMore") && (ops.length >= maxOpsInTransaction) &&
                     (conn.txnOverrideState === TransactionStates.kActive)) {
                     let commitRes =
                         commitTransaction(conn, cmdObjUnwrapped.lsid, txnOptions.txnNumber);
@@ -404,15 +433,17 @@
             }
         }
 
-        let res = func.apply(conn, makeFuncArgs(commandObj));
+        let res = runCmdFunc.apply(conn, makeFuncArgs(commandObj));
 
-        if ((res.ok !== 1) && (conn.txnOverrideState === TransactionStates.kActive)) {
+        if ((res.ok !== 1 || res.writeErrors) &&
+            (conn.txnOverrideState === TransactionStates.kActive) &&
+            commandName !== 'commitTransaction') {
             abortTransaction(conn, cmdObjUnwrapped.lsid, txnOptions.txnNumber);
             res = retryOnImplicitCollectionCreationIfNeeded(conn,
                                                             dbName,
                                                             cmdNameUnwrapped,
                                                             cmdObjUnwrapped,
-                                                            func,
+                                                            runCmdFunc,
                                                             makeFuncArgs,
                                                             res,
                                                             txnOptions);
@@ -421,9 +452,11 @@
         return res;
     }
 
-    function retryEntireTransaction(conn, txnNumber, lsid, func) {
-        jsTestLog("Retrying entire transaction on TransientTransactionError for aborted txn " +
-                  "with txnNum: " + txnNumber + " and lsid " + tojson(lsid));
+    function retryEntireTransaction(conn, lsid, runCmdFunc) {
+        let txnOptions = getTxnOptionsForClient(conn);
+        let txnNumber = txnOptions.txnNumber;
+        jsTestLog("Retrying entire transaction for aborted txn with txnNum: " + txnNumber +
+                  " and lsid " + tojson(lsid));
         // Set the transactionState to inactive so continueTransaction() will bump the
         // txnNum.
         conn.txnOverrideState = TransactionStates.kInactive;
@@ -434,36 +467,56 @@
         let res;
         for (let op of ops) {
             res = runCommandInTransactionIfNeeded(
-                conn, op.dbName, op.cmdName, op.cmdObj, func, op.makeFuncArgs);
+                conn, op.dbName, op.cmdName, op.cmdObj, runCmdFunc, op.makeFuncArgs);
 
-            if (res.hasOwnProperty('errorLabels') &&
-                res.errorLabels.includes('TransientTransactionError')) {
-                return retryEntireTransaction(conn, txnNumber, lsid, func);
+            if (isTransientTransactionError(res)) {
+                jsTestLog('Encountered error while running command: ' + tojson(op.cmdObj) +
+                          ', will retry entire txn again: ' + tojson(res));
+                return retryEntireTransaction(conn, lsid, runCmdFunc);
             }
         }
 
         return res;
     }
 
-    function retryCommitTransaction(conn, dbName, commandName, commandObj, func, makeFuncArgs) {
+    function retryCommitTransaction(
+        conn, dbName, commandName, commandObj, runCmdFunc, makeFuncArgs) {
         let res;
         let retryCommit = false;
         jsTestLog("Retrying commitTransaction for txnNum: " + commandObj.txnNumber + " and lsid: " +
                   tojson(commandObj.lsid));
+
+        /**
+         * Returns true if the response result from a commitTransaction command meant that the
+         * transaction was aborted.
+         */
+        let wasCommitAborted = function(result) {
+            if (result.ok === 1) {
+                return false;
+            }
+
+            if (ErrorCodes.isVoteAbortError(result.code)) {
+                return true;
+            }
+
+            return false;
+        };
+
         do {
             res = runCommandInTransactionIfNeeded(
-                conn, dbName, "commitTransaction", commandObj, func, makeFuncArgs);
+                conn, dbName, "commitTransaction", commandObj, runCmdFunc, makeFuncArgs);
 
             if (res.writeConcernError) {
                 retryCommit = true;
                 continue;
             }
 
-            if (res.hasOwnProperty('errorLabels') &&
-                res.errorLabels.includes('TransientTransactionError')) {
+            if (wasCommitAborted(res)) {
                 transientErrorToLog = res;
                 retryCommit = true;
-                res = retryEntireTransaction(conn, commandObj.txnNumber, commandObj.lsid, func);
+                jsTestLog('Encountered error while retrying commit, will retry entire txn again: ' +
+                          tojson(res));
+                res = retryEntireTransaction(conn, commandObj.lsid, runCmdFunc);
             } else if (res.ok === 1) {
                 retryCommit = false;
             }
@@ -472,8 +525,10 @@
         return res;
     }
 
-    function runCommandOnNetworkErrorRetry(
-        conn, dbName, commandName, commandObj, func, makeFuncArgs) {
+    function runCommandOnNetworkOrTransientTransactionErrorRetry(
+        conn, dbName, commandName, commandObj, runCmdFunc, makeFuncArgs) {
+        jsTestLog("Retrying command on network error or TransientTransactionError: " +
+                  tojsononeline(commandObj));
         transientErrorToLog = null;
         // If the ops array is empty, we failed on a command not being run in a
         // transaction and need to retry just this command.
@@ -482,45 +537,78 @@
             // txnNum.
             conn.txnOverrideState = TransactionStates.kInactive;
             return runCommandInTransactionIfNeeded(
-                conn, dbName, commandName, commandObj, func, makeFuncArgs);
+                conn, dbName, commandName, commandObj, runCmdFunc, makeFuncArgs);
         }
 
         if (commandName === "commitTransaction") {
             return retryCommitTransaction(
-                conn, dbName, commandName, commandObj, func, makeFuncArgs);
+                conn, dbName, commandName, commandObj, runCmdFunc, makeFuncArgs);
         }
 
-        return retryEntireTransaction(conn, commandObj.txnNumber, commandObj.lsid, func);
+        return retryEntireTransaction(conn, commandObj.lsid, runCmdFunc);
     }
 
     function runCommandWithTransactionRetries(
-        conn, dbName, commandName, commandObj, func, makeFuncArgs) {
+        conn, dbName, commandName, commandObj, runCmdFunc, makeFuncArgs) {
         const driverSession = conn.getDB(dbName).getSession();
         if (driverSession.getSessionId() === null) {
             // Sessions is explicitly disabled for this command. So we skip overriding it to
             // use transactions.
-            return func.apply(conn, makeFuncArgs(commandObj));
+            return runCmdFunc.apply(conn, makeFuncArgs(commandObj));
         }
 
         let res;
-        if (TestData.retryingOnNetworkError !== true) {
+        if (!isRetryingOnNetworkOrTransientTransactionError()) {
             res = runCommandInTransactionIfNeeded(
-                conn, dbName, commandName, commandObj, func, makeFuncArgs);
+                conn, dbName, commandName, commandObj, runCmdFunc, makeFuncArgs);
 
             if (commandName === "commitTransaction") {
                 while (res.writeConcernError) {
+                    jsTestLog("Retrying commitTransaction on WCE for txnNum: " +
+                              commandObj.txnNumber + " and lsid: " + tojson(commandObj.lsid));
                     res = runCommandInTransactionIfNeeded(
-                        conn, dbName, commandName, commandObj, func, makeFuncArgs);
+                        conn, dbName, commandName, commandObj, runCmdFunc, makeFuncArgs);
                 }
             }
 
             return res;
         }
 
-        res = runCommandOnNetworkErrorRetry(
-            conn, dbName, commandName, commandObj, func, makeFuncArgs);
+        res = runCommandOnNetworkOrTransientTransactionErrorRetry(
+            conn, dbName, commandName, commandObj, runCmdFunc, makeFuncArgs);
 
         return res;
+    }
+
+    function runCommandWithTransientTransactionErrorRetries(
+        conn, dbName, commandName, commandObj, runCmdFunc, makeFuncArgs) {
+        retryingOnTransientTransactionError = false;
+        while (true) {
+            try {
+                let res = runCommandWithTransactionRetries(
+                    conn, dbName, commandName, commandObj, runCmdFunc, makeFuncArgs);
+
+                if (isTransientTransactionError(res)) {
+                    retryingOnTransientTransactionError = true;
+                    print("=-=-=-= Retrying on TransientTransactionError for command: " +
+                          commandName + ", response: " + tojson(res));
+                    continue;
+                }
+
+                retryingOnTransientTransactionError = false;
+                return res;
+            } catch (e) {
+                if (isTransientTransactionError(e)) {
+                    retryingOnTransientTransactionError = true;
+                    print("=-=-=-= Retrying on TransientTransactionError for command: " +
+                          commandName + ", error: " + tojson(e));
+                    continue;
+                }
+
+                retryingOnTransientTransactionError = false;
+                throw e;
+            }
+        }
     }
 
     startParallelShell = function() {
@@ -529,5 +617,5 @@
             "startParalleShell()");
     };
 
-    OverrideHelpers.overrideRunCommand(runCommandWithTransactionRetries);
+    OverrideHelpers.overrideRunCommand(runCommandWithTransientTransactionErrorRetries);
 })();

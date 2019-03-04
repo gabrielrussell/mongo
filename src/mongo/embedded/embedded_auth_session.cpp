@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -98,11 +97,15 @@ public:
         UASSERT_NOT_IMPLEMENTED;
     }
 
-    void grantInternalAuthorization() override {
+    void grantInternalAuthorization(Client* client) override {
         // Always okay to do something, on embedded.
     }
 
-    void logoutDatabase(const StringData) override {
+    void grantInternalAuthorization(OperationContext* opCtx) override {
+        // Always okay to do something, on embedded.
+    }
+
+    void logoutDatabase(OperationContext* opCtx, const StringData) override {
         UASSERT_NOT_IMPLEMENTED;
     }
 
@@ -135,8 +138,10 @@ public:
         return Status::OK();
     }
 
-    Status checkAuthForAggregate(const NamespaceString&, const BSONObj&, bool) override {
-        return Status::OK();
+    StatusWith<PrivilegeVector> getPrivilegesForAggregate(const NamespaceString&,
+                                                          const BSONObj&,
+                                                          bool) override {
+        return PrivilegeVector();
     }
 
     Status checkAuthForCreate(const NamespaceString&, const BSONObj&, bool) override {
@@ -153,6 +158,11 @@ public:
 
     Status checkAuthorizedToRevokePrivilege(const Privilege&) override {
         return Status::OK();
+    }
+
+    StatusWith<PrivilegeVector> checkAuthorizedToListCollections(StringData,
+                                                                 const BSONObj&) override {
+        return PrivilegeVector();
     }
 
     bool isUsingLocalhostBypass() override {
@@ -180,10 +190,6 @@ public:
     }
 
     bool isAuthorizedToChangeOwnPasswordAsUser(const UserName&) override {
-        return true;
-    }
-
-    bool isAuthorizedToListCollections(StringData, const BSONObj&) override {
         return true;
     }
 
@@ -235,7 +241,7 @@ public:
         UASSERT_NOT_IMPLEMENTED;
     }
 
-    bool isCoauthorizedWithClient(Client*) override {
+    bool isCoauthorizedWithClient(Client*, WithLock opClientLock) override {
         return true;
     }
 

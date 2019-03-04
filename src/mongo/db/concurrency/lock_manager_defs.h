@@ -36,7 +36,6 @@
 #include "mongo/base/static_assert.h"
 #include "mongo/base/string_data.h"
 #include "mongo/config.h"
-#include "mongo/platform/hash_namespace.h"
 
 namespace mongo {
 
@@ -51,7 +50,7 @@ struct PartitionedLockHead;
  * This matrix answers the question, "Is a lock request with mode 'Requested Mode' compatible with
  * an existing lock held in mode 'Granted Mode'?"
  *
- * | Requested Mode | Granted Mode |         |          |        |          |
+ * | Requested Mode |                      Granted Mode                     |
  * |----------------|:------------:|:-------:|:--------:|:------:|:--------:|
  * |                |  MODE_NONE   | MODE_IS |  MODE_IX | MODE_S |  MODE_X  |
  * | MODE_IS        |      +       |    +    |     +    |    +   |          |
@@ -219,6 +218,11 @@ public:
     }
 
     std::string toString() const;
+
+    template <typename H>
+    friend H AbslHashValue(H h, const ResourceId& resource) {
+        return H::combine(std::move(h), resource._fullHash);
+    }
 
 private:
     /**
@@ -459,13 +463,3 @@ struct LockRequest {
 const char* lockRequestStatusName(LockRequest::Status status);
 
 }  // namespace mongo
-
-
-MONGO_HASH_NAMESPACE_START
-template <>
-struct hash<mongo::ResourceId> {
-    size_t operator()(const mongo::ResourceId& resource) const {
-        return resource;
-    }
-};
-MONGO_HASH_NAMESPACE_END

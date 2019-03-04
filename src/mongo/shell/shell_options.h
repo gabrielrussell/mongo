@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -80,6 +79,7 @@ struct ShellGlobalParams {
     boost::optional<rpc::ProtocolSet> rpcProtocols = boost::none;
 
     int jsHeapLimitMB = 0;
+    bool nokillop = false;
 };
 
 extern ShellGlobalParams shellGlobalParams;

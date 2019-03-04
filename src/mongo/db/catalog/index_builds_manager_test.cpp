@@ -32,8 +32,6 @@
 #include "mongo/db/catalog/index_builds_manager.h"
 
 #include "mongo/db/catalog/catalog_test_fixture.h"
-#include "mongo/db/catalog/multi_index_block.h"
-#include "mongo/db/catalog/multi_index_block_impl.h"
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
@@ -87,13 +85,16 @@ std::vector<BSONObj> makeSpecs(const NamespaceString& nss, std::vector<std::stri
 TEST_F(IndexBuildsManagerTest, IndexBuildsManagerSetUpAndTearDown) {
     AutoGetCollection autoColl(operationContext(), _nss, MODE_X);
 
+    auto specs = makeSpecs(_nss, {"a", "b"});
     ASSERT_OK(_indexBuildsManager.setUpIndexBuild(operationContext(),
                                                   autoColl.getCollection(),
-                                                  _nss,
-                                                  makeSpecs(_nss, {"a", "b"}),
-                                                  _buildUUID));
+                                                  specs,
+                                                  _buildUUID,
+                                                  MultiIndexBlock::kNoopOnInitFn,
+                                                  /*forRecovery=*/false));
 
-    _indexBuildsManager.tearDownIndexBuild(_buildUUID);
+    _indexBuildsManager.tearDownIndexBuild(
+        operationContext(), autoColl.getCollection(), _buildUUID);
 }
 
 }  // namespace

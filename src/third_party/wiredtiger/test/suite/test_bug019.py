@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Public Domain 2014-2018 MongoDB, Inc.
+# Public Domain 2014-2019 MongoDB, Inc.
 # Public Domain 2008-2014 WiredTiger, Inc.
 #
 # This is free and unencumbered software released into the public domain.
@@ -61,9 +61,9 @@ class test_bug019(wttest.WiredTigerTestCase):
         c.close()
 
     # Wait for a log file to be pre-allocated. Avoid timing problems, but
-    # assert a file is created within 30 seconds.
+    # assert a file is created within 90 seconds.
     def prepfiles(self):
-        for i in range(1,30):
+        for i in range(1,90):
                 f = fnmatch.filter(os.listdir('.'), "*Prep*")
                 if f:
                         return f
@@ -94,14 +94,15 @@ class test_bug019(wttest.WiredTigerTestCase):
             older = newer
             self.session.checkpoint()
 
-        # Wait for up to 30 seconds for pre-allocate to drop in an idle system
+        # Wait for a long time for pre-allocate to drop in an idle system
         # it should usually be fast, but on slow systems can take time.
-        for sleepcount in range(1,30):
+        max_wait_time = 90
+        for sleepcount in range(1,max_wait_time):
             new_prealloc = self.get_prealloc_stat()
             if new_prealloc < self.max_prealloc:
                 break
             time.sleep(1.0)
-        self.assertTrue(sleepcount < 30)
+        self.assertTrue(sleepcount < max_wait_time)
 
 if __name__ == '__main__':
     wttest.run()

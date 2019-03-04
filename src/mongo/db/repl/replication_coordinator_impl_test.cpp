@@ -39,6 +39,7 @@
 
 #include "mongo/bson/util/bson_extract.h"
 #include "mongo/db/concurrency/lock_state.h"
+#include "mongo/db/concurrency/replication_state_transition_lock_guard.h"
 #include "mongo/db/operation_context_noop.h"
 #include "mongo/db/repl/bson_extract_optime.h"
 #include "mongo/db/repl/is_master_response.h"
@@ -53,7 +54,6 @@
 #include "mongo/db/repl/replication_coordinator_external_state_mock.h"
 #include "mongo/db/repl/replication_coordinator_impl.h"
 #include "mongo/db/repl/replication_coordinator_test_fixture.h"
-#include "mongo/db/repl/replication_state_transition_lock_guard.h"
 #include "mongo/db/repl/storage_interface_mock.h"
 #include "mongo/db/repl/topology_coordinator.h"
 #include "mongo/db/repl/update_position_args.h"
@@ -68,6 +68,7 @@
 #include "mongo/stdx/future.h"
 #include "mongo/stdx/thread.h"
 #include "mongo/unittest/barrier.h"
+#include "mongo/unittest/death_test.h"
 #include "mongo/unittest/unittest.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/log.h"
@@ -108,7 +109,49 @@ struct OpTimeWithTermOne {
  */
 void killOperation(OperationContext* opCtx) {
     stdx::lock_guard<Client> lkClient(*opCtx->getClient());
-    opCtx->getServiceContext()->killOperation(opCtx);
+    opCtx->getServiceContext()->killOperation(lkClient, opCtx);
+}
+
+TEST_F(ReplCoordTest, IsMasterIsFalseDuringStepdown) {
+    BSONObj configObj = BSON("_id"
+                             << "mySet"
+                             << "version"
+                             << 1
+                             << "members"
+                             << BSON_ARRAY(BSON("_id" << 1 << "host"
+                                                      << "node1:12345")
+                                           << BSON("_id" << 2 << "host"
+                                                         << "node2:12345"))
+                             << "protocolVersion"
+                             << 1);
+    assertStartSuccess(configObj, HostAndPort("node1", 12345));
+    ReplSetConfig config = assertMakeRSConfig(configObj);
+    auto replCoord = getReplCoord();
+    ASSERT_OK(replCoord->setFollowerMode(MemberState::RS_SECONDARY));
+    replCoord->setMyLastAppliedOpTime(OpTimeWithTermOne(100, 1));
+    replCoord->setMyLastDurableOpTime(OpTimeWithTermOne(100, 1));
+    simulateSuccessfulV1Election();
+    ASSERT(replCoord->getMemberState().primary());
+
+    // Primary begins stepping down due to new term, but cannot finish.
+    getGlobalFailPointRegistry()
+        ->getFailPoint("blockHeartbeatStepdown")
+        ->setMode(FailPoint::alwaysOn);
+
+    TopologyCoordinator::UpdateTermResult updateTermResult;
+    replCoord->updateTerm_forTest(replCoord->getTerm() + 1, &updateTermResult);
+    ASSERT(TopologyCoordinator::UpdateTermResult::kTriggerStepDown == updateTermResult);
+
+    // Test that "ismaster" is immediately false, although "secondary" is not yet true.
+    IsMasterResponse response;
+    replCoord->fillIsMasterForReplSet(&response);
+    ASSERT_TRUE(response.isConfigSet());
+    BSONObj responseObj = response.toBSON();
+    ASSERT_FALSE(responseObj["ismaster"].Bool());
+    ASSERT_FALSE(responseObj["secondary"].Bool());
+    ASSERT_FALSE(responseObj.hasField("isreplicaset"));
+
+    getGlobalFailPointRegistry()->getFailPoint("blockHeartbeatStepdown")->setMode(FailPoint::off);
 }
 
 TEST_F(ReplCoordTest, NodeEntersStartup2StateWhenStartingUpWithValidLocalConfig) {
@@ -919,8 +962,8 @@ TEST_F(
     getReplCoord()->setMyLastDurableOpTime(OpTime(Timestamp(100, 1), 0));
     simulateSuccessfulV1Election();
 
-    OpTime time1(Timestamp(100, 1), 1);
-    OpTime time2(Timestamp(100, 2), 1);
+    OpTime time1(Timestamp(100, 2), 1);
+    OpTime time2(Timestamp(100, 3), 1);
 
     // Set up valid write concerns for the rest of the test
     WriteConcernOptions majorityWriteConcern;
@@ -1891,7 +1934,7 @@ TEST_F(StepDownTest,
     ASSERT_THROWS_CODE(
         getReplCoord()->stepDown(opCtx.get(), false, Milliseconds(0), Milliseconds(1000)),
         AssertionException,
-        ErrorCodes::ExceededTimeLimit);
+        ErrorCodes::LockTimeout);
     ASSERT_TRUE(getReplCoord()->getMemberState().primary());
 
     ASSERT_TRUE(locker->isRSTLExclusive());
@@ -2397,8 +2440,7 @@ TEST_F(StepDownTest, UnconditionalStepDownFailsStepDownCommand) {
 }
 
 // Test that if a stepdown command is blocked waiting for secondaries to catch up when an
-// unconditional stepdown happens, and then is interrupted, we stay stepped down, even though
-// normally if we were just interrupted we would step back up.
+// unconditional stepdown happens, and then is interrupted, we step back up.
 TEST_F(StepDownTest, InterruptingStepDownCommandRestoresWriteAvailability) {
     OpTime optime1(Timestamp(100, 1), 1);
     OpTime optime2(Timestamp(100, 2), 1);
@@ -2420,6 +2462,12 @@ TEST_F(StepDownTest, InterruptingStepDownCommandRestoresWriteAvailability) {
     // We should still be primary at this point
     ASSERT_TRUE(getReplCoord()->getMemberState().primary());
 
+    // We should not indicate that we are master, nor that we are secondary.
+    IsMasterResponse response;
+    getReplCoord()->fillIsMasterForReplSet(&response);
+    ASSERT_FALSE(response.isMaster());
+    ASSERT_FALSE(response.isSecondary());
+
     // Interrupt the ongoing stepdown command.
     {
         stdx::lock_guard<Client> lk(*result.first.client.get());
@@ -2430,8 +2478,13 @@ TEST_F(StepDownTest, InterruptingStepDownCommandRestoresWriteAvailability) {
     ASSERT_EQUALS(*result.second.get(), ErrorCodes::Interrupted);
     ASSERT_TRUE(getReplCoord()->getMemberState().primary());
 
-    // This is the important check, that we didn't accidentally step back up when aborting the
-    // stepdown command attempt.
+    // We should now report that we are master.
+    getReplCoord()->fillIsMasterForReplSet(&response);
+    ASSERT_TRUE(response.isMaster());
+    ASSERT_FALSE(response.isSecondary());
+
+    // This is the important check, that we stepped back up when aborting the stepdown command
+    // attempt.
     const auto opCtx = makeOperationContext();
     Lock::GlobalLock lock(opCtx.get(), MODE_IX);
     ASSERT_TRUE(getReplCoord()->canAcceptWritesForDatabase(opCtx.get(), "admin"));
@@ -2461,6 +2514,12 @@ TEST_F(StepDownTest, InterruptingAfterUnconditionalStepdownDoesNotRestoreWriteAv
     // We should still be primary at this point
     ASSERT_TRUE(getReplCoord()->getMemberState().primary());
 
+    // We should not indicate that we are master, nor that we are secondary.
+    IsMasterResponse response;
+    getReplCoord()->fillIsMasterForReplSet(&response);
+    ASSERT_FALSE(response.isMaster());
+    ASSERT_FALSE(response.isSecondary());
+
     // Interrupt the ongoing stepdown command.
     {
         stdx::lock_guard<Client> lk(*result.first.client.get());
@@ -2480,6 +2539,10 @@ TEST_F(StepDownTest, InterruptingAfterUnconditionalStepdownDoesNotRestoreWriteAv
     ASSERT(stepDownStatus == ErrorCodes::PrimarySteppedDown ||
            stepDownStatus == ErrorCodes::Interrupted);
     ASSERT_TRUE(getReplCoord()->getMemberState().secondary());
+
+    // We should still be indicating that we are not master.
+    getReplCoord()->fillIsMasterForReplSet(&response);
+    ASSERT_FALSE(response.isMaster());
 
     // This is the important check, that we didn't accidentally step back up when aborting the
     // stepdown command attempt.
@@ -3813,7 +3876,8 @@ TEST_F(StableOpTimeTest, CalculateStableOpTime) {
     stableOpTimeCandidates = {
         OpTime({0, 0}, term), OpTime({0, 1}, term), OpTime({0, 2}, term), OpTime({0, 4}, term)};
     expectedStableOpTime = OpTime({0, 2}, term);
-    stableOpTime = repl->calculateStableOpTime_forTest(stableOpTimeCandidates, commitPoint);
+    stableOpTime =
+        repl->chooseStableOpTimeFromCandidates_forTest(stableOpTimeCandidates, commitPoint);
     ASSERT_EQ(expectedStableOpTime, stableOpTime);
 
     // There is a valid stable optime equal to the commit point.
@@ -3821,49 +3885,56 @@ TEST_F(StableOpTimeTest, CalculateStableOpTime) {
     stableOpTimeCandidates = {
         OpTime({0, 0}, term), OpTime({0, 1}, term), OpTime({0, 2}, term), OpTime({0, 3}, term)};
     expectedStableOpTime = OpTime({0, 2}, term);
-    stableOpTime = repl->calculateStableOpTime_forTest(stableOpTimeCandidates, commitPoint);
+    stableOpTime =
+        repl->chooseStableOpTimeFromCandidates_forTest(stableOpTimeCandidates, commitPoint);
     ASSERT_EQ(expectedStableOpTime, stableOpTime);
 
     // There is a valid stable optime, all candidates are smaller than the commit point.
     commitPoint = OpTime({0, 4}, term);
     stableOpTimeCandidates = {OpTime({0, 1}, term), OpTime({0, 2}, term), OpTime({0, 3}, term)};
     expectedStableOpTime = OpTime({0, 3}, term);
-    stableOpTime = repl->calculateStableOpTime_forTest(stableOpTimeCandidates, commitPoint);
+    stableOpTime =
+        repl->chooseStableOpTimeFromCandidates_forTest(stableOpTimeCandidates, commitPoint);
     ASSERT_EQ(expectedStableOpTime, stableOpTime);
 
     // There is no valid stable optime, all candidates are greater than the commit point.
     commitPoint = OpTime({0, 0}, term);
     stableOpTimeCandidates = {OpTime({0, 1}, term), OpTime({0, 2}, term), OpTime({0, 3}, term)};
     expectedStableOpTime = boost::none;
-    stableOpTime = repl->calculateStableOpTime_forTest(stableOpTimeCandidates, commitPoint);
+    stableOpTime =
+        repl->chooseStableOpTimeFromCandidates_forTest(stableOpTimeCandidates, commitPoint);
     ASSERT_EQ(expectedStableOpTime, stableOpTime);
 
     // There are no timestamp candidates.
     commitPoint = OpTime({0, 0}, term);
     stableOpTimeCandidates = {};
     expectedStableOpTime = boost::none;
-    stableOpTime = repl->calculateStableOpTime_forTest(stableOpTimeCandidates, commitPoint);
+    stableOpTime =
+        repl->chooseStableOpTimeFromCandidates_forTest(stableOpTimeCandidates, commitPoint);
     ASSERT_EQ(expectedStableOpTime, stableOpTime);
 
     // There is a single timestamp candidate which is equal to the commit point.
     commitPoint = OpTime({0, 1}, term);
     stableOpTimeCandidates = {OpTime({0, 1}, term)};
     expectedStableOpTime = OpTime({0, 1}, term);
-    stableOpTime = repl->calculateStableOpTime_forTest(stableOpTimeCandidates, commitPoint);
+    stableOpTime =
+        repl->chooseStableOpTimeFromCandidates_forTest(stableOpTimeCandidates, commitPoint);
     ASSERT_EQ(expectedStableOpTime, stableOpTime);
 
     // There is a single timestamp candidate which is greater than the commit point.
     commitPoint = OpTime({0, 0}, term);
     stableOpTimeCandidates = {OpTime({0, 1}, term)};
     expectedStableOpTime = boost::none;
-    stableOpTime = repl->calculateStableOpTime_forTest(stableOpTimeCandidates, commitPoint);
+    stableOpTime =
+        repl->chooseStableOpTimeFromCandidates_forTest(stableOpTimeCandidates, commitPoint);
     ASSERT_EQ(expectedStableOpTime, stableOpTime);
 
     // There is a single timestamp candidate which is less than the commit point.
     commitPoint = OpTime({0, 2}, term);
     stableOpTimeCandidates = {OpTime({0, 1}, term)};
     expectedStableOpTime = OpTime({0, 1}, term);
-    stableOpTime = repl->calculateStableOpTime_forTest(stableOpTimeCandidates, commitPoint);
+    stableOpTime =
+        repl->chooseStableOpTimeFromCandidates_forTest(stableOpTimeCandidates, commitPoint);
     ASSERT_EQ(expectedStableOpTime, stableOpTime);
 
     // Set the oldest oplog entry OpTime for non-majority committed aborts/commits associated
@@ -3879,7 +3950,8 @@ TEST_F(StableOpTimeTest, CalculateStableOpTime) {
     txnMetrics->addActiveOpTime(oldestNonMajCommittedOpTime);
     // Update the finishOpTime.
     txnMetrics->removeActiveOpTime(oldestNonMajCommittedOpTime, finishOpTime);
-    stableOpTime = repl->calculateStableOpTime_forTest(stableOpTimeCandidates, commitPoint);
+    stableOpTime =
+        repl->chooseStableOpTimeFromCandidates_forTest(stableOpTimeCandidates, commitPoint);
     ASSERT_EQ(oldestNonMajCommittedOpTime, stableOpTime);
 }
 
@@ -3961,24 +4033,22 @@ TEST_F(StableOpTimeTest, SetMyLastAppliedSetsStableOpTimeForStorage) {
 
     auto repl = getReplCoord();
     Timestamp stableTimestamp;
-    long long term = 2;
 
     getStorageInterface()->supportsDocLockingBool = true;
-
-    repl->advanceCommitPoint(OpTime({1, 1}, term));
     ASSERT_EQUALS(Timestamp::min(), getStorageInterface()->getStableTimestamp());
     ASSERT_OK(getReplCoord()->setFollowerMode(MemberState::RS_SECONDARY));
 
-    getReplCoord()->setMyLastAppliedOpTime(OpTimeWithTermOne(1, 1));
-    getReplCoord()->setMyLastDurableOpTime(OpTimeWithTermOne(1, 1));
+    getStorageInterface()->allCommittedTimestamp = Timestamp(1, 1);
+    repl->setMyLastAppliedOpTime(OpTimeWithTermOne(1, 1));
+    repl->setMyLastDurableOpTime(OpTimeWithTermOne(1, 1));
     simulateSuccessfulV1Election();
 
-    repl->advanceCommitPoint(OpTime({2, 2}, term));
+    // Advance the commit point so it's higher than all the others.
+    repl->advanceCommitPoint(OpTimeWithTermOne(10, 1));
     ASSERT_EQUALS(Timestamp(1, 1), getStorageInterface()->getStableTimestamp());
 
     // Check that the stable timestamp is not updated if the all-committed timestamp is behind.
-    getStorageInterface()->allCommittedTimestamp = Timestamp(1, 1);
-    repl->setMyLastAppliedOpTime(OpTime({1, 2}, term));
+    repl->setMyLastAppliedOpTime(OpTimeWithTermOne(1, 2));
     stableTimestamp = getStorageInterface()->getStableTimestamp();
     ASSERT_EQUALS(Timestamp(1, 1), getStorageInterface()->getStableTimestamp());
 
@@ -3986,18 +4056,59 @@ TEST_F(StableOpTimeTest, SetMyLastAppliedSetsStableOpTimeForStorage) {
 
     // Check that the stable timestamp is updated for the storage engine when we set the applied
     // optime.
-    repl->setMyLastAppliedOpTime(OpTime({2, 1}, term));
+    repl->setMyLastAppliedOpTime(OpTimeWithTermOne(2, 1));
     stableTimestamp = getStorageInterface()->getStableTimestamp();
     ASSERT_EQUALS(Timestamp(2, 1), stableTimestamp);
 
     // Check that timestamp cleanup occurs.
-    repl->setMyLastAppliedOpTime(OpTime({2, 2}, term));
+    repl->setMyLastAppliedOpTime(OpTimeWithTermOne(2, 2));
     stableTimestamp = getStorageInterface()->getStableTimestamp();
     ASSERT_EQUALS(Timestamp(2, 2), stableTimestamp);
 
     auto opTimeCandidates = repl->getStableOpTimeCandidates_forTest();
-    std::set<OpTime> expectedOpTimeCandidates = {OpTime({2, 2}, term)};
+    std::set<OpTime> expectedOpTimeCandidates = {OpTimeWithTermOne(2, 2)};
     ASSERT_OPTIME_SET_EQ(expectedOpTimeCandidates, opTimeCandidates);
+}
+
+TEST_F(StableOpTimeTest, SetMyLastAppliedSetsStableOpTimeForStorageDisableMajorityReadConcern) {
+
+    /**
+     * Test that 'setMyLastAppliedOpTime' sets the stable timestamp to the last applied when
+     * enableMajorityReadConcern=false, even if the last committed optime is unset.
+     */
+
+    const auto originalEnableMajorityReadConcern = serverGlobalParams.enableMajorityReadConcern;
+    serverGlobalParams.enableMajorityReadConcern = false;
+    ON_BLOCK_EXIT(
+        [&] { serverGlobalParams.enableMajorityReadConcern = originalEnableMajorityReadConcern; });
+
+    init("mySet/test1:1234,test2:1234,test3:1234");
+    assertStartSuccess(BSON("_id"
+                            << "mySet"
+                            << "protocolVersion"
+                            << 1
+                            << "version"
+                            << 1
+                            << "members"
+                            << BSON_ARRAY(BSON("_id" << 0 << "host"
+                                                     << "test1:1234")
+                                          << BSON("_id" << 1 << "host"
+                                                        << "test2:1234")
+                                          << BSON("_id" << 2 << "host"
+                                                        << "test3:1234"))),
+                       HostAndPort("test2", 1234));
+
+    getStorageInterface()->supportsDocLockingBool = true;
+    ASSERT_OK(getReplCoord()->setFollowerMode(MemberState::RS_SECONDARY));
+
+    // Initially the stable timestamp is unset.
+    ASSERT_EQUALS(Timestamp::min(), getStorageInterface()->getStableTimestamp());
+
+    // Check that the stable timestamp is updated for the storage engine when we set the applied
+    // optime, even though the last committed optime is unset.
+    getStorageInterface()->allCommittedTimestamp = Timestamp(1, 1);
+    getReplCoord()->setMyLastAppliedOpTime(OpTime({1, 1}, 1));
+    ASSERT_EQUALS(Timestamp(1, 1), getStorageInterface()->getStableTimestamp());
 }
 
 TEST_F(StableOpTimeTest, AdvanceCommitPointSetsStableOpTimeForStorage) {
@@ -4084,8 +4195,11 @@ TEST_F(StableOpTimeTest, ClearOpTimeCandidatesPastCommonPointAfterRollback) {
 
     OpTime rollbackCommonPoint = OpTime({1, 2}, term);
     OpTime commitPoint = OpTime({1, 2}, term);
-    repl->advanceCommitPoint(commitPoint);
     ASSERT_EQUALS(Timestamp::min(), getStorageInterface()->getStableTimestamp());
+
+    repl->setMyLastAppliedOpTime(OpTime({0, 1}, term));
+    // Advance commit point when it has the same term as the last applied.
+    repl->advanceCommitPoint(commitPoint);
 
     repl->setMyLastAppliedOpTime(OpTime({1, 1}, term));
     repl->setMyLastAppliedOpTime(OpTime({1, 2}, term));
@@ -4123,7 +4237,8 @@ TEST_F(StableOpTimeTest, ClearOpTimeCandidatesPastCommonPointAfterRollback) {
     // Make sure the stable optime candidate set has been cleared of all entries past the common
     // point.
     opTimeCandidates = repl->getStableOpTimeCandidates_forTest();
-    auto stableOpTime = repl->getStableOpTime_forTest();
+    auto stableOpTime =
+        repl->chooseStableOpTimeFromCandidates_forTest(opTimeCandidates, commitPoint);
     ASSERT(stableOpTime);
     expectedOpTimeCandidates = {*stableOpTime};
     ASSERT_OPTIME_SET_EQ(expectedOpTimeCandidates, opTimeCandidates);
@@ -4133,7 +4248,7 @@ TEST_F(StableOpTimeTest, OpTimeCandidatesAreNotAddedWhenStateIsNotConsistent) {
 
     initReplSetMode();
     auto repl = getReplCoord();
-    long long term = 0;
+    long long term = getTopoCoord().getTerm();
 
     OpTime consistentOpTime = OpTime({1, 1}, term);
     OpTime inconsistentOpTime = OpTime({1, 2}, term);
@@ -4397,8 +4512,8 @@ TEST_F(ReplCoordTest, ReadAfterCommittedDeferredGreaterOpTime) {
 
     auto opCtx = makeOperationContext();
     runSingleNodeElection(opCtx.get());
-    getReplCoord()->setMyLastAppliedOpTime(OpTime(Timestamp(0, 0), 1));
-    getReplCoord()->setMyLastDurableOpTime(OpTime(Timestamp(0, 0), 1));
+    getReplCoord()->setMyLastAppliedOpTime(OpTime(Timestamp(100, 1), 1));
+    getReplCoord()->setMyLastDurableOpTime(OpTime(Timestamp(100, 1), 1));
     OpTime committedOpTime(Timestamp(200, 1), 1);
     auto pseudoLogOp = stdx::async(stdx::launch::async, [this, &committedOpTime]() {
         // Not guaranteed to be scheduled after waitUntil blocks...
@@ -4424,8 +4539,8 @@ TEST_F(ReplCoordTest, ReadAfterCommittedDeferredEqualOpTime) {
                        HostAndPort("node1", 12345));
     auto opCtx = makeOperationContext();
     runSingleNodeElection(opCtx.get());
-    getReplCoord()->setMyLastAppliedOpTime(OpTime(Timestamp(0, 0), 1));
-    getReplCoord()->setMyLastDurableOpTime(OpTime(Timestamp(0, 0), 1));
+    getReplCoord()->setMyLastAppliedOpTime(OpTime(Timestamp(100, 1), 1));
+    getReplCoord()->setMyLastDurableOpTime(OpTime(Timestamp(100, 1), 1));
 
     OpTime opTimeToWait(Timestamp(100, 1), 1);
 
@@ -4438,6 +4553,38 @@ TEST_F(ReplCoordTest, ReadAfterCommittedDeferredEqualOpTime) {
     ASSERT_OK(getReplCoord()->waitUntilOpTimeForRead(
         opCtx.get(), ReadConcernArgs(opTimeToWait, ReadConcernLevel::kMajorityReadConcern)));
     pseudoLogOp.get();
+}
+
+
+TEST_F(ReplCoordTest, WaitUntilOpTimeforReadRejectsUnsupportedMajorityReadConcern) {
+    assertStartSuccess(BSON("_id"
+                            << "mySet"
+                            << "version"
+                            << 2
+                            << "members"
+                            << BSON_ARRAY(BSON("host"
+                                               << "node1:12345"
+                                               << "_id"
+                                               << 0))),
+                       HostAndPort("node1", 12345));
+    auto opCtx = makeOperationContext();
+
+    // A valid majority read concern level should return immediately.
+    auto rcArgs = ReadConcernArgs(ReadConcernLevel::kMajorityReadConcern);
+    auto status = getReplCoord()->waitUntilOpTimeForRead(opCtx.get(), rcArgs);
+    ASSERT_OK(status);
+
+    // Simulate disabling storage support for majority reads.
+    disableReadConcernMajoritySupport();
+    rcArgs = ReadConcernArgs(ReadConcernLevel::kMajorityReadConcern);
+    status = getReplCoord()->waitUntilOpTimeForRead(opCtx.get(), rcArgs);
+    ASSERT_EQ(status, ErrorCodes::ReadConcernMajorityNotEnabled);
+
+    // Even without storage engine support, speculative majority reads should be allowed.
+    rcArgs = ReadConcernArgs(ReadConcernLevel::kMajorityReadConcern);
+    rcArgs.setMajorityReadMechanism(ReadConcernArgs::MajorityReadMechanism::kSpeculative);
+    status = getReplCoord()->waitUntilOpTimeForRead(opCtx.get(), rcArgs);
+    ASSERT_OK(status);
 }
 
 TEST_F(ReplCoordTest, IgnoreTheContentsOfMetadataWhenItsConfigVersionDoesNotMatchOurs) {
@@ -4687,6 +4834,85 @@ TEST_F(ReplCoordTest,
     ASSERT_EQUALS(-1, getTopoCoord().getCurrentPrimaryIndex());
 }
 
+TEST_F(ReplCoordTest, LastCommittedOpTimeOnlyUpdatedWhenLastAppliedHasTheSameTerm) {
+    // Ensure that the metadata is processed if it is contained in a heartbeat response.
+    assertStartSuccess(BSON("_id"
+                            << "mySet"
+                            << "version"
+                            << 2
+                            << "members"
+                            << BSON_ARRAY(BSON("host"
+                                               << "node1:12345"
+                                               << "_id"
+                                               << 0)
+                                          << BSON("host"
+                                                  << "node2:12345"
+                                                  << "_id"
+                                                  << 1))
+                            << "protocolVersion"
+                            << 1),
+                       HostAndPort("node1", 12345));
+    ASSERT_EQUALS(OpTime(), getReplCoord()->getLastCommittedOpTime());
+
+    auto config = getReplCoord()->getConfig();
+
+    auto opTime1 = OpTime({10, 1}, 1);
+    auto opTime2 = OpTime({11, 1}, 2);  // In higher term.
+    auto commitPoint = OpTime({15, 1}, 2);
+    getReplCoord()->setMyLastAppliedOpTime(opTime1);
+
+    // Node 1 is the current primary. The commit point has a higher term than lastApplied.
+    rpc::ReplSetMetadata metadata(2,            // term
+                                  commitPoint,  // committedOpTime
+                                  commitPoint,  // visibleOpTime
+                                  config.getConfigVersion(),
+                                  {},  // replset id
+                                  1,   // currentPrimaryIndex,
+                                  1);  // currentSyncSourceIndex
+
+    auto net = getNet();
+    BSONObjBuilder responseBuilder;
+    ASSERT_OK(metadata.writeToMetadata(&responseBuilder));
+
+    ReplSetHeartbeatResponse hbResp;
+    hbResp.setConfigVersion(config.getConfigVersion());
+    hbResp.setSetName(config.getReplSetName());
+    hbResp.setState(MemberState::RS_PRIMARY);
+    responseBuilder.appendElements(hbResp.toBSON());
+    auto hbRespObj = responseBuilder.obj();
+    {
+        net->enterNetwork();
+        ASSERT_TRUE(net->hasReadyRequests());
+        auto noi = net->getNextReadyRequest();
+        auto& request = noi->getRequest();
+        ASSERT_EQUALS(config.getMemberAt(1).getHostAndPort(), request.target);
+        ASSERT_EQUALS("replSetHeartbeat", request.cmdObj.firstElement().fieldNameStringData());
+
+        net->scheduleResponse(noi, net->now(), makeResponseStatus(hbRespObj));
+        net->runReadyNetworkOperations();
+        net->exitNetwork();
+
+        ASSERT_EQUALS(OpTime(), getReplCoord()->getLastCommittedOpTime());
+        ASSERT_EQUALS(2, getReplCoord()->getTerm());
+    }
+
+    // Update lastApplied, so commit point can be advanced.
+    getReplCoord()->setMyLastAppliedOpTime(opTime2);
+    {
+        net->enterNetwork();
+        net->runUntil(net->now() + config.getHeartbeatInterval());
+        auto noi = net->getNextReadyRequest();
+        auto& request = noi->getRequest();
+        ASSERT_EQUALS("replSetHeartbeat", request.cmdObj.firstElement().fieldNameStringData());
+
+        net->scheduleResponse(noi, net->now(), makeResponseStatus(hbRespObj));
+        net->runReadyNetworkOperations();
+        net->exitNetwork();
+
+        ASSERT_EQUALS(commitPoint, getReplCoord()->getLastCommittedOpTime());
+    }
+}
+
 TEST_F(ReplCoordTest, PrepareOplogQueryMetadata) {
     assertStartSuccess(BSON("_id"
                             << "mySet"
@@ -4710,11 +4936,11 @@ TEST_F(ReplCoordTest, PrepareOplogQueryMetadata) {
                        HostAndPort("node1", 12345));
     ASSERT_OK(getReplCoord()->setFollowerMode(MemberState::RS_SECONDARY));
 
-    OpTime optime1{Timestamp(10, 0), 3};
+    OpTime optime1{Timestamp(10, 0), 5};
     OpTime optime2{Timestamp(11, 2), 5};
 
-    getReplCoord()->advanceCommitPoint(optime1);
     getReplCoord()->setMyLastAppliedOpTime(optime2);
+    getReplCoord()->advanceCommitPoint(optime1);
 
     auto opCtx = makeOperationContext();
 
@@ -5266,9 +5492,10 @@ TEST_F(ReplCoordTest,
                        HostAndPort("node1", 12345));
 
 
-    OpTime time1(Timestamp(100, 1), 1);
-    OpTime time2(Timestamp(100, 2), 1);
-    OpTime time3(Timestamp(100, 3), 1);
+    auto term = getTopoCoord().getTerm();
+    OpTime time1(Timestamp(100, 1), term);
+    OpTime time2(Timestamp(100, 2), term);
+    OpTime time3(Timestamp(100, 3), term);
 
     auto consistency = ReplicationCoordinator::DataConsistency::Consistent;
     getReplCoord()->setMyLastAppliedOpTime(time1);
@@ -5278,6 +5505,110 @@ TEST_F(ReplCoordTest,
     getReplCoord()->setMyLastAppliedOpTimeForward(time2, consistency);
     getReplCoord()->setMyLastDurableOpTimeForward(time2);
     ASSERT_EQUALS(time3, getReplCoord()->getMyLastAppliedOpTime());
+}
+
+DEATH_TEST_F(ReplCoordTest,
+             SetMyLastOpTimeToTimestampLesserThanCurrentLastOpTimeTimestampButWithHigherTerm,
+             "opTime.getTimestamp() > myLastAppliedOpTime.getTimestamp()") {
+    assertStartSuccess(BSON("_id"
+                            << "mySet"
+                            << "version"
+                            << 2
+                            << "members"
+                            << BSON_ARRAY(BSON("host"
+                                               << "node1:12345"
+                                               << "_id"
+                                               << 0))),
+                       HostAndPort("node1", 12345));
+
+
+    OpTime time1(Timestamp(100, 1), 1);
+    OpTime time2(Timestamp(99, 1), 2);
+
+    auto consistency = ReplicationCoordinator::DataConsistency::Consistent;
+    getReplCoord()->setMyLastAppliedOpTime(time1);
+    ASSERT_EQUALS(time1, getReplCoord()->getMyLastAppliedOpTime());
+    // Since in pv1, oplog entries are ordered by non-decreasing
+    // term and strictly increasing timestamp, it leads to invariant failure.
+    getReplCoord()->setMyLastAppliedOpTimeForward(time2, consistency);
+}
+
+DEATH_TEST_F(ReplCoordTest,
+             SetMyLastOpTimeToTimestampEqualToCurrentLastOpTimeTimestampButWithHigherTerm,
+             "opTime.getTimestamp() > myLastAppliedOpTime.getTimestamp()") {
+    assertStartSuccess(BSON("_id"
+                            << "mySet"
+                            << "version"
+                            << 2
+                            << "members"
+                            << BSON_ARRAY(BSON("host"
+                                               << "node1:12345"
+                                               << "_id"
+                                               << 0))),
+                       HostAndPort("node1", 12345));
+
+
+    OpTime time1(Timestamp(100, 1), 1);
+    OpTime time2(Timestamp(100, 1), 2);
+
+    auto consistency = ReplicationCoordinator::DataConsistency::Consistent;
+    getReplCoord()->setMyLastAppliedOpTime(time1);
+    ASSERT_EQUALS(time1, getReplCoord()->getMyLastAppliedOpTime());
+    // Since in pv1, oplog entries are ordered by non-decreasing
+    // term and strictly increasing timestamp, it leads to invariant failure.
+    getReplCoord()->setMyLastAppliedOpTimeForward(time2, consistency);
+}
+
+DEATH_TEST_F(ReplCoordTest,
+             SetMyLastOpTimeToTimestampGreaterThanCurrentLastOpTimeTimestampButWithLesserTerm,
+             "opTime.getTimestamp() < myLastAppliedOpTime.getTimestamp()") {
+    assertStartSuccess(BSON("_id"
+                            << "mySet"
+                            << "version"
+                            << 2
+                            << "members"
+                            << BSON_ARRAY(BSON("host"
+                                               << "node1:12345"
+                                               << "_id"
+                                               << 0))),
+                       HostAndPort("node1", 12345));
+
+
+    OpTime time1(Timestamp(100, 1), 1);
+    OpTime time2(Timestamp(100, 2), 0);
+
+    auto consistency = ReplicationCoordinator::DataConsistency::Consistent;
+    getReplCoord()->setMyLastAppliedOpTime(time1);
+    ASSERT_EQUALS(time1, getReplCoord()->getMyLastAppliedOpTime());
+    // Since in pv1, oplog entries are ordered by non-decreasing
+    // term and strictly increasing timestamp, it leads to invariant failure.
+    getReplCoord()->setMyLastAppliedOpTimeForward(time2, consistency);
+}
+
+DEATH_TEST_F(ReplCoordTest,
+             SetMyLastOpTimeToTimestampEqualToCurrentLastOpTimeTimestampButWithLesserTerm,
+             "opTime.getTimestamp() < myLastAppliedOpTime.getTimestamp()") {
+    assertStartSuccess(BSON("_id"
+                            << "mySet"
+                            << "version"
+                            << 2
+                            << "members"
+                            << BSON_ARRAY(BSON("host"
+                                               << "node1:12345"
+                                               << "_id"
+                                               << 0))),
+                       HostAndPort("node1", 12345));
+
+
+    OpTime time1(Timestamp(100, 1), 1);
+    OpTime time2(Timestamp(100, 1), 0);
+
+    auto consistency = ReplicationCoordinator::DataConsistency::Consistent;
+    getReplCoord()->setMyLastAppliedOpTime(time1);
+    ASSERT_EQUALS(time1, getReplCoord()->getMyLastAppliedOpTime());
+    // Since in pv1, oplog entries are ordered by non-decreasing
+    // term and strictly increasing timestamp, it leads to invariant failure.
+    getReplCoord()->setMyLastAppliedOpTimeForward(time2, consistency);
 }
 
 TEST_F(ReplCoordTest, OnlyForwardSyncProgressForOtherNodesWhenTheNodesAreBelievedToBeUp) {

@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -138,31 +137,38 @@ PlanStage* buildStages(OperationContext* opCtx,
             return new SortKeyGeneratorStage(
                 opCtx, childStage, ws, keyGenNode->sortSpec, cq.getCollator());
         }
-        case STAGE_PROJECTION: {
-            const ProjectionNode* pn = static_cast<const ProjectionNode*>(root);
-            PlanStage* childStage = buildStages(opCtx, collection, cq, qsol, pn->children[0], ws);
+        case STAGE_PROJECTION_DEFAULT: {
+            auto pn = static_cast<const ProjectionNodeDefault*>(root);
+            unique_ptr<PlanStage> childStage{
+                buildStages(opCtx, collection, cq, qsol, pn->children[0], ws)};
             if (nullptr == childStage) {
                 return nullptr;
             }
-
-            ProjectionStageParams params;
-            params.projObj = pn->projection;
-            params.collator = cq.getCollator();
-
-            // Stuff the right data into the params depending on what proj impl we use.
-            if (ProjectionNode::DEFAULT == pn->projType) {
-                params.fullExpression = pn->fullExpression;
-                params.projImpl = ProjectionStageParams::NO_FAST_PATH;
-            } else if (ProjectionNode::COVERED_ONE_INDEX == pn->projType) {
-                params.projImpl = ProjectionStageParams::COVERED_ONE_INDEX;
-                params.coveredKeyObj = pn->coveredKeyObj;
-                invariant(!pn->coveredKeyObj.isEmpty());
-            } else {
-                invariant(ProjectionNode::SIMPLE_DOC == pn->projType);
-                params.projImpl = ProjectionStageParams::SIMPLE_DOC;
+            return new ProjectionStageDefault(opCtx,
+                                              pn->projection,
+                                              ws,
+                                              std::move(childStage),
+                                              pn->fullExpression,
+                                              cq.getCollator());
+        }
+        case STAGE_PROJECTION_COVERED: {
+            auto pn = static_cast<const ProjectionNodeCovered*>(root);
+            unique_ptr<PlanStage> childStage{
+                buildStages(opCtx, collection, cq, qsol, pn->children[0], ws)};
+            if (nullptr == childStage) {
+                return nullptr;
             }
-
-            return new ProjectionStage(opCtx, params, ws, childStage);
+            return new ProjectionStageCovered(
+                opCtx, pn->projection, ws, std::move(childStage), pn->coveredKeyObj);
+        }
+        case STAGE_PROJECTION_SIMPLE: {
+            auto pn = static_cast<const ProjectionNodeSimple*>(root);
+            unique_ptr<PlanStage> childStage{
+                buildStages(opCtx, collection, cq, qsol, pn->children[0], ws)};
+            if (nullptr == childStage) {
+                return nullptr;
+            }
+            return new ProjectionStageSimple(opCtx, pn->projection, ws, std::move(childStage));
         }
         case STAGE_LIMIT: {
             const LimitNode* ln = static_cast<const LimitNode*>(root);
@@ -246,12 +252,11 @@ PlanStage* buildStages(OperationContext* opCtx,
             params.addPointMeta = node->addPointMeta;
             params.addDistMeta = node->addDistMeta;
 
-            IndexDescriptor* twoDIndex = collection->getIndexCatalog()->findIndexByName(
+            const IndexDescriptor* twoDIndex = collection->getIndexCatalog()->findIndexByName(
                 opCtx, node->index.identifier.catalogName);
             invariant(twoDIndex);
 
-            GeoNear2DStage* nearStage =
-                new GeoNear2DStage(params, opCtx, ws, collection, twoDIndex);
+            GeoNear2DStage* nearStage = new GeoNear2DStage(params, opCtx, ws, twoDIndex);
 
             return nearStage;
         }
@@ -265,19 +270,19 @@ PlanStage* buildStages(OperationContext* opCtx,
             params.addPointMeta = node->addPointMeta;
             params.addDistMeta = node->addDistMeta;
 
-            IndexDescriptor* s2Index = collection->getIndexCatalog()->findIndexByName(
+            const IndexDescriptor* s2Index = collection->getIndexCatalog()->findIndexByName(
                 opCtx, node->index.identifier.catalogName);
             invariant(s2Index);
 
-            return new GeoNear2DSphereStage(params, opCtx, ws, collection, s2Index);
+            return new GeoNear2DSphereStage(params, opCtx, ws, s2Index);
         }
         case STAGE_TEXT: {
             const TextNode* node = static_cast<const TextNode*>(root);
-            IndexDescriptor* desc = collection->getIndexCatalog()->findIndexByName(
+            const IndexDescriptor* desc = collection->getIndexCatalog()->findIndexByName(
                 opCtx, node->index.identifier.catalogName);
             invariant(desc);
-            const FTSAccessMethod* fam =
-                static_cast<const FTSAccessMethod*>(collection->getIndexCatalog()->getIndex(desc));
+            const FTSAccessMethod* fam = static_cast<const FTSAccessMethod*>(
+                collection->getIndexCatalog()->getEntry(desc)->accessMethod());
             invariant(fam);
 
             TextStageParams params(fam->getSpec());
@@ -298,11 +303,11 @@ PlanStage* buildStages(OperationContext* opCtx,
             if (nullptr == childStage) {
                 return nullptr;
             }
-            return new ShardFilterStage(opCtx,
-                                        CollectionShardingState::get(opCtx, collection->ns())
-                                            ->getMetadataForOperation(opCtx),
-                                        ws,
-                                        childStage);
+            return new ShardFilterStage(
+                opCtx,
+                CollectionShardingState::get(opCtx, collection->ns())->getOrphansFilter(opCtx),
+                ws,
+                childStage);
         }
         case STAGE_DISTINCT_SCAN: {
             const DistinctNode* dn = static_cast<const DistinctNode*>(root);
@@ -364,6 +369,7 @@ PlanStage* buildStages(OperationContext* opCtx,
             return new EnsureSortedStage(opCtx, esn->pattern, ws, childStage);
         }
         case STAGE_CACHED_PLAN:
+        case STAGE_CHANGE_STREAM_PROXY:
         case STAGE_COUNT:
         case STAGE_DELETE:
         case STAGE_EOF:
@@ -376,6 +382,7 @@ PlanStage* buildStages(OperationContext* opCtx,
         case STAGE_SUBPLAN:
         case STAGE_TEXT_MATCH:
         case STAGE_TEXT_OR:
+        case STAGE_TRIAL:
         case STAGE_UNKNOWN:
         case STAGE_UPDATE: {
             mongoutils::str::stream ss;

@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -52,11 +51,11 @@ public:
     void rollover();
     void condrollover(int newValue);
 
-    AtomicInt32 regular;
-    AtomicInt32 warning;
-    AtomicInt32 msg;
-    AtomicInt32 user;
-    AtomicInt32 rollovers;
+    AtomicWord<int> regular;
+    AtomicWord<int> warning;
+    AtomicWord<int> msg;
+    AtomicWord<int> user;
+    AtomicWord<int> rollovers;
 };
 
 extern AssertionCount assertionCount;
@@ -123,7 +122,7 @@ public:
         return _status.extraInfo<ErrorDetail>();
     }
 
-    static AtomicBool traceExceptions;
+    static AtomicWord<bool> traceExceptions;
 
 protected:
     DBException(const Status& status) : _status(status) {

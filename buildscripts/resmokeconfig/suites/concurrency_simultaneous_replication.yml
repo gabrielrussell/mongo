@@ -43,20 +43,22 @@ selector:
 executor:
   archive:
     hooks:
-      - CheckReplDBHashInBackground
       - CheckReplDBHash
       - ValidateCollections
     tests: true
   config:
     shell_options:
       readMode: commands
+      global_vars:
+        TestData:
+          skipDropDatabaseOnDatabaseDropPending: true
   hooks:
   # The CheckReplDBHash hook waits until all operations have replicated to and have been applied
   # on the secondaries, so we run the ValidateCollections hook after it to ensure we're
   # validating the entire contents of the collection.
   #
   # TODO SERVER-26466: Add CheckReplOplogs hook to the concurrency suite.
-  - class: CheckReplDBHashInBackground
+  # TODO SERVER-39321: Re-enable and archive the CheckReplDBHashInBackground hook.
   - class: CheckReplDBHash
   - class: ValidateCollections
   - class: CleanupConcurrencyWorkloads
@@ -66,5 +68,4 @@ executor:
       oplogSize: 1024
       set_parameters:
         enableTestCommands: 1
-        numInitialSyncAttempts: 1
     num_nodes: 3

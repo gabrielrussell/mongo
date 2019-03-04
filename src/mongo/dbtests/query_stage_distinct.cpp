@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -128,7 +127,7 @@ public:
         Collection* coll = ctx.getCollection();
 
         // Set up the distinct stage.
-        std::vector<IndexDescriptor*> indexes;
+        std::vector<const IndexDescriptor*> indexes;
         coll->getIndexCatalog()->findIndexesByKeyPattern(&_opCtx, BSON("a" << 1), false, &indexes);
         ASSERT_EQ(indexes.size(), 1U);
 
@@ -194,7 +193,7 @@ public:
         Collection* coll = ctx.getCollection();
 
         // Set up the distinct stage.
-        std::vector<IndexDescriptor*> indexes;
+        std::vector<const IndexDescriptor*> indexes;
         coll->getIndexCatalog()->findIndexesByKeyPattern(&_opCtx, BSON("a" << 1), false, &indexes);
         verify(indexes.size() == 1);
 
@@ -260,7 +259,7 @@ public:
         AutoGetCollectionForReadCommand ctx(&_opCtx, nss);
         Collection* coll = ctx.getCollection();
 
-        std::vector<IndexDescriptor*> indices;
+        std::vector<const IndexDescriptor*> indices;
         coll->getIndexCatalog()->findIndexesByKeyPattern(
             &_opCtx, BSON("a" << 1 << "b" << 1), false, &indices);
         ASSERT_EQ(1U, indices.size());
@@ -289,7 +288,6 @@ public:
 
         while (PlanStage::IS_EOF != (state = distinct.work(&wsid))) {
             ASSERT_NE(PlanStage::FAILURE, state);
-            ASSERT_NE(PlanStage::DEAD, state);
             if (PlanStage::ADVANCED == state) {
                 seen.push_back(getIntFieldDotted(ws, wsid, "b"));
             }

@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -50,6 +49,7 @@
 #include "mongo/db/client.h"
 #include "mongo/db/jsobj.h"
 #include "mongo/db/namespace_string.h"
+#include "mongo/db/operation_context.h"
 #include "mongo/db/pipeline/aggregation_request.h"
 #include "mongo/db/pipeline/lite_parsed_pipeline.h"
 #include "mongo/util/assert_util.h"
@@ -87,10 +87,15 @@ Status checkAuthForCreateOrModifyView(AuthorizationSession* authzSession,
     // This check performs some validation but it is not exhaustive and may allow for an invalid
     // pipeline specification. In this case the authorization check will succeed but the pipeline
     // will fail to parse later in Command::run().
-    return authzSession->checkAuthForAggregate(
+    auto statusWithPrivs = authzSession->getPrivilegesForAggregate(
         viewOnNs,
         BSON("aggregate" << viewOnNs.coll() << "pipeline" << viewPipeline << "cursor" << BSONObj()),
         isMongos);
+    PrivilegeVector privileges = uassertStatusOK(statusWithPrivs);
+    if (!authzSession->isAuthorizedForPrivileges(privileges)) {
+        return Status(ErrorCodes::Unauthorized, "unauthorized");
+    }
+    return Status::OK();
 }
 
 }  // namespace
@@ -134,6 +139,7 @@ Status AuthorizationSessionImpl::addAndAuthorizeUser(OperationContext* opCtx,
         return AuthorizationManager::authenticationFailedStatus;
     }
 
+    stdx::lock_guard<Client> lk(*opCtx->getClient());
     _authenticatedUsers.add(std::move(user));
 
     // If there are any users and roles in the impersonation data, clear it out.
@@ -163,7 +169,8 @@ User* AuthorizationSessionImpl::getSingleUser() {
     return lookupUser(userName);
 }
 
-void AuthorizationSessionImpl::logoutDatabase(StringData dbname) {
+void AuthorizationSessionImpl::logoutDatabase(OperationContext* opCtx, StringData dbname) {
+    stdx::lock_guard<Client> lk(*opCtx->getClient());
     _authenticatedUsers.removeByDBName(dbname);
     clearImpersonatedUserData();
     _buildAuthenticatedRolesVector();
@@ -188,9 +195,18 @@ std::string AuthorizationSessionImpl::getAuthenticatedUserNamesToken() {
     return ret;
 }
 
-void AuthorizationSessionImpl::grantInternalAuthorization() {
+void AuthorizationSessionImpl::grantInternalAuthorization(Client* client) {
+    stdx::lock_guard<Client> lk(*client);
     _authenticatedUsers.add(internalSecurity.user);
     _buildAuthenticatedRolesVector();
+}
+
+/**
+ * Overloaded function - takes in the opCtx of the current AuthSession
+ * and calls the function above.
+ */
+void AuthorizationSessionImpl::grantInternalAuthorization(OperationContext* opCtx) {
+    grantInternalAuthorization(opCtx->getClient());
 }
 
 PrivilegeVector AuthorizationSessionImpl::getDefaultPrivileges() {
@@ -236,23 +252,19 @@ PrivilegeVector AuthorizationSessionImpl::getDefaultPrivileges() {
     return defaultPrivileges;
 }
 
-Status AuthorizationSessionImpl::checkAuthForAggregate(const NamespaceString& nss,
-                                                       const BSONObj& cmdObj,
-                                                       bool isMongos) {
+StatusWith<PrivilegeVector> AuthorizationSessionImpl::getPrivilegesForAggregate(
+    const NamespaceString& nss, const BSONObj& cmdObj, bool isMongos) {
     if (!nss.isValid()) {
         return Status(ErrorCodes::InvalidNamespace,
                       mongoutils::str::stream() << "Invalid input namespace, " << nss.ns());
     }
 
-    // If this connection does not need to be authenticated (for instance, if auth is disabled),
-    // return Status::OK() immediately.
-    if (_externalState->shouldIgnoreAuthChecks()) {
-        return Status::OK();
-    }
+    PrivilegeVector privileges;
 
-    // We require at least one authenticated user when running aggregate with auth enabled.
-    if (!isAuthenticated()) {
-        return Status(ErrorCodes::Unauthorized, "unauthorized");
+    // If this connection does not need to be authenticated (for instance, if auth is disabled),
+    // returns an empty requirements set.
+    if (_externalState->shouldIgnoreAuthChecks()) {
+        return privileges;
     }
 
     auto statusWithAggRequest = AggregationRequest::parseFromBSON(nss, cmdObj);
@@ -265,44 +277,28 @@ Status AuthorizationSessionImpl::checkAuthForAggregate(const NamespaceString& ns
 
     // If the aggregation pipeline is empty, confirm the user is authorized for find on 'nss'.
     if (pipeline.empty()) {
-        if (!isAuthorizedForPrivilege(
-                Privilege(ResourcePattern::forExactNamespace(nss), ActionType::find))) {
-            return Status(ErrorCodes::Unauthorized, "unauthorized");
-        }
-
-        return Status::OK();
+        Privilege currentPriv =
+            Privilege(ResourcePattern::forExactNamespace(nss), ActionType::find);
+        Privilege::addPrivilegeToPrivilegeVector(&privileges, currentPriv);
+        return privileges;
     }
 
-    // Confirm the user is authorized for the pipeline's initial document source. We confirm a user
-    // is authorized incrementally rather than once for the entire pipeline. This will prevent a
-    // malicious user, who doesn't have access to the initial document source, from consuming the
-    // resources needed to parse a potentially large pipeline.
-    auto liteParsedFirstDocumentSource = LiteParsedDocumentSource::parse(aggRequest, pipeline[0]);
-    if (!liteParsedFirstDocumentSource->isInitialSource() &&
-        !isAuthorizedForPrivilege(
-            Privilege(ResourcePattern::forExactNamespace(nss), ActionType::find))) {
-        return Status(ErrorCodes::Unauthorized, "unauthorized");
+    // If the first stage of the pipeline is not an initial source, the pipeline is implicitly
+    // reading documents from the underlying collection. The client must be authorized to do so.
+    auto liteParsedDocSource = LiteParsedDocumentSource::parse(aggRequest, pipeline[0]);
+    if (!liteParsedDocSource->isInitialSource()) {
+        Privilege currentPriv =
+            Privilege(ResourcePattern::forExactNamespace(nss), ActionType::find);
+        Privilege::addPrivilegeToPrivilegeVector(&privileges, currentPriv);
     }
 
-    // We have done the work to lite parse the first stage. Given that, we check required privileges
-    // for it using 'liteParsedFirstDocumentSource' regardless of whether is an initial source or
-    // not.
-    if (!isAuthorizedForPrivileges(liteParsedFirstDocumentSource->requiredPrivileges(isMongos))) {
-        return Status(ErrorCodes::Unauthorized, "unauthorized");
+    // Confirm privileges for the pipeline.
+    for (auto&& pipelineStage : pipeline) {
+        liteParsedDocSource = LiteParsedDocumentSource::parse(aggRequest, pipelineStage);
+        PrivilegeVector currentPrivs = liteParsedDocSource->requiredPrivileges(isMongos);
+        Privilege::addPrivilegesToPrivilegeVector(&privileges, currentPrivs);
     }
-
-    // Confirm privileges for the remainder of the pipepline. Start with the second stage as we have
-    // already authorized the first.
-    auto pipelineIter = pipeline.begin() + 1;
-
-    for (; pipelineIter != pipeline.end(); ++pipelineIter) {
-        auto liteParsedDocSource = LiteParsedDocumentSource::parse(aggRequest, *pipelineIter);
-        if (!isAuthorizedForPrivileges(liteParsedDocSource->requiredPrivileges(isMongos))) {
-            return Status(ErrorCodes::Unauthorized, "unauthorized");
-        }
-    }
-
-    return Status::OK();
+    return privileges;
 }
 
 Status AuthorizationSessionImpl::checkAuthForFind(const NamespaceString& ns, bool hasTerm) {
@@ -414,8 +410,6 @@ Status AuthorizationSessionImpl::checkAuthForKillCursors(const NamespaceString& 
     ResourcePattern target;
     if (ns.isListCollectionsCursorNS()) {
         target = ResourcePattern::forDatabaseName(ns.db());
-    } else if (ns.isListIndexesCursorNS()) {
-        target = ResourcePattern::forExactNamespace(ns.getTargetNSForListIndexes());
     } else {
         target = ResourcePattern::forExactNamespace(ns);
     }
@@ -665,7 +659,9 @@ static int buildResourceSearchList(const ResourcePattern& target,
         }
         resourceSearchList[size++] = ResourcePattern::forCollectionName(target.ns().coll());
     } else if (target.isDatabasePattern()) {
-        resourceSearchList[size++] = ResourcePattern::forAnyNormalResource();
+        if (target.ns().db() != "local" && target.ns().db() != "config") {
+            resourceSearchList[size++] = ResourcePattern::forAnyNormalResource();
+        }
     }
     resourceSearchList[size++] = target;
     dassert(size <= resourceSearchListCapacity);
@@ -699,16 +695,20 @@ bool AuthorizationSessionImpl::isAuthorizedToChangeOwnCustomDataAsUser(const Use
                                                                 ActionType::changeOwnCustomData);
 }
 
-bool AuthorizationSessionImpl::isAuthorizedToListCollections(StringData dbname,
-                                                             const BSONObj& cmdObj) {
+StatusWith<PrivilegeVector> AuthorizationSessionImpl::checkAuthorizedToListCollections(
+    StringData dbname, const BSONObj& cmdObj) {
     if (cmdObj["authorizedCollections"].trueValue() && cmdObj["nameOnly"].trueValue() &&
         AuthorizationSessionImpl::isAuthorizedForAnyActionOnAnyResourceInDB(dbname)) {
-        return true;
+        return PrivilegeVector();
     }
 
     // Check for the listCollections ActionType on the database.
-    return AuthorizationSessionImpl::isAuthorizedForActionsOnResource(
-        ResourcePattern::forDatabaseName(dbname), ActionType::listCollections);
+    PrivilegeVector privileges = {
+        Privilege(ResourcePattern::forDatabaseName(dbname), ActionType::listCollections)};
+    if (AuthorizationSessionImpl::isAuthorizedForPrivileges(privileges)) {
+        return privileges;
+    }
+    return Status(ErrorCodes::Unauthorized, "unauthorized");
 }
 
 bool AuthorizationSessionImpl::isAuthenticatedAsUserWithRole(const RoleName& roleName) {
@@ -732,17 +732,22 @@ void AuthorizationSessionImpl::_refreshUserInfoAsNeeded(OperationContext* opCtx)
     while (it != _authenticatedUsers.end()) {
         auto& user = *it;
         if (!user->isValid()) {
-            // The user is invalid, so make sure that we erase it from _authenticateUsers at the
-            // end of this block.
-            auto removeGuard = MakeGuard([&] { _authenticatedUsers.removeAt(it++); });
-
             // Make a good faith effort to acquire an up-to-date user object, since the one
             // we've cached is marked "out-of-date."
             UserName name = user->getName();
             UserHandle updatedUser;
 
-            auto swUser = authMan.acquireUser(opCtx, name);
+            auto swUser = authMan.acquireUserForSessionRefresh(opCtx, name, user->getID());
             auto& status = swUser.getStatus();
+
+            // Take out a lock on the client here to ensure that no one reads while
+            // _authenticatedUsers is being modified.
+            stdx::lock_guard<Client> lk(*opCtx->getClient());
+
+            // The user is invalid, so make sure that we erase it from _authenticateUsers at the
+            // end of this block.
+            auto removeGuard = makeGuard([&] { _authenticatedUsers.removeAt(it++); });
+
             switch (status.code()) {
                 case ErrorCodes::OK: {
                     updatedUser = std::move(swUser.getValue());
@@ -768,7 +773,7 @@ void AuthorizationSessionImpl::_refreshUserInfoAsNeeded(OperationContext* opCtx)
                     }
 
                     // Success! Replace the old User object with the updated one.
-                    removeGuard.Dismiss();
+                    removeGuard.dismiss();
                     _authenticatedUsers.replaceAt(it, std::move(updatedUser));
                     LOG(1) << "Updated session cache of user information for " << name;
                     break;
@@ -792,7 +797,7 @@ void AuthorizationSessionImpl::_refreshUserInfoAsNeeded(OperationContext* opCtx)
                     warning() << "Could not fetch updated user privilege information for " << name
                               << "; continuing to use old information.  Reason is "
                               << redact(status);
-                    removeGuard.Dismiss();
+                    removeGuard.dismiss();
                     break;
             }
         }
@@ -923,7 +928,7 @@ void AuthorizationSessionImpl::setImpersonatedUserData(std::vector<UserName> use
     _impersonationFlag = true;
 }
 
-bool AuthorizationSessionImpl::isCoauthorizedWithClient(Client* opClient) {
+bool AuthorizationSessionImpl::isCoauthorizedWithClient(Client* opClient, WithLock opClientLock) {
     auto getUserNames = [](AuthorizationSession* authSession) {
         if (authSession->isImpersonating()) {
             return authSession->getImpersonatedUserNames();
@@ -951,6 +956,7 @@ bool AuthorizationSessionImpl::isCoauthorizedWith(UserNameIterator userNameIter)
     if (!getAuthorizationManager().isAuthEnabled()) {
         return true;
     }
+
     if (!userNameIter.more() && !isAuthenticated()) {
         return true;
     }

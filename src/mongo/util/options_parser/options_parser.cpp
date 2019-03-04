@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -60,9 +59,6 @@
 
 namespace mongo {
 namespace optionenvironment {
-
-using namespace std;
-using std::shared_ptr;
 
 namespace po = boost::program_options;
 namespace fs = boost::filesystem;
@@ -630,7 +626,12 @@ Status YAMLNodeToValue(const YAML::Node& YAMLNode,
 
         for (YAML::const_iterator it = YAMLNode.begin(); it != YAMLNode.end(); ++it) {
             auto elementKey = it->first.Scalar();
-            const auto& elementVal = it->second;
+            // Because the object returned by dereferencing the `YAMLNode` iterator is an emphemeral
+            // proxy value, the objects within it do not get lifetime extension when referred by
+            // reference. By making `elementVal` hold a copy of the element, we avoid a bug, found
+            // by ASAN, where `elementVal` will be an invalid reference immediately after its
+            // creation.
+            const auto elementVal = it->second;
 
             if (elementVal.IsMap()) {
                 auto swExpansion = runYAMLExpansion(
@@ -681,7 +682,7 @@ Status checkLongName(const po::variables_map& vm,
     // Trim off the short option from our name so we can look it up correctly in our map
     std::string long_name;
     std::string::size_type commaOffset = singleName.find(',');
-    if (commaOffset != string::npos) {
+    if (commaOffset != std::string::npos) {
         if (commaOffset != singleName.size() - 2) {
             StringBuilder sb;
             sb << "Unexpected comma in option name: \"" << singleName << "\""
@@ -1094,6 +1095,18 @@ Status OptionsParser::parseCommandLine(const OptionSection& options,
         argc++;
     }
 
+    // The function boost::program_options makes the assumption there is at
+    // least one argument passed (usually the executable). When no options are
+    // passed to the executable we're left with an argc value of 0 and an
+    // empty argv_buffer vector from our post-processing above.
+    //
+    // This simply ensures that we always have at least one argument for
+    // boost::program_options
+    if (!argc) {
+        argc = 1;
+        argv_buffer.push_back(nullptr);
+    }
+
     /**
      * Style options for boost command line parser
      *
@@ -1122,7 +1135,7 @@ Status OptionsParser::parseCommandLine(const OptionSection& options,
     }
 
     try {
-        po::store(po::command_line_parser(argc, (argc > 0 ? &argv_buffer[0] : NULL))
+        po::store(po::command_line_parser(argc, &argv_buffer[0])
                       .options(boostOptions)
                       .positional(boostPositionalOptions)
                       .style(style)
@@ -1324,7 +1337,7 @@ namespace {
  * instead they only support "--option=value", this function
  * attempts to workound this by translating the former into the later.
  */
-StatusWith<std::vector<std::string>> transformImplictOptions(
+StatusWith<std::vector<std::string>> transformImplicitOptions(
     const OptionSection& options, const std::vector<std::string>& argvOriginal) {
     if (argvOriginal.empty()) {
         return {std::vector<std::string>()};
@@ -1336,7 +1349,7 @@ StatusWith<std::vector<std::string>> transformImplictOptions(
         return ret;
     }
 
-    std::map<string, const OptionDescription*> implicitOptions;
+    std::map<std::string, const OptionDescription*> implicitOptions;
     for (const auto& opt : optionDescs) {
         if (opt._implicit.isEmpty()) {
             continue;
@@ -1347,7 +1360,7 @@ StatusWith<std::vector<std::string>> transformImplictOptions(
         // single character.
         // This is validated as such by the boost option parser later in the code.
         size_t pos = opt._singleName.find(',');
-        if (pos != string::npos) {
+        if (pos != std::string::npos) {
             implicitOptions[opt._singleName.substr(0, pos)] = &opt;
             implicitOptions[opt._singleName.substr(pos + 1)] = &opt;
         } else {
@@ -1356,7 +1369,7 @@ StatusWith<std::vector<std::string>> transformImplictOptions(
 
         for (const std::string& deprecatedSingleName : opt._deprecatedSingleNames) {
             pos = deprecatedSingleName.find(',');
-            if (pos != string::npos) {
+            if (pos != std::string::npos) {
                 implicitOptions[deprecatedSingleName.substr(0, pos)] = &opt;
                 implicitOptions[deprecatedSingleName.substr(pos + 1)] = &opt;
             } else {
@@ -1557,7 +1570,7 @@ Status OptionsParser::run(const OptionSection& options,
     Environment configEnvironment;
     Environment composedEnvironment;
 
-    auto swTransform = transformImplictOptions(options, argvOriginal);
+    auto swTransform = transformImplicitOptions(options, argvOriginal);
     if (!swTransform.isOK()) {
         return swTransform.getStatus();
     }

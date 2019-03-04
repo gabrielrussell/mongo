@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -90,10 +89,11 @@ public:
         return nullptr;
     }
 
-    void findIndexesByKeyPattern(OperationContext* const opCtx,
-                                 const BSONObj& key,
-                                 const bool includeUnfinishedIndexes,
-                                 std::vector<IndexDescriptor*>* const matches) const override {}
+    void findIndexesByKeyPattern(
+        OperationContext* const opCtx,
+        const BSONObj& key,
+        const bool includeUnfinishedIndexes,
+        std::vector<const IndexDescriptor*>* const matches) const override {}
 
     IndexDescriptor* findShardKeyPrefixedIndex(OperationContext* const opCtx,
                                                const BSONObj& shardKey,
@@ -103,7 +103,7 @@ public:
 
     void findIndexByType(OperationContext* const opCtx,
                          const std::string& type,
-                         std::vector<IndexDescriptor*>& matches,
+                         std::vector<const IndexDescriptor*>& matches,
                          const bool includeUnfinishedIndexes = false) const override {}
 
     const IndexDescriptor* refreshEntry(OperationContext* const opCtx,
@@ -119,12 +119,9 @@ public:
         return nullptr;
     }
 
-    IndexAccessMethod* getIndex(const IndexDescriptor* const desc) override {
-        return nullptr;
-    }
-
-    const IndexAccessMethod* getIndex(const IndexDescriptor* const desc) const override {
-        return nullptr;
+    std::vector<std::shared_ptr<const IndexCatalogEntry>> getAllReadyEntriesShared()
+        const override {
+        return {};
     }
 
     Status checkUnfinished() const override {
@@ -146,13 +143,19 @@ public:
         return original;
     }
 
+    std::vector<BSONObj> removeExistingIndexes(OperationContext* const opCtx,
+                                               const std::vector<BSONObj>& indexSpecsToBuild,
+                                               bool throwOnErrors) const override {
+        return {};
+    }
+
     void dropAllIndexes(OperationContext* opCtx,
                         bool includingIdIndex,
                         stdx::function<void(const IndexDescriptor*)> onDropFn) override {}
 
     void dropAllIndexes(OperationContext* opCtx, bool includingIdIndex) override {}
 
-    Status dropIndex(OperationContext* const opCtx, IndexDescriptor* const desc) override {
+    Status dropIndex(OperationContext* const opCtx, const IndexDescriptor* const desc) override {
         return Status::OK();
     }
 
@@ -168,6 +171,10 @@ public:
                                    const IndexDescriptor* const idx) {
         return {};
     }
+
+    void setMultikeyPaths(OperationContext* const opCtx,
+                          const IndexDescriptor* const desc,
+                          const MultikeyPaths& multikeyPaths) override {}
 
     Status indexRecords(OperationContext* const opCtx,
                         const std::vector<BsonRecord>& bsonRecords,
@@ -190,12 +197,16 @@ public:
                        const bool noWarn,
                        int64_t* const keysDeletedOut) override {}
 
+    virtual Status compactIndexes(OperationContext* opCtx) override {
+        return Status::OK();
+    }
+
     std::string getAccessMethodName(const BSONObj& keyPattern) override {
         return "";
     }
 
-    std::unique_ptr<IndexBuildBlockInterface> createIndexBuildBlock(OperationContext* opCtx,
-                                                                    const BSONObj& spec) override {
+    std::unique_ptr<IndexBuildBlockInterface> createIndexBuildBlock(
+        OperationContext* opCtx, const BSONObj& spec, IndexBuildMethod method) override {
         return {};
     }
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Public Domain 2014-2018 MongoDB, Inc.
+# Public Domain 2014-2019 MongoDB, Inc.
 # Public Domain 2008-2014 WiredTiger, Inc.
 #
 # This is free and unencumbered software released into the public domain.
@@ -201,6 +201,8 @@ class test_txn19(wttest.WiredTigerTestCase, suite_subprocess):
     def corrupt_log(self, homedir):
         if not self.corrupted():
             return
+        # Mark this test has having corrupted files
+        self.databaseCorrupted()
         self.f(self.log_number_to_file_name(homedir, self.corruptpos))
 
         # Corrupt a second log file if needed

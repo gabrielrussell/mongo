@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -150,6 +149,14 @@ public:
     void keepShortest(const FieldRef& toInsert) {
         const FieldRef* inserted = &(*_ownedFieldRefs.insert(toInsert).first);
         _fieldRefSet.keepShortest(inserted);
+    }
+
+    std::vector<std::string> serialize() const {
+        std::vector<std::string> ret;
+        for (const auto fieldRef : _fieldRefSet) {
+            ret.push_back(fieldRef->dottedField().toString());
+        }
+        return ret;
     }
 
     bool empty() const {

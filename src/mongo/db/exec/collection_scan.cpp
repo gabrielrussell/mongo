@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -122,7 +121,7 @@ PlanStage::StageState CollectionScan::doWork(WorkingSetID* out) {
                                                 << "Last seen record id: "
                                                 << _lastSeenId);
                     *out = WorkingSetCommon::allocateStatusMember(_workingSet, status);
-                    return PlanStage::DEAD;
+                    return PlanStage::FAILURE;
                 }
             }
 

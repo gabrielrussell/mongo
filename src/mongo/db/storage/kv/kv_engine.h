@@ -1,6 +1,3 @@
-// kv_engine.h
-
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -232,6 +229,11 @@ public:
         MONGO_UNREACHABLE;
     }
 
+    virtual StatusWith<std::vector<std::string>> extendBackupCursor(OperationContext* opCtx) {
+        return Status(ErrorCodes::CommandNotSupported,
+                      "The current storage engine doesn't support backup mode");
+    }
+
     virtual bool isDurable() const = 0;
 
     /**
@@ -306,7 +308,8 @@ public:
      * See `StorageEngine::setStableTimestamp`
      */
     virtual void setStableTimestamp(Timestamp stableTimestamp,
-                                    boost::optional<Timestamp> maximumTruncationTimestamp) {}
+                                    boost::optional<Timestamp> maximumTruncationTimestamp,
+                                    bool force) {}
 
     /**
      * See `StorageEngine::setInitialDataTimestamp`
@@ -395,6 +398,21 @@ public:
      * See `StorageEngine::replicationBatchIsComplete()`
      */
     virtual void replicationBatchIsComplete() const {};
+
+    /**
+     * Methods to access the storage engine's timestamps.
+     */
+    virtual Timestamp getCheckpointTimestamp() const {
+        MONGO_UNREACHABLE;
+    }
+
+    virtual Timestamp getOldestTimestamp() const {
+        MONGO_UNREACHABLE;
+    }
+
+    virtual Timestamp getStableTimestamp() const {
+        MONGO_UNREACHABLE;
+    }
 
     /**
      * The destructor will never be called from mongod, but may be called from tests.

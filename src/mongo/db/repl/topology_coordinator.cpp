@@ -1,4 +1,3 @@
-
 /**
  *    Copyright (C) 2018-present MongoDB, Inc.
  *
@@ -31,16 +30,20 @@
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kReplication
 #define LOG_FOR_ELECTION(level) \
     MONGO_LOG_COMPONENT(level, ::mongo::logger::LogComponent::kReplicationElection)
+#define LOG_FOR_HEARTBEATS(level) \
+    MONGO_LOG_COMPONENT(level, ::mongo::logger::LogComponent::kReplicationHeartbeats)
 
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/repl/topology_coordinator.h"
+#include "mongo/db/repl/topology_coordinator_gen.h"
 
 #include <limits>
 #include <string>
 
 #include "mongo/bson/simple_bsonobj_comparator.h"
 #include "mongo/db/audit.h"
+#include "mongo/db/catalog/commit_quorum_options.h"
 #include "mongo/db/client.h"
 #include "mongo/db/mongod_options.h"
 #include "mongo/db/operation_context.h"
@@ -50,7 +53,6 @@
 #include "mongo/db/repl/member_data.h"
 #include "mongo/db/repl/repl_set_heartbeat_args_v1.h"
 #include "mongo/db/repl/repl_set_heartbeat_response.h"
-#include "mongo/db/repl/repl_set_html_summary.h"
 #include "mongo/db/repl/repl_set_request_votes_args.h"
 #include "mongo/db/repl/rslog.h"
 #include "mongo/db/server_parameters.h"
@@ -67,10 +69,6 @@ namespace mongo {
 namespace repl {
 
 MONGO_FAIL_POINT_DEFINE(forceSyncSourceCandidate);
-
-// Controls how caught up in replication a secondary with higher priority than the current primary
-// must be before it will call for a priority takeover election.
-MONGO_EXPORT_STARTUP_SERVER_PARAMETER(priorityTakeoverFreshnessWindowSeconds, int, 2);
 
 // If this fail point is enabled, TopologyCoordinator::shouldChangeSyncSource() will ignore
 // the option TopologyCoordinator::Options::maxSyncSourceLagSecs. The sync source will not be
@@ -381,21 +379,13 @@ HostAndPort TopologyCoordinator::chooseNewSyncSource(Date_t now,
                     continue;
                 }
             }
-            // Do not select a candidate that is behind me. If I am up to date with the candidate,
-            // only select them if they have a higher lastOpCommitted.
-            if (std::tuple<OpTime, OpTime>(it->getHeartbeatAppliedOpTime(),
-                                           it->getHeartbeatLastOpCommitted()) <=
-                std::tie(lastOpTimeFetched, _lastCommittedOpTime)) {
-                LOG(1) << "Cannot select this sync source. Sync source cannot be behind me, and if "
-                          "I am up-to-date with the sync source, it must have a higher "
-                          "lastOpCommitted. "
+            // Only select a candidate that is ahead of me.
+            if (it->getHeartbeatAppliedOpTime() <= lastOpTimeFetched) {
+                LOG(1) << "Cannot select this sync source. Sync source must be ahead of me. "
                        << "Sync candidate: " << itMemberConfig.getHostAndPort()
                        << ", my last fetched oplog optime: " << lastOpTimeFetched.toBSON()
                        << ", latest oplog optime of sync candidate: "
-                       << it->getHeartbeatAppliedOpTime().toBSON()
-                       << ", my lastOpCommitted: " << _lastCommittedOpTime
-                       << ", lastOpCommitted of sync candidate: "
-                       << it->getHeartbeatLastOpCommitted();
+                       << it->getHeartbeatAppliedOpTime().toBSON();
                 continue;
             }
             // Candidate cannot be more latent than anything we've already considered.
@@ -696,8 +686,7 @@ HeartbeatResponseAction TopologyCoordinator::processHeartbeatResponse(
     Date_t now,
     Milliseconds networkRoundTripTime,
     const HostAndPort& target,
-    const StatusWith<ReplSetHeartbeatResponse>& hbResponse,
-    OpTime lastOpCommitted) {
+    const StatusWith<ReplSetHeartbeatResponse>& hbResponse) {
     const MemberState originalState = getMemberState();
     PingStats& hbStats = _pings[target];
     invariant(hbStats.getLastHeartbeatStartDate() != Date_t());
@@ -732,6 +721,12 @@ HeartbeatResponseAction TopologyCoordinator::processHeartbeatResponse(
         nextHeartbeatStartDate = now;
     } else {
         nextHeartbeatStartDate = now + heartbeatInterval;
+    }
+
+    if (hbStats.failed()) {
+        LOG_FOR_HEARTBEATS(0) << "Heartbeat to " << target << " failed after "
+                              << kMaxHeartbeatRetries
+                              << " retries, response status: " << hbResponse.getStatus();
     }
 
     if (hbResponse.isOK() && hbResponse.getValue().hasConfig()) {
@@ -807,7 +802,7 @@ HeartbeatResponseAction TopologyCoordinator::processHeartbeatResponse(
     } else {
         ReplSetHeartbeatResponse hbr = std::move(hbResponse.getValue());
         LOG(3) << "setUpValues: heartbeat response good for member _id:" << member.getId();
-        advancedOpTime = hbData.setUpValues(now, std::move(hbr), lastOpCommitted);
+        advancedOpTime = hbData.setUpValues(now, std::move(hbr));
     }
 
     HeartbeatResponseAction nextAction;
@@ -829,8 +824,16 @@ bool TopologyCoordinator::haveNumNodesReachedOpTime(const OpTime& targetOpTime,
     }
 
     for (auto&& memberData : _memberData) {
+        const auto isArbiter = _rsConfig.getMemberAt(memberData.getMemberId()).isArbiter();
+
+        // We do not count arbiters towards the write concern.
+        if (isArbiter) {
+            continue;
+        }
+
         const OpTime& memberOpTime =
             durablyWritten ? memberData.getLastDurableOpTime() : memberData.getLastAppliedOpTime();
+
         if (memberOpTime >= targetOpTime) {
             --numNodes;
         }
@@ -959,7 +962,17 @@ void TopologyCoordinator::setMyLastAppliedOpTime(OpTime opTime,
                                                  Date_t now,
                                                  bool isRollbackAllowed) {
     auto& myMemberData = _selfMemberData();
-    invariant(isRollbackAllowed || opTime >= myMemberData.getLastAppliedOpTime());
+    auto myLastAppliedOpTime = myMemberData.getLastAppliedOpTime();
+
+    if (!(isRollbackAllowed || opTime == myLastAppliedOpTime)) {
+        invariant(opTime > myLastAppliedOpTime);
+        // In pv1, oplog entries are ordered by non-decreasing term and strictly increasing
+        // timestamp. So, in pv1, its not possible for us to get opTime with higher term and
+        // timestamp lesser than or equal to our current lastAppliedOptime.
+        invariant(opTime.getTerm() == OpTime::kUninitializedTerm ||
+                  myLastAppliedOpTime.getTerm() == OpTime::kUninitializedTerm ||
+                  opTime.getTimestamp() > myLastAppliedOpTime.getTimestamp());
+    }
     myMemberData.setLastAppliedOpTime(opTime, now);
 }
 
@@ -1198,7 +1211,8 @@ bool TopologyCoordinator::_amIFreshEnoughForPriorityTakeover() const {
     }
 
     if (ourLastOpApplied.getTimestamp().getSecs() != latestKnownOpTime.getTimestamp().getSecs()) {
-        return ourLastOpApplied.getTimestamp().getSecs() + priorityTakeoverFreshnessWindowSeconds >=
+        return ourLastOpApplied.getTimestamp().getSecs() +
+            gPriorityTakeoverFreshnessWindowSeconds >=
             latestKnownOpTime.getTimestamp().getSecs();
     } else {
         return ourLastOpApplied.getTimestamp().getInc() + 1000 >=
@@ -1364,8 +1378,7 @@ void TopologyCoordinator::setCurrentPrimary_forTest(int primaryIndex,
             hbResponse.setSyncingTo(HostAndPort());
             _memberData.at(primaryIndex)
                 .setUpValues(_memberData.at(primaryIndex).getLastHeartbeat(),
-                             std::move(hbResponse),
-                             _memberData.at(primaryIndex).getHeartbeatLastOpCommitted());
+                             std::move(hbResponse));
         }
         _currentPrimaryIndex = primaryIndex;
     }
@@ -1651,9 +1664,6 @@ void TopologyCoordinator::fillMemberData(BSONObjBuilder* result) {
             const auto heartbeatDurableOpTime = memberData.getHeartbeatDurableOpTime();
             entry.append("heartbeatDurableOpTime", heartbeatDurableOpTime.toBSON());
 
-            const auto lastOpCommitted = memberData.getHeartbeatLastOpCommitted();
-            entry.append("heartbeatLastOpCommitted", lastOpCommitted.toBSON());
-
             if (_selfIndex >= 0) {
                 const int memberId = memberData.getMemberId();
                 invariant(memberId >= 0);
@@ -1691,7 +1701,10 @@ void TopologyCoordinator::fillIsMasterForReplSet(IsMasterResponse* response, con
     }
 
     response->setReplSetVersion(_rsConfig.getConfigVersion());
-    response->setIsMaster(myState.primary());
+    // "ismaster" is false if we are not primary. If we're stepping down, we're waiting for the
+    // Replication State Transition Lock before we can change to secondary, but we should report
+    // "ismaster" false to indicate that we can't accept new writes.
+    response->setIsMaster(myState.primary() && !isSteppingDown());
     response->setIsSecondary(myState.secondary());
 
     const MemberConfig* curPrimary = _currentPrimaryMember();
@@ -2004,7 +2017,7 @@ std::string TopologyCoordinator::_getUnelectableReasonString(const UnelectableRe
         hasWrittenToStream = true;
         ss << "member is not caught up enough to the most up-to-date member to call for priority "
               "takeover - must be within "
-           << priorityTakeoverFreshnessWindowSeconds << " seconds";
+           << gPriorityTakeoverFreshnessWindowSeconds << " seconds";
     }
     if (ur & NotFreshEnoughForCatchupTakeover) {
         if (hasWrittenToStream) {
@@ -2342,7 +2355,7 @@ void TopologyCoordinator::_stepDownSelfAndReplaceWith(int newPrimary) {
 }
 
 bool TopologyCoordinator::updateLastCommittedOpTime() {
-    // If we're not primary or we're stepping down due to learning of a new term then  we must not
+    // If we're not primary or we're stepping down due to learning of a new term then we must not
     // advance the commit point.  If we are stepping down due to a user request, however, then it
     // is safe to advance the commit point, and in fact we must since the stepdown request may be
     // waiting for the commit point to advance enough to be able to safely complete the step down.
@@ -2378,9 +2391,17 @@ bool TopologyCoordinator::updateLastCommittedOpTime() {
 }
 
 bool TopologyCoordinator::advanceLastCommittedOpTime(const OpTime& committedOpTime) {
+    if (_selfIndex == -1) {
+        // The config hasn't been installed or we are not in the config. This could happen
+        // on heartbeats before installing a config.
+        return false;
+    }
+
     if (committedOpTime == _lastCommittedOpTime) {
         return false;  // Hasn't changed, so ignore it.
-    } else if (committedOpTime < _lastCommittedOpTime) {
+    }
+
+    if (committedOpTime < _lastCommittedOpTime) {
         LOG(1) << "Ignoring older committed snapshot optime: " << committedOpTime
                << ", currentCommittedOpTime: " << _lastCommittedOpTime;
         return false;  // This may have come from an out-of-order heartbeat. Ignore it.
@@ -2390,6 +2411,16 @@ bool TopologyCoordinator::advanceLastCommittedOpTime(const OpTime& committedOpTi
     if (_iAmPrimary() && committedOpTime < _firstOpTimeOfMyTerm) {
         LOG(1) << "Ignoring older committed snapshot from before I became primary, optime: "
                << committedOpTime << ", firstOpTimeOfMyTerm: " << _firstOpTimeOfMyTerm;
+        return false;
+    }
+
+    // Arbiters don't have data so they always advance their commit point via heartbeats.
+    // Otherwise, only update the commit point if it's on the same oplog branch as our last applied.
+    if (!_selfConfig().isArbiter() &&
+        getMyLastAppliedOpTime().getTerm() != committedOpTime.getTerm()) {
+        LOG(1) << "Ignoring commit point with different term than my lastApplied, since it may "
+                  "not be on the same oplog branch as mine. optime: "
+               << committedOpTime << ", my last applied: " << getMyLastAppliedOpTime();
         return false;
     }
 
@@ -2507,25 +2538,18 @@ bool TopologyCoordinator::shouldChangeSyncSource(
     // If OplogQueryMetadata was provided, use its values, otherwise use the ones in
     // ReplSetMetadata.
     OpTime currentSourceOpTime;
-    OpTime currentSourceLastOpCommitted;
     int syncSourceIndex = -1;
     int primaryIndex = -1;
     if (oqMetadata) {
         currentSourceOpTime =
             std::max(oqMetadata->getLastOpApplied(),
                      _memberData.at(currentSourceIndex).getHeartbeatAppliedOpTime());
-        currentSourceLastOpCommitted =
-            std::max(oqMetadata->getLastOpCommitted(),
-                     _memberData.at(currentSourceIndex).getHeartbeatLastOpCommitted());
         syncSourceIndex = oqMetadata->getSyncSourceIndex();
         primaryIndex = oqMetadata->getPrimaryIndex();
     } else {
         currentSourceOpTime =
             std::max(replMetadata.getLastOpVisible(),
                      _memberData.at(currentSourceIndex).getHeartbeatAppliedOpTime());
-        currentSourceLastOpCommitted =
-            std::max(replMetadata.getLastOpCommitted(),
-                     _memberData.at(currentSourceIndex).getHeartbeatLastOpCommitted());
         syncSourceIndex = replMetadata.getSyncSourceIndex();
         primaryIndex = replMetadata.getPrimaryIndex();
     }
@@ -2539,20 +2563,15 @@ bool TopologyCoordinator::shouldChangeSyncSource(
     // Change sync source if they are not ahead of us, and don't have a sync source,
     // unless they are primary.
     const OpTime myLastOpTime = getMyLastAppliedOpTime();
-    if (syncSourceIndex == -1 &&
-        std::tie(currentSourceOpTime, currentSourceLastOpCommitted) <=
-            std::tie(myLastOpTime, _lastCommittedOpTime) &&
+    if (syncSourceIndex == -1 && currentSourceOpTime <= myLastOpTime &&
         primaryIndex != currentSourceIndex) {
         std::stringstream logMessage;
 
         logMessage << "Choosing new sync source. Our current sync source is not primary and does "
-                      "not have a sync source, so we require that it is not behind us, and that if "
-                      "we are up-to-date with it, it has a higher lastOpCommitted. "
+                      "not have a sync source, so we require that it is ahead of us. "
                    << "Current sync source: " << currentSource.toString()
                    << ", my last fetched oplog optime: " << myLastOpTime
-                   << ", latest oplog optime of sync source: " << currentSourceOpTime
-                   << ", my lastOpCommitted: " << _lastCommittedOpTime
-                   << ", lastOpCommitted of sync source: " << currentSourceLastOpCommitted;
+                   << ", latest oplog optime of sync source: " << currentSourceOpTime;
 
         if (primaryIndex >= 0) {
             logMessage << " (" << _rsConfig.getMemberAt(primaryIndex).getHostAndPort() << " is)";
@@ -2614,17 +2633,6 @@ rpc::OplogQueryMetadata TopologyCoordinator::prepareOplogQueryMetadata(int rbid)
                                    rbid,
                                    _currentPrimaryIndex,
                                    _rsConfig.findMemberIndexByHostAndPort(getSyncSourceAddress()));
-}
-
-void TopologyCoordinator::summarizeAsHtml(ReplSetHtmlSummary* output) {
-    // TODO(dannenberg) consider putting both optimes into the htmlsummary.
-    output->setSelfOptime(getMyLastAppliedOpTime());
-    output->setConfig(_rsConfig);
-    output->setHBData(_memberData);
-    output->setSelfIndex(_selfIndex);
-    output->setPrimaryIndex(_currentPrimaryIndex);
-    output->setSelfState(getMemberState());
-    output->setSelfHeartbeatMessage(_hbmsg);
 }
 
 void TopologyCoordinator::processReplSetRequestVotes(const ReplSetRequestVotesArgs& args,
@@ -2779,6 +2787,66 @@ TopologyCoordinator::latestKnownOpTimeSinceHeartbeatRestartPerMember() const {
         opTimesPerMember[memberId] = member.getHeartbeatAppliedOpTime();
     }
     return opTimesPerMember;
+}
+
+bool TopologyCoordinator::checkIfCommitQuorumCanBeSatisfied(
+    const CommitQuorumOptions& commitQuorum, const std::vector<MemberConfig>& members) const {
+    if (!commitQuorum.mode.empty() && commitQuorum.mode != CommitQuorumOptions::kMajority) {
+        StatusWith<ReplSetTagPattern> tagPatternStatus =
+            _rsConfig.findCustomWriteMode(commitQuorum.mode);
+        if (!tagPatternStatus.isOK()) {
+            return false;
+        }
+
+        ReplSetTagMatch matcher(tagPatternStatus.getValue());
+        for (auto&& member : members) {
+            for (MemberConfig::TagIterator it = member.tagsBegin(); it != member.tagsEnd(); ++it) {
+                if (matcher.update(*it)) {
+                    return true;
+                }
+            }
+        }
+
+        // Even if all the nodes in the set had a given write it still would not satisfy this
+        // commit quorum.
+        return false;
+    } else {
+        int nodesRemaining = 0;
+        if (!commitQuorum.mode.empty()) {
+            invariant(commitQuorum.mode == CommitQuorumOptions::kMajority);
+            nodesRemaining = _rsConfig.getWriteMajority();
+        } else {
+            nodesRemaining = commitQuorum.numNodes;
+        }
+
+        for (auto&& member : members) {
+            if (!member.isArbiter()) {  // Only count data-bearing nodes
+                --nodesRemaining;
+                if (nodesRemaining <= 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+}
+
+bool TopologyCoordinator::checkIfCommitQuorumIsSatisfied(
+    const CommitQuorumOptions& commitQuorum,
+    const std::vector<HostAndPort>& commitReadyMembers) const {
+    std::vector<MemberConfig> commitReadyMemberConfigs;
+    for (auto& commitReadyMember : commitReadyMembers) {
+        const MemberConfig* memberConfig = _rsConfig.findMemberByHostAndPort(commitReadyMember);
+
+        invariant(memberConfig);
+        commitReadyMemberConfigs.push_back(*memberConfig);
+    }
+
+    // Calling this with commit ready members only is the same as checking if the commit quorum is
+    // satisfied. Because the 'commitQuorum' is based on the participation of all the replica set
+    // members, and if the 'commitQuorum' can be satisfied with all the commit ready members, then
+    // the commit quorum is satisfied in this replica set configuration.
+    return checkIfCommitQuorumCanBeSatisfied(commitQuorum, commitReadyMemberConfigs);
 }
 
 }  // namespace repl
