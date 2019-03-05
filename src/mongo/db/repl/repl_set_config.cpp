@@ -444,6 +444,16 @@ Status ReplSetConfig::validate() const {
         Status status = memberI.validate();
         if (!status.isOK())
             return status;
+        if( !std::equal( begin( memberI.getAltNames() ), end( memberI.getAltNames() ),
+                begin( _members[ 0 ].getAltNames() ), end( _members[ 0 ].getAltNames() ),
+                []( auto &&left, auto &&right )
+                {
+                    return left.first == right.first;
+                } ) )
+        {
+            return Status( ErrorCodes::BadValue, str::stream()
+                    << "Saw a replica set member with a different horizon mapping than the others." );
+        }
         if (memberI.getHostAndPort().isLocalHost()) {
             ++localhostCount;
         }

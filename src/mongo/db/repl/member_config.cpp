@@ -50,7 +50,7 @@ const std::string MemberConfig::kSlaveDelayFieldName = "slaveDelay";
 const std::string MemberConfig::kArbiterOnlyFieldName = "arbiterOnly";
 const std::string MemberConfig::kBuildIndexesFieldName = "buildIndexes";
 const std::string MemberConfig::kTagsFieldName = "tags";
-const std::string MemberConfig::kZonesFieldName = "zones";
+const std::string MemberConfig::kHorizonsFieldName = "horizons";
 const std::string MemberConfig::kInternalVoterTagName = "$voter";
 const std::string MemberConfig::kInternalElectableTagName = "$electable";
 const std::string MemberConfig::kInternalAllTagName = "$all";
@@ -65,7 +65,7 @@ const std::string kLegalMemberConfigFieldNames[] = {MemberConfig::kIdFieldName,
                                                     MemberConfig::kArbiterOnlyFieldName,
                                                     MemberConfig::kBuildIndexesFieldName,
                                                     MemberConfig::kTagsFieldName,
-                                                    MemberConfig::kZonesFieldName};
+                                                    MemberConfig::kHorizonsFieldName};
 
 const int kVotesFieldDefault = 1;
 const double kPriorityFieldDefault = 1.0;
@@ -202,29 +202,35 @@ Status MemberConfig::initialize(const BSONObj& mcfg, ReplSetTagConfig* tagConfig
     }
 
     _altNames.clear();
+
+    auto horizonsElement=
+    [&]()-> boost::optional< BSONElement >{
     try
     {
-        BSONElement zonesElement= bsonExtractTypedField( mcfg, kZonesFieldName, Object );
-        const auto &zonesObject= zonesElement.Obj();
+        return bsonExtractTypedField( mcfg, kHorizonsFieldName, Object );
+    }catch( const ExceptionFor<ErrorCodes::NoSuchKey> & ){ return boost::none; }
+    }();
+    
+    if( horizonsElement )
+    {
+        std::cerr << "Found a horizons element." << std::endl;
+        const auto &horizonsObject= horizonsElement->Obj();
         using std::begin;
         using std::end;
-        std::transform( begin( zonesObject ), end( zonesObject ), inserter( _altNames, end( _altNames ) ),
-                []( auto &&zone ) -> decltype( _altNames )::value_type
+        std::transform( begin( horizonsObject ), end( horizonsObject ),
+                inserter( _altNames, end( _altNames ) ),
+                []( auto &&horizon ) -> decltype( _altNames )::value_type
                 {
-                    const auto zoneName= zone.fieldName();
+                    const auto horizonName= horizon.fieldName();
 
-                    if( zone.type() != String ) {uasserted( ErrorCodes::TypeMismatch,
-                              str::stream() << "zone." << zoneName
+                    if( horizon.type() != String ) {uasserted( ErrorCodes::TypeMismatch,
+                              str::stream() << "horizons." << horizonName
                                             << " field has non-object value of type "
-                                            << typeName(zone.type()));}
+                                            << typeName(horizon.type()));}
 
-                    
-                    HostAndPort tmp( zone.valueStringData() );
-
-                    return { zoneName, HostAndPort( tmp.host(), tmp.port() ) };
+                    return { horizonName, HostAndPort( horizon.valueStringData() ) };
                 } );
     }
-    catch( const ExceptionFor< ErrorCodes::NoSuchKey > & ){}
 
     //
     // Add internal tags based on other member properties.

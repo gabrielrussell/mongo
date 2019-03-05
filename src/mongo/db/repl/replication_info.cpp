@@ -70,8 +70,10 @@ using std::stringstream;
 
 namespace repl {
 
-void appendReplicationInfo(OperationContext* opCtx, BSONObjBuilder& result, int level, const
-std::string &zone= ReplicationCoordinator::defaultZone) {
+void appendReplicationInfo(OperationContext* opCtx,
+                           BSONObjBuilder& result,
+                           int level,
+                           const std::string& zone = ReplicationCoordinator::defaultZone) {
     ReplicationCoordinator* replCoord = ReplicationCoordinator::get(opCtx);
     if (replCoord->getSettings().usingReplSets()) {
         IsMasterResponse isMasterResponse;
@@ -209,8 +211,7 @@ public:
     }
 } oplogInfoServerStatus;
 
-namespace
-{
+namespace {
 class CmdIsMaster final : public BasicCommand {
 public:
     CmdIsMaster() : BasicCommand("isMaster", "ismaster") {}
@@ -264,7 +265,7 @@ public:
         }
 
         BSONElement element = cmdObj[kMetadataDocumentName];
-        std::string zone= ReplicationCoordinator::defaultZone;
+        std::string zone = ReplicationCoordinator::defaultZone;
         if (!element.eoo()) {
             if (seenIsMaster) {
                 uasserted(ErrorCodes::ClientMetadataCannotBeMutated,
@@ -275,12 +276,15 @@ public:
 
             invariant(parsedClientMetadata);
 
-            zone= parsedClientMetadata->getZoneName().toString();
+            auto zoneName = parsedClientMetadata->getZoneName();
+            if (!zoneName.empty()) {
+                zone = parsedClientMetadata->getZoneName().toString();
+            }
 
             parsedClientMetadata->logClientMetadata(opCtx->getClient());
 
-            clientMetadataIsMasterState.setClientMetadata(
-                opCtx->getClient(), std::move(parsedClientMetadata));
+            clientMetadataIsMasterState.setClientMetadata(opCtx->getClient(),
+                                                          std::move(parsedClientMetadata));
         }
 
         // Parse the optional 'internalClient' field. This is provided by incoming connections from
@@ -398,7 +402,7 @@ public:
         return true;
     }
 } cmdismaster;
-}//namespace
+}  // namespace
 
 OpCounterServerStatusSection replOpCounterServerStatusSection("opcountersRepl", &replOpCounters);
 

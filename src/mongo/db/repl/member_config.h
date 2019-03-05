@@ -59,7 +59,7 @@ public:
     static const std::string kArbiterOnlyFieldName;
     static const std::string kBuildIndexesFieldName;
     static const std::string kTagsFieldName;
-    static const std::string kZonesFieldName;
+    static const std::string kHorizonsFieldName;
     static const std::string kInternalVoterTagName;
     static const std::string kInternalElectableTagName;
     static const std::string kInternalAllTagName;
@@ -102,6 +102,7 @@ public:
 			auto found= this->_altNames.find( zone );
 			if( found == end( this->_altNames ) )
 			{
+				abort();
 				uasserted( ErrorCodes::NoSuchKey, str::stream() << "No zone named " << zone );
 			}
 			return found->second;
