@@ -330,15 +330,25 @@ BSONObj MemberConfig::toBSON(const ReplSetTagConfig& tagConfig) const {
     configBuilder.append("priority", _priority);
 
     BSONObjBuilder tags(configBuilder.subobjStart("tags"));
-    for (std::vector<ReplSetTag>::const_iterator tag = _tags.begin(); tag != _tags.end(); tag++) {
-        std::string tagKey = tagConfig.getTagKey(*tag);
+    for (auto tag: _tags){
+        std::string tagKey = tagConfig.getTagKey(tag);
         if (tagKey[0] == '$') {
             // Filter out internal tags
             continue;
         }
-        tags.append(tagKey, tagConfig.getTagValue(*tag));
+        tags.append(tagKey, tagConfig.getTagValue(tag));
     }
     tags.done();
+
+    if( !_altNames.empty() )
+    {
+        BSONObjBuilder horizons( configBuilder.subobjStart( "horizons" ) );
+        for( const auto &horizon: _altNames )
+        {
+            configBuilder.append( horizon.first, horizon.second.toString() );
+        }
+        horizons.done();
+    }
 
     configBuilder.append("slaveDelay", durationCount<Seconds>(_slaveDelay));
     configBuilder.append("votes", getNumVotes());
