@@ -39,8 +39,6 @@
 #include "mongo/db/db_raii_gen.h"
 #include "mongo/db/repl/replication_coordinator.h"
 #include "mongo/db/s/collection_sharding_state.h"
-#include "mongo/db/server_parameters.h"
-#include "mongo/db/transaction_participant.h"
 #include "mongo/util/log.h"
 
 namespace mongo {
@@ -59,7 +57,10 @@ AutoStatsTracker::AutoStatsTracker(OperationContext* opCtx,
     : _opCtx(opCtx), _lockType(lockType), _nss(nss) {
     if (!dbProfilingLevel && logMode == LogMode::kUpdateTopAndCurop) {
         // No profiling level was determined, attempt to read the profiling level from the Database
-        // object.
+        // object. Since we are only reading the in-memory profiling level out of the database
+        // object (which is configured on a per-node basis and not replicated or persisted), we
+        // never need to conflict with secondary batch application.
+        ShouldNotConflictWithSecondaryBatchApplicationBlock noConflict(opCtx->lockState());
         AutoGetDb autoDb(_opCtx, _nss.db(), MODE_IS, deadline);
         if (autoDb.getDb()) {
             dbProfilingLevel = autoDb.getDb()->getProfilingLevel();
@@ -329,9 +330,8 @@ OldClientContext::~OldClientContext() {
 LockMode getLockModeForQuery(OperationContext* opCtx, const boost::optional<NamespaceString>& nss) {
     invariant(opCtx);
 
-    // Use IX locks for autocommit:false multi-statement transactions; otherwise, use IS locks.
-    auto txnParticipant = TransactionParticipant::get(opCtx);
-    if (txnParticipant && txnParticipant.inMultiDocumentTransaction()) {
+    // Use IX locks for multi-statement transactions; otherwise, use IS locks.
+    if (opCtx->getWriteUnitOfWork()) {
         uassert(51071,
                 "Cannot query system.views within a transaction",
                 !nss || !nss->isSystemDotViews());

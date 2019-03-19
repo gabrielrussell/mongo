@@ -76,6 +76,10 @@ void ReplicationCoordinatorMock::startup(OperationContext* opCtx) {
     // TODO
 }
 
+void ReplicationCoordinatorMock::enterTerminalShutdown() {
+    // TODO
+}
+
 void ReplicationCoordinatorMock::shutdown(OperationContext*) {
     // TODO
 }
@@ -97,6 +101,11 @@ ReplicationCoordinator::Mode ReplicationCoordinatorMock::getReplicationMode() co
 
 MemberState ReplicationCoordinatorMock::getMemberState() const {
     return _memberState;
+}
+
+std::vector<MemberData> ReplicationCoordinatorMock::getMemberData() const {
+    MONGO_UNREACHABLE;
+    return {};
 }
 
 Status ReplicationCoordinatorMock::waitForMemberState(MemberState expectedState,
@@ -232,7 +241,7 @@ Status ReplicationCoordinatorMock::waitUntilOpTimeForReadUntil(OperationContext*
     return Status::OK();
 }
 
-Status ReplicationCoordinatorMock::awaitOpTimeCommitted(OperationContext* opCtx, OpTime opTime) {
+Status ReplicationCoordinatorMock::awaitTimestampCommitted(OperationContext* opCtx, Timestamp ts) {
     return Status::OK();
 }
 

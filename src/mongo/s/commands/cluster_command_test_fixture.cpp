@@ -35,6 +35,7 @@
 
 #include "mongo/db/commands.h"
 #include "mongo/db/commands/test_commands_enabled.h"
+#include "mongo/db/commands/txn_cmds_gen.h"
 #include "mongo/db/keys_collection_client_sharded.h"
 #include "mongo/db/keys_collection_manager.h"
 #include "mongo/db/logical_clock.h"
@@ -128,7 +129,7 @@ void ClusterCommandTestFixture::runCommandSuccessful(BSONObj cmd, bool isTargete
         expectReturnsSuccess(i % numShards);
     }
 
-    future.timed_get(kFutureTimeout);
+    future.default_timed_get();
 }
 
 void ClusterCommandTestFixture::runTxnCommandOneError(BSONObj cmd,
@@ -154,7 +155,7 @@ void ClusterCommandTestFixture::runTxnCommandOneError(BSONObj cmd,
         expectReturnsSuccess(i % numShards);
     }
 
-    future.timed_get(kFutureTimeout);
+    future.default_timed_get();
 }
 
 void ClusterCommandTestFixture::runCommandInspectRequests(BSONObj cmd,
@@ -167,14 +168,18 @@ void ClusterCommandTestFixture::runCommandInspectRequests(BSONObj cmd,
         expectInspectRequest(i % numShards, cb);
     }
 
-    future.timed_get(kFutureTimeout);
+    future.default_timed_get();
 }
 
 void ClusterCommandTestFixture::expectAbortTransaction() {
-    onCommandForPoolExecutor([](const executor::RemoteCommandRequest& request) {
+    onCommandForPoolExecutor([this](const executor::RemoteCommandRequest& request) {
         auto cmdName = request.cmdObj.firstElement().fieldNameStringData();
         ASSERT_EQ(cmdName, "abortTransaction");
-        return BSON("ok" << 1);
+
+        BSONObjBuilder bob;
+        bob.append("ok", 1);
+        appendTxnResponseMetadata(bob);
+        return bob.obj();
     });
 }
 
@@ -207,7 +212,7 @@ void ClusterCommandTestFixture::runTxnCommandMaxErrors(BSONObj cmd,
         expectAbortTransaction();
     }
 
-    future.timed_get(kFutureTimeout);
+    future.default_timed_get();
 }
 
 void ClusterCommandTestFixture::testNoErrors(BSONObj targetedCmd, BSONObj scatterGatherCmd) {
@@ -286,6 +291,12 @@ void ClusterCommandTestFixture::testSnapshotReadConcernWithAfterClusterTime(
         runCommandInspectRequests(
             _makeCmd(scatterGatherCmd, true), containsAtClusterTimeNoAfterClusterTime, false);
     }
+}
+
+void ClusterCommandTestFixture::appendTxnResponseMetadata(BSONObjBuilder& bob) {
+    // Set readOnly to false to avoid opting in to the read-only optimization.
+    TxnResponseMetadata txnResponseMetadata(false);
+    txnResponseMetadata.serialize(&bob);
 }
 
 }  // namespace mongo

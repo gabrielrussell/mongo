@@ -48,6 +48,7 @@
 #include "mongo/db/transaction_participant_gen.h"
 #include "mongo/stdx/future.h"
 #include "mongo/stdx/memory.h"
+#include "mongo/unittest/barrier.h"
 #include "mongo/unittest/death_test.h"
 #include "mongo/unittest/unittest.h"
 #include "mongo/util/clock_source_mock.h"
@@ -92,7 +93,7 @@ repl::OplogEntry makeOplogEntry(repl::OpTime opTime,
 class OpObserverMock : public OpObserverNoop {
 public:
     void onTransactionPrepare(OperationContext* opCtx,
-                              const OplogSlot& prepareOpTime,
+                              const std::vector<OplogSlot>& reservedSlots,
                               std::vector<repl::ReplOperation>& statements) override;
 
     bool onTransactionPrepareThrowsException = false;
@@ -135,10 +136,10 @@ public:
 };
 
 void OpObserverMock::onTransactionPrepare(OperationContext* opCtx,
-                                          const OplogSlot& prepareOpTime,
+                                          const std::vector<OplogSlot>& reservedSlots,
                                           std::vector<repl::ReplOperation>& statements) {
     ASSERT_TRUE(opCtx->lockState()->inAWriteUnitOfWork());
-    OpObserverNoop::onTransactionPrepare(opCtx, prepareOpTime, statements);
+    OpObserverNoop::onTransactionPrepare(opCtx, reservedSlots, statements);
 
     uassert(ErrorCodes::OperationFailed,
             "onTransactionPrepare() failed",
@@ -202,7 +203,9 @@ repl::OpTime OpObserverMock::onDropCollection(OperationContext* opCtx,
     return {};
 }
 
-// When this class is in scope, makes the system behave as if we're in a DBDirectClient
+/**
+ * When this class is in scope, makes the system behave as if we're in a DBDirectClient.
+ */
 class DirectClientSetter {
 public:
     explicit DirectClientSetter(OperationContext* opCtx)
@@ -231,9 +234,6 @@ protected:
         auto mockObserver = stdx::make_unique<OpObserverMock>();
         _opObserver = mockObserver.get();
         opObserverRegistry->addObserver(std::move(mockObserver));
-
-        _sessionId = makeLogicalSessionIdForTest();
-        _txnNumber = 20;
 
         opCtx()->setLogicalSessionId(_sessionId);
         opCtx()->setTxnNumber(_txnNumber);
@@ -269,9 +269,10 @@ protected:
         return opCtxSession;
     }
 
+    const LogicalSessionId _sessionId{makeLogicalSessionIdForTest()};
+    const TxnNumber _txnNumber{20};
+
     OpObserverMock* _opObserver = nullptr;
-    LogicalSessionId _sessionId;
-    TxnNumber _txnNumber;
 };
 
 // Test that transaction lock acquisition times out in `maxTransactionLockRequestTimeoutMillis`
@@ -884,6 +885,51 @@ TEST_F(TxnParticipantTest, CannotAbortArbitraryPreparedTransactions) {
     ASSERT(_opObserver->transactionPrepared);
 }
 
+TEST_F(TxnParticipantTest, CannotStartNewTransactionIfNotPrimary) {
+    ASSERT_OK(repl::ReplicationCoordinator::get(opCtx())->setFollowerMode(
+        repl::MemberState::RS_SECONDARY));
+
+    auto opCtxSession = std::make_unique<MongoDOperationContextSession>(opCtx());
+    auto txnParticipant = TransactionParticipant::get(opCtx());
+
+    // Include 'autocommit=false' for transactions.
+    ASSERT_THROWS_CODE(
+        txnParticipant.beginOrContinue(opCtx(), *opCtx()->getTxnNumber(), false, true),
+        AssertionException,
+        ErrorCodes::NotMaster);
+}
+
+TEST_F(TxnParticipantTest, CannotStartRetryableWriteIfNotPrimary) {
+    ASSERT_OK(repl::ReplicationCoordinator::get(opCtx())->setFollowerMode(
+        repl::MemberState::RS_SECONDARY));
+
+    auto opCtxSession = std::make_unique<MongoDOperationContextSession>(opCtx());
+    auto txnParticipant = TransactionParticipant::get(opCtx());
+
+    // Omit the 'autocommit' field for retryable writes.
+    ASSERT_THROWS_CODE(
+        txnParticipant.beginOrContinue(opCtx(), *opCtx()->getTxnNumber(), boost::none, true),
+        AssertionException,
+        ErrorCodes::NotMaster);
+}
+
+TEST_F(TxnParticipantTest, CannotContinueTransactionIfNotPrimary) {
+    // Will start the transaction.
+    auto sessionCheckout = checkOutSession();
+    auto txnParticipant = TransactionParticipant::get(opCtx());
+    ASSERT_TRUE(txnParticipant.inMultiDocumentTransaction());
+
+    ASSERT_OK(repl::ReplicationCoordinator::get(opCtx())->setFollowerMode(
+        repl::MemberState::RS_SECONDARY));
+
+    // Technically, the transaction should have been aborted on stepdown anyway, but it
+    // doesn't hurt to have this kind of coverage.
+    ASSERT_THROWS_CODE(
+        txnParticipant.beginOrContinue(opCtx(), *opCtx()->getTxnNumber(), false, false),
+        AssertionException,
+        ErrorCodes::NotMaster);
+}
+
 TEST_F(TxnParticipantTest, CannotStartNewTransactionWhilePreparedTransactionInProgress) {
     auto sessionCheckout = checkOutSession();
     auto txnParticipant = TransactionParticipant::get(opCtx());
@@ -1280,6 +1326,33 @@ TEST_F(TxnParticipantTest, ThrowDuringPreparedOnTransactionAbortIsFatal) {
     ASSERT_THROWS_CODE(txnParticipant.abortActiveTransaction(opCtx()),
                        AssertionException,
                        ErrorCodes::OperationFailed);
+}
+
+TEST_F(TxnParticipantTest, InterruptedSessionsCannotBePrepared) {
+    auto sessionCheckout = checkOutSession();
+    auto txnParticipant = TransactionParticipant::get(opCtx());
+    txnParticipant.unstashTransactionResources(opCtx(), "prepareTransaction");
+
+    unittest::Barrier barrier(2);
+
+    auto future = stdx::async(stdx::launch::async, [this, &barrier] {
+        ThreadClient tc(getServiceContext());
+        auto sideOpCtx = tc->makeOperationContext();
+        auto killToken = catalog()->killSession(_sessionId);
+        barrier.countDownAndWait();
+
+        auto scopedSession =
+            catalog()->checkOutSessionForKill(sideOpCtx.get(), std::move(killToken));
+    });
+
+    barrier.countDownAndWait();
+
+    ASSERT_THROWS_CODE(txnParticipant.prepareTransaction(opCtx(), {}),
+                       AssertionException,
+                       ErrorCodes::Interrupted);
+
+    sessionCheckout.reset();
+    future.get();
 }
 
 TEST_F(TxnParticipantTest, ReacquireLocksForPreparedTransactionsOnStepUp) {
@@ -2336,7 +2409,6 @@ TEST_F(TransactionsMetricsTest, TimeInactiveMicrosShouldIncreaseUntilCommit) {
               Microseconds{100});
 }
 
-
 TEST_F(TransactionsMetricsTest, ReportStashedResources) {
     auto tickSource = initMockTickSource();
     auto clockSource = initMockPreciseClockSource();
@@ -2401,7 +2473,7 @@ TEST_F(TransactionsMetricsTest, ReportStashedResources) {
               getHostNameCachedAndPort());
     ASSERT_EQ(stashedState.getField("desc").valueStringData().toString(), "inactive transaction");
     ASSERT_BSONOBJ_EQ(stashedState.getField("lsid").Obj(), _sessionId.toBSON());
-    ASSERT_EQ(parametersDocument.getField("txnNumber").numberLong(), *opCtx()->getTxnNumber());
+    ASSERT_EQ(parametersDocument.getField("txnNumber").numberLong(), _txnNumber);
     ASSERT_EQ(parametersDocument.getField("autocommit").boolean(), autocommit);
     ASSERT_BSONELT_EQ(parametersDocument.getField("readConcern"),
                       readConcernArgs.toBSON().getField("readConcern"));
@@ -3674,6 +3746,76 @@ TEST_F(TxnParticipantTest, AbortTransactionOnSessionCheckoutWithoutRefresh) {
     txnParticipant.unstashTransactionResources(opCtx(), "abortTransaction");
     txnParticipant.abortActiveTransaction(opCtx());
     ASSERT_TRUE(txnParticipant.transactionIsAborted());
+}
+
+TEST_F(TxnParticipantTest, ResponseMetadataHasHasReadOnlyFalseIfNothingInProgress) {
+    MongoDOperationContextSession opCtxSession(opCtx());
+    auto txnParticipant = TransactionParticipant::get(opCtx());
+    ASSERT_FALSE(txnParticipant.getResponseMetadata().getReadOnly());
+}
+
+TEST_F(TxnParticipantTest, ResponseMetadataHasReadOnlyFalseIfInRetryableWrite) {
+    MongoDOperationContextSession opCtxSession(opCtx());
+    auto txnParticipant = TransactionParticipant::get(opCtx());
+    ASSERT_FALSE(txnParticipant.getResponseMetadata().getReadOnly());
+
+    // Start a retryable write.
+    txnParticipant.beginOrContinue(opCtx(),
+                                   *opCtx()->getTxnNumber(),
+                                   boost::none /* autocommit */,
+                                   boost::none /* startTransaction */);
+    ASSERT_FALSE(txnParticipant.getResponseMetadata().getReadOnly());
+}
+
+TEST_F(TxnParticipantTest, ResponseMetadataHasReadOnlyTrueIfInProgressAndOperationsVectorEmpty) {
+    MongoDOperationContextSession opCtxSession(opCtx());
+    auto txnParticipant = TransactionParticipant::get(opCtx());
+    ASSERT_FALSE(txnParticipant.getResponseMetadata().getReadOnly());
+
+    // Start a transaction.
+    txnParticipant.beginOrContinue(
+        opCtx(), *opCtx()->getTxnNumber(), false /* autocommit */, true /* startTransaction */);
+    ASSERT_TRUE(txnParticipant.getResponseMetadata().getReadOnly());
+
+    txnParticipant.unstashTransactionResources(opCtx(), "find");
+    ASSERT_TRUE(txnParticipant.getResponseMetadata().getReadOnly());
+}
+
+TEST_F(TxnParticipantTest,
+       ResponseMetadataHasReadOnlyFalseIfInProgressAndOperationsVectorNotEmpty) {
+    MongoDOperationContextSession opCtxSession(opCtx());
+    auto txnParticipant = TransactionParticipant::get(opCtx());
+    ASSERT_FALSE(txnParticipant.getResponseMetadata().getReadOnly());
+
+    // Start a transaction.
+    txnParticipant.beginOrContinue(
+        opCtx(), *opCtx()->getTxnNumber(), false /* autocommit */, true /* startTransaction */);
+    ASSERT_TRUE(txnParticipant.getResponseMetadata().getReadOnly());
+
+    txnParticipant.unstashTransactionResources(opCtx(), "insert");
+    ASSERT_TRUE(txnParticipant.getResponseMetadata().getReadOnly());
+
+    // Simulate an insert.
+    auto operation = repl::OplogEntry::makeInsertOperation(kNss, kUUID, BSON("TestValue" << 0));
+    txnParticipant.addTransactionOperation(opCtx(), operation);
+    ASSERT_FALSE(txnParticipant.getResponseMetadata().getReadOnly());
+}
+
+TEST_F(TxnParticipantTest, ResponseMetadataHasReadOnlyFalseIfAborted) {
+    MongoDOperationContextSession opCtxSession(opCtx());
+    auto txnParticipant = TransactionParticipant::get(opCtx());
+    ASSERT_FALSE(txnParticipant.getResponseMetadata().getReadOnly());
+
+    // Start a transaction.
+    txnParticipant.beginOrContinue(
+        opCtx(), *opCtx()->getTxnNumber(), false /* autocommit */, true /* startTransaction */);
+    ASSERT_TRUE(txnParticipant.getResponseMetadata().getReadOnly());
+
+    txnParticipant.unstashTransactionResources(opCtx(), "find");
+    ASSERT_TRUE(txnParticipant.getResponseMetadata().getReadOnly());
+
+    txnParticipant.abortActiveTransaction(opCtx());
+    ASSERT_FALSE(txnParticipant.getResponseMetadata().getReadOnly());
 }
 
 }  // namespace

@@ -34,12 +34,14 @@
 #include <map>
 
 #include "mongo/base/disallow_copying.h"
+#include "mongo/db/commands/txn_cmds_gen.h"
 #include "mongo/db/concurrency/locker.h"
 #include "mongo/db/logical_session_id.h"
 #include "mongo/db/multi_key_path_tracker.h"
 #include "mongo/db/ops/update_request.h"
 #include "mongo/db/repl/oplog.h"
 #include "mongo/db/repl/oplog_entry.h"
+#include "mongo/db/repl/optime.h"
 #include "mongo/db/repl/read_concern_args.h"
 #include "mongo/db/session.h"
 #include "mongo/db/session_catalog.h"
@@ -298,8 +300,7 @@ public:
         /**
          * Returns true if we are in an active multi-document transaction or if the transaction has
          * been aborted. This is used to cover the case where a transaction has been aborted, but
-         * the
-         * OperationContext state has not been cleared yet.
+         * the OperationContext state has not been cleared yet.
          */
         bool inActiveOrKilledMultiDocumentTransaction() const {
             return o().txnState.inMultiDocumentTransaction() || o().txnState.isAborted();
@@ -350,50 +351,42 @@ public:
             return _tp;
         }
 
-        /**
+        /*
          * Blocking method, which loads the transaction state from storage if it has been marked as
          * needing refresh.
          *
          * In order to avoid the possibility of deadlock, this method must not be called while
-         * holding a
-         * lock.
+         * holding a lock.
          */
         void refreshFromStorageIfNeeded(OperationContext* opCtx);
 
         /**
          * Starts a new transaction (and if the txnNumber is newer aborts any in-progress
-         * transaction on
-         * the session), or continues an already active transaction.
+         * transaction on the session), or continues an already active transaction.
          *
          * 'autocommit' comes from the 'autocommit' field in the original client request. The only
-         * valid
-         * values are boost::none (meaning no autocommit was specified) and false (meaning that this
-         * is
-         * the beginning of a multi-statement transaction).
+         * valid values are boost::none (meaning no autocommit was specified) and false (meaning
+         * that this is the beginning of a multi-statement transaction).
          *
          * 'startTransaction' comes from the 'startTransaction' field in the original client
-         * request.
-         * See below for the acceptable values and the meaning of the combinations of autocommit and
-         * startTransaction.
+         * request. See below for the acceptable values and the meaning of the combinations of
+         * autocommit and startTransaction.
          *
          * autocommit = boost::none, startTransaction = boost::none: Means retryable write
          * autocommit = false, startTransaction = boost::none: Means continuation of a
-         * multi-statement
-         * transaction
+         * multi-statement transaction
          * autocommit = false, startTransaction = true: Means abort whatever transaction is in
-         * progress
-         * on the session and start a new transaction
+         * progress on the session and start a new transaction
          *
          * Any combination other than the ones listed above will invariant since it is expected that
-         * the
-         * caller has performed the necessary customer input validations.
+         * the caller has performed the necessary customer input validations.
          *
          * Exceptions of note, which can be thrown are:
          *   - TransactionTooOld - if attempt is made to start a transaction older than the
-         * currently
-         * active one or the last one which committed
+         * currently active one or the last one which committed
          *   - PreparedTransactionInProgress - if the transaction is in the prepared state and a new
          * transaction or retryable write is attempted
+         *   - NotMaster - if the node is not a primary when this method is called.
          */
         void beginOrContinue(OperationContext* opCtx,
                              TxnNumber txnNumber,
@@ -401,25 +394,22 @@ public:
                              boost::optional<bool> startTransaction);
 
         /**
-         * Used only by the secondary oplog application logic. Equivalent to
-         * 'beginOrContinue(txnNumber,
-         * false, true)' without performing any checks for whether the new txnNumber will start a
-         * transaction number in the past.
+         * Used only by the secondary oplog application logic. Similar to 'beginOrContinue' without
+         * performing any checks for whether the new txnNumber will start a transaction number in
+         * the past.
          */
         void beginOrContinueTransactionUnconditionally(OperationContext* opCtx,
                                                        TxnNumber txnNumber);
 
         /**
          * Transfers management of transaction resources from the currently checked-out
-         * OperationContext
-         * to the Session.
+         * OperationContext to the Session.
          */
         void stashTransactionResources(OperationContext* opCtx);
 
         /**
          * Transfers management of transaction resources from the Session to the currently
-         * checked-out
-         * OperationContext.
+         * checked-out OperationContext.
          */
         void unstashTransactionResources(OperationContext* opCtx, const std::string& cmdName);
 
@@ -494,6 +484,11 @@ public:
             OperationContext* opCtx);
 
         /**
+         * Returns an object containing transaction-related metadata to append on responses.
+         */
+        TxnResponseMetadata getResponseMetadata();
+
+        /**
          * Clears the stored operations for an multi-document (non-autocommit) transaction, marking
          * the transaction as closed.  It is illegal to attempt to add operations to the transaction
          * after this is called.
@@ -507,8 +502,7 @@ public:
 
         /**
          * May only be called while a multi-document transaction is not committed and adds the
-         * multi-key
-         * path info to the set of path infos to be updated at commit time.
+         * multi-key path info to the set of path infos to be updated at commit time.
          */
         void addUncommittedMultikeyPathInfo(MultikeyPathInfo info) {
             invariant(inMultiDocumentTransaction());
@@ -517,8 +511,7 @@ public:
 
         /**
          * May only be called while a mutil-document transaction is not committed and returns the
-         * path
-         * infos which have been added so far.
+         * path infos which have been added so far.
          */
         const std::vector<MultikeyPathInfo>& getUncommittedMultikeyPathInfos() const {
             invariant(inMultiDocumentTransaction());
@@ -527,11 +520,9 @@ public:
 
         /**
          * Called after a write under the specified transaction completes while the node is a
-         * primary
-         * and specifies the statement ids which were written. Must be called while the caller is
-         * still
-         * in the write's WUOW. Updates the on-disk state of the session to match the specified
-         * transaction/opTime and keeps the cached state in sync.
+         * primary and specifies the statement ids which were written. Must be called while the
+         * caller is still in the write's WUOW. Updates the on-disk state of the session to match
+         * the specified transaction/opTime and keeps the cached state in sync.
          *
          * 'txnState' is 'none' for retryable writes.
          *
@@ -637,8 +628,9 @@ public:
             return o().txnResourceStash->locker();
         }
 
-        void transitionToPreparedforTest(OperationContext* opCtx) {
+        void transitionToPreparedforTest(OperationContext* opCtx, repl::OpTime prepareOpTime) {
             stdx::lock_guard<Client> lk(*opCtx->getClient());
+            o(lk).prepareOpTime = prepareOpTime;
             o(lk).txnState.transitionTo(TransactionState::kPrepared);
         }
 
@@ -676,15 +668,13 @@ public:
         // Like _setSpeculativeTransactionOpTime, but caller chooses timestamp of snapshot
         // explicitly.
         // It is up to the caller to ensure that Timestamp is greater than or equal to the
-        // all-committed
-        // optime before calling this method (e.g. by calling
+        // all-committed optime before calling this method (e.g. by calling
         // ReplCoordinator::waitForOpTimeForRead).
         void _setSpeculativeTransactionReadTimestamp(OperationContext* opCtx, Timestamp timestamp);
 
         // Finishes committing the multi-document transaction after the storage-transaction has been
         // committed, the oplog entry has been inserted into the oplog, and the transactions table
-        // has
-        // been updated.
+        // has been updated.
         void _finishCommitTransaction(OperationContext* opCtx);
 
         // Commits the storage-transaction on the OperationContext.
@@ -712,8 +702,7 @@ public:
                                               const std::string& cmdName) const;
 
         // Logs the transaction information if it has run slower than the global parameter slowMS.
-        // The
-        // transaction must be committed or aborted when this function is called.
+        // The transaction must be committed or aborted when this function is called.
         void _logSlowTransaction(OperationContext* opCtx,
                                  const SingleThreadedLockStats* lockStats,
                                  TerminationCause terminationCause,
@@ -722,8 +711,7 @@ public:
         // This method returns a string with information about a slow transaction. The format of the
         // logging string produced should match the format used for slow operation logging. A
         // transaction must be completed (committed or aborted) and a valid LockStats reference must
-        // be
-        // passed in order for this method to be called.
+        // be passed in order for this method to be called.
         std::string _transactionInfoForLog(OperationContext* opCtx,
                                            const SingleThreadedLockStats* lockStats,
                                            TerminationCause terminationCause,
@@ -784,6 +772,13 @@ public:
         return Observer(osession);
     }
 
+
+    /**
+     * Returns the timestamp of the oldest oplog entry written across all open transactions.
+     * Returns boost::none if there are no active transactions.
+     */
+    static boost::optional<Timestamp> getOldestActiveTimestamp(OperationContext* opCtx);
+
     /**
      * Append a no-op to the oplog, for cases where we haven't written in this unit of work but
      * want to await a write concern.
@@ -801,22 +796,29 @@ private:
      */
     class OplogSlotReserver {
     public:
-        OplogSlotReserver(OperationContext* opCtx);
+        OplogSlotReserver(OperationContext* opCtx, int numSlotsToReserve = 1);
         ~OplogSlotReserver();
 
         /**
-         * Returns the oplog slot reserved at construction.
+         * Returns the latest oplog slot reserved at construction.
          */
-        OplogSlot getReservedOplogSlot() const {
-            invariant(!_oplogSlot.opTime.isNull());
-            return _oplogSlot;
+        OplogSlot getLastSlot() {
+            invariant(!_oplogSlots.empty());
+            invariant(!_oplogSlots.back().opTime.isNull());
+            return getSlots().back();
+        }
+
+        std::vector<OplogSlot>& getSlots() {
+            invariant(!_oplogSlots.empty());
+            invariant(!_oplogSlots.back().opTime.isNull());
+            return _oplogSlots;
         }
 
     private:
         OperationContext* _opCtx;
         std::unique_ptr<Locker> _locker;
         std::unique_ptr<RecoveryUnit> _recoveryUnit;
-        OplogSlot _oplogSlot;
+        std::vector<OplogSlot> _oplogSlots;
     };
 
     friend std::ostream& operator<<(std::ostream& s, TransactionState txnState) {

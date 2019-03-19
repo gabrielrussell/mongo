@@ -35,6 +35,7 @@
 #include "mongo/base/status.h"
 #include "mongo/base/status_with.h"
 #include "mongo/bson/timestamp.h"
+#include "mongo/db/repl/member_data.h"
 #include "mongo/db/repl/member_state.h"
 #include "mongo/db/repl/repl_settings.h"
 #include "mongo/db/repl/sync_source_selector.h"
@@ -109,6 +110,15 @@ public:
      * initialization they need.
      */
     virtual void startup(OperationContext* opCtx) = 0;
+
+    /**
+     * Start terminal shutdown.  This causes the topology coordinator to refuse to vote in any
+     * further elections.  This should only be called from global shutdown after we've passed the
+     * point of no return.
+     *
+     * This should be called once we are sure to call shutdown().
+     */
+    virtual void enterTerminalShutdown() = 0;
 
     /**
      * Does whatever cleanup is required to stop replication, including instructing the other
@@ -389,17 +399,21 @@ public:
                                                boost::optional<Date_t> deadline) = 0;
 
     /**
-     * Wait until the given optime is known to be majority committed.
+     * Waits until the timestamp of this node's lastCommittedOpTime is >= the given timestamp.
      *
-     * The given optime is expected to be an optime in this node's local oplog. This method cannot
-     * determine correctly whether an arbitrary optime is majority committed within a replica set.
-     * It is expected that the execution of this method is contained within the span of one user
-     * operation, and thus, should not span rollbacks.
+     * Note that it is not meaningful to ask, globally, whether a particular timestamp is majority
+     * committed within a replica set, since timestamps do not uniquely identify log entries. Upon
+     * returning successfully, this method only provides the guarantee that the given timestamp is
+     * now less than or equal to the timestamp of the majority commit point as known by this node.
+     * If the given timestamp is associated with an operation in the local oplog, then it is safe to
+     * conclude that that operation is majority committed, assuming no rollbacks occurred. It is
+     * always safe to compare commit point timestamps to timestamps in a node's local oplog, since
+     * they must be on the same branch of oplog history.
      *
      * Returns whether the wait was successful. Will respect the deadline on the given
      * OperationContext, if one has been set.
      */
-    virtual Status awaitOpTimeCommitted(OperationContext* opCtx, OpTime opTime) = 0;
+    virtual Status awaitTimestampCommitted(OperationContext* opCtx, Timestamp ts) = 0;
 
     /**
      * Retrieves and returns the current election id, which is a unique id that is local to
@@ -722,6 +736,12 @@ public:
      * operation in their oplogs.  This implies such ops will never be rolled back.
      */
     virtual OpTime getLastCommittedOpTime() const = 0;
+
+    /**
+     * Returns a list of objects that contain this node's knowledge of the state of the members of
+     * the replica set.
+     */
+    virtual std::vector<MemberData> getMemberData() const = 0;
 
     /*
     * Handles an incoming replSetRequestVotes command.

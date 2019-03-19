@@ -242,6 +242,7 @@ variables:
         system-resource-info.tgz
         ${report_file|src/report.json}
         ${archive_file|src/archive.json}
+  setup_group_can_fail_task: true
   setup_group:
   - func: "kill processes"
   - func: "cleanup environment"
@@ -363,6 +364,7 @@ variables:
     - func: "apply compile expansions"
     - func: "set task expansion macros"
   teardown_task:
+  setup_group_can_fail_task: true
   setup_group:
     - func: "kill processes"
     - func: "cleanup environment"
@@ -1992,6 +1994,8 @@ functions:
           kill_process "$process"
         done
 
+        exit 0
+
   "run kitchen":
     command: shell.exec
     type: test
@@ -2772,6 +2776,8 @@ functions:
           fi
       - key: mongo_binaries
         value: ${project}/${build_variant}/${revision}/binaries/mongo-${build_id}.${ext|tgz}
+      - key: mongo_cryptd
+        value: ${project}/${build_variant}/${revision}/binaries/mongo-cryptd-${build_id}.${ext|tgz}
       - key: mongo_debugsymbols
         value: ${project}/${build_variant}/${revision}/debugsymbols/debugsymbols-${build_id}.${ext|tgz}
       - key: mongo_shell
@@ -3335,7 +3341,7 @@ tasks:
     - func: "build new tools"
     - func: "scons compile"
       vars:
-        targets: core tools dbtest integration_tests dist dist-debugsymbols distsrc-${ext|tgz} ${msi_target|}
+        targets: core tools integration_tests dist dist-debugsymbols distsrc-${ext|tgz} ${msi_target|}
         task_compile_flags: >-
           --use-new-tools
           --build-mongoreplay="${build_mongoreplay}"
@@ -3380,7 +3386,6 @@ tasks:
           # before tarring them up
           if [ -x ${strip_path|/usr/bin/strip} ]; then
             cat build/integration_tests.txt | xargs ${strip_command|/usr/bin/strip}
-            ${strip_command|/usr/bin/strip} dbtest
             ${strip_command|/usr/bin/strip} mongobridge
             ${strip_command|/usr/bin/strip} wt
           fi
@@ -3411,6 +3416,16 @@ tasks:
           $python ../buildscripts/make_archive.py -o mongodb-shell.${ext|tgz} $(find mongodb-* -type f)
           cd ..
 
+          # Create separate cryptd archive if mongocryptd is in the tarball
+          mkdir -p cryptd-archive/build
+          cd cryptd-archive
+          ${platform_decompress|tar xzvf} ../mongodb-binaries.tgz
+          find . -mindepth 3 ! -name "mongocryptd${exe}" -type f -exec rm {} \; # delete bin/* except bin/mongocryptd
+          if [ $(find . -name mongocryptd | wc -l) -eq 1 ] ; then
+            $python ../buildscripts/make_archive.py -o mongodb-cryptd.${ext|tgz} $(find mongodb-* -type f)
+          fi
+          cd ..
+
   # Test lifecycle is temporarily disabled to reduce load on Evergreen API.
   # - func: "fetch test_lifecycle.yml"
   #   vars:
@@ -3430,7 +3445,6 @@ tasks:
           - "jstests/**"
           - "pytests/**"
           - "./test*"
-          - "./dbtest*"
           - "./mongobridge*"
           - "./mongoebench*"
           - "./mongoed*"
@@ -3470,6 +3484,17 @@ tasks:
         permissions: public-read
         content_type: ${content_type|application/gzip}
         display_name: Binaries
+    - command: s3.put
+      params:
+        optional: true
+        aws_key: ${aws_key}
+        aws_secret: ${aws_secret}
+        local_file: src/cryptd-archive/mongodb-cryptd.tgz
+        remote_file: ${mongo_cryptd}
+        bucket: mciuploads
+        permissions: public-read
+        content_type: ${content_type|application/gzip}
+        display_name: CryptD Binaries
     - command: s3.put
       params:
         optional: true
@@ -4611,11 +4636,9 @@ tasks:
         if [ "${is_patch}" != "true" ]; then
           burn_in_args="--checkEvergreen"
         fi
-        # Copy the dbtest executable from the src dir because burn_in_tests.py calls it to get the
-        # list of dbtest suites.
-        cp ../src/dbtest${exe} .
         pushd ../src
         ${activate_virtualenv}
+        $python -m pip install -r etc/pip/evgtest-requirements.txt
         popd
         # Capture a list of new and modified tests.
         build_variant=${build_variant}
@@ -5546,7 +5569,7 @@ tasks:
   - func: "do setup"
   - func: "run tests"
     vars:
-      resmoke_args: --suites=core --mongod=./mongoed --excludeWithAnyTags=requires_scripting,requires_auth,requires_sharding,does_not_support_stepdowns,requires_background_index,requires_ttl_index,incompatible_with_embedded,incompatible_with_embedded_todo_investigate,requires_replication,requires_capped,requires_profiling,requires_javascript,requires_fsync,requires_compact
+      resmoke_args: --suites=core --mongod=./mongoed --excludeWithAnyTags=requires_scripting,requires_auth,requires_sharding,does_not_support_stepdowns,requires_background_index,requires_ttl_index,incompatible_with_embedded,incompatible_with_embedded_todo_investigate,requires_replication,requires_capped,requires_profiling,requires_javascript,requires_fsync,requires_compact,requires_snapshot_read
 
 - <<: *task_template
   name: jsCore_ese
@@ -6117,39 +6140,39 @@ tasks:
       resmoke_jobs_max: 1
 
 - <<: *task_template
-  name: concurrency_sharded_replication_multi_stmt_txn
+  name: concurrency_sharded_multi_stmt_txn
   commands:
   - func: "do setup"
   - func: "run tests"
     vars:
-      resmoke_args: --suites=concurrency_sharded_replication_multi_stmt_txn --storageEngine=wiredTiger
+      resmoke_args: --suites=concurrency_sharded_multi_stmt_txn --storageEngine=wiredTiger
       resmoke_jobs_max: 1
 
 - <<: *task_template
-  name: concurrency_sharded_replication_multi_stmt_txn_with_balancer
+  name: concurrency_sharded_multi_stmt_txn_with_balancer
   commands:
   - func: "do setup"
   - func: "run tests"
     vars:
-      resmoke_args: --suites=concurrency_sharded_replication_multi_stmt_txn_with_balancer --storageEngine=wiredTiger
+      resmoke_args: --suites=concurrency_sharded_multi_stmt_txn_with_balancer --storageEngine=wiredTiger
       resmoke_jobs_max: 1
 
 - <<: *task_template
-  name: concurrency_sharded_replication_local_read_write_multi_stmt_txn
+  name: concurrency_sharded_local_read_write_multi_stmt_txn
   commands:
   - func: "do setup"
   - func: "run tests"
     vars:
-      resmoke_args: --suites=concurrency_sharded_replication_local_read_write_multi_stmt_txn --storageEngine=wiredTiger
+      resmoke_args: --suites=concurrency_sharded_local_read_write_multi_stmt_txn --storageEngine=wiredTiger
       resmoke_jobs_max: 1
 
 - <<: *task_template
-  name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer
+  name: concurrency_sharded_local_read_write_multi_stmt_txn_with_balancer
   commands:
   - func: "do setup"
   - func: "run tests"
     vars:
-      resmoke_args: --suites=concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer --storageEngine=wiredTiger
+      resmoke_args: --suites=concurrency_sharded_local_read_write_multi_stmt_txn_with_balancer --storageEngine=wiredTiger
       resmoke_jobs_max: 1
 
 - <<: *task_template
@@ -7403,19 +7426,21 @@ task_groups:
   - dbtest
   - compile_all
 - name: embedded_sdk_build_and_test
+  setup_group_can_fail_task: true
   setup_group:
     - command: manifest.load
     - func: "git get project"
     - func: "get buildnumber"
     - func: "set up credentials"
     - func: "setup android toolchain" # noop if ${setup_android_toolchain} is not "true"
+    - func: "set up virtualenv"
+    - func: "set task expansion macros"
     - func: "install pip requirements"
     - func: "generate compile expansions"
   teardown_group:
     - func: "scons cache pruning"
     - func: "umount shared scons directory"
   setup_task:
-    - func: "set up virtualenv"
     - func: "set task expansion macros"
     - func: "apply compile expansions"
   teardown_task:
@@ -7522,18 +7547,6 @@ buildvariants:
   - name: concurrency_sharded_replication
     distros:
     - rhel62-large
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #  distros:
-  #  - rhel62-large
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #  distros:
-  #  - rhel62-large
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #  distros:
-  #  - rhel62-large
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #  distros:
-  #  - rhel62-large
   - name: concurrency_sharded_replication_with_balancer
     distros:
     - rhel62-large
@@ -7590,13 +7603,13 @@ buildvariants:
   - name: concurrency_replication_causal_consistency
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_sharded_causal_consistency_gen
   - name: concurrency_sharded_causal_consistency_and_balancer
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn_with_balancer
+  - name: concurrency_sharded_multi_stmt_txn
+  - name: concurrency_sharded_multi_stmt_txn_with_balancer
   - name: concurrency_sharded_with_stepdowns
   - name: concurrency_sharded_with_stepdowns_and_balancer
   - name: concurrency_simultaneous
@@ -7851,10 +7864,6 @@ buildvariants:
     - ubuntu1404-build
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: logical_session_cache_replication_1sec_refresh_jscore_passthrough_gen
@@ -7959,10 +7968,6 @@ buildvariants:
     - ubuntu1804-build
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -8140,10 +8145,6 @@ buildvariants:
     - ubuntu1604-build
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -8239,10 +8240,6 @@ buildvariants:
   - name: concurrency_replication_causal_consistency
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -8374,10 +8371,6 @@ buildvariants:
   - name: concurrency_replication_causal_consistency
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -8512,10 +8505,6 @@ buildvariants:
   - name: concurrency_replication_causal_consistency
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -8592,10 +8581,6 @@ buildvariants:
   - name: concurrency_replication_causal_consistency
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -8982,10 +8967,6 @@ buildvariants:
     - linux-64-amzn-build
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -9182,10 +9163,6 @@ buildvariants:
     - amazon2-build
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -9316,23 +9293,23 @@ buildvariants:
   - name: concurrency_sharded_replication
     distros:
     - windows-64-vs2017-compile
-  # - name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #   distros:
-  #   - windows-64-vs2017-compile
-  # - name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #   distros:
-  #   - windows-64-vs2017-compile
-  # - name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #   distros:
-  #   - windows-64-vs2017-compile
-  # - name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #   distros:
-  #   - windows-64-vs2017-compile
   - name: concurrency_sharded_replication_with_balancer
     distros:
     - windows-64-vs2017-compile
   - name: concurrency_sharded_causal_consistency_gen
   - name: concurrency_sharded_causal_consistency_and_balancer
+    distros:
+    - windows-64-vs2017-compile
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn
+    distros:
+    - windows-64-vs2017-compile
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn_with_balancer
+    distros:
+    - windows-64-vs2017-compile
+  - name: concurrency_sharded_multi_stmt_txn
+    distros:
+    - windows-64-vs2017-compile
+  - name: concurrency_sharded_multi_stmt_txn_with_balancer
     distros:
     - windows-64-vs2017-compile
   - name: concurrency_sharded_with_stepdowns
@@ -9595,10 +9572,6 @@ buildvariants:
     - windows-64-vs2017-compile
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -9837,13 +9810,13 @@ buildvariants:
   - name: concurrency_replication_causal_consistency
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_sharded_causal_consistency_gen
   - name: concurrency_sharded_causal_consistency_and_balancer
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn_with_balancer
+  - name: concurrency_sharded_multi_stmt_txn
+  - name: concurrency_sharded_multi_stmt_txn_with_balancer
   - name: concurrency_sharded_with_stepdowns
   - name: concurrency_sharded_with_stepdowns_and_balancer
   - name: concurrency_simultaneous
@@ -10563,13 +10536,13 @@ buildvariants:
     - rhel62-large
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_sharded_causal_consistency_gen
   - name: concurrency_sharded_causal_consistency_and_balancer
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn_with_balancer
+  - name: concurrency_sharded_multi_stmt_txn
+  - name: concurrency_sharded_multi_stmt_txn_with_balancer
   - name: concurrency_sharded_with_stepdowns
   - name: concurrency_sharded_with_stepdowns_and_balancer
   - name: concurrency_simultaneous
@@ -10989,13 +10962,13 @@ buildvariants:
   - name: concurrency_replication_causal_consistency
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_sharded_causal_consistency_gen
   - name: concurrency_sharded_causal_consistency_and_balancer
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn_with_balancer
+  - name: concurrency_sharded_multi_stmt_txn
+  - name: concurrency_sharded_multi_stmt_txn_with_balancer
   - name: concurrency_sharded_with_stepdowns
   - name: concurrency_sharded_with_stepdowns_and_balancer
   - name: concurrency_simultaneous
@@ -11291,10 +11264,6 @@ buildvariants:
     - rhel62-large
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -11401,18 +11370,6 @@ buildvariants:
   - name: concurrency_sharded_replication
     distros:
     - rhel70
-  # - name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #   distros:
-  #   - rhel70
-  # - name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #   distros:
-  #   - rhel70
-  # - name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #   distros:
-  #   - rhel70
-  # - name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #   distros:
-  #   - rhel70
   - name: concurrency_sharded_replication_with_balancer
     distros:
     - rhel70
@@ -11509,10 +11466,6 @@ buildvariants:
   - name: concurrency_replication_causal_consistency
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -11636,10 +11589,6 @@ buildvariants:
   - name: concurrency_replication_causal_consistency
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -11757,10 +11706,6 @@ buildvariants:
   - name: concurrency_replication_causal_consistency
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -12198,10 +12143,6 @@ buildvariants:
   - name: concurrency_replication_causal_consistency
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -12385,10 +12326,6 @@ buildvariants:
     - suse12-build
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -12552,10 +12489,6 @@ buildvariants:
     - debian81-build
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -12720,10 +12653,6 @@ buildvariants:
     - debian92-build
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication
@@ -12767,7 +12696,7 @@ buildvariants:
   - rhel62-small
   batchtime: 1440 # 1 day
   expansions:
-    test_flags: --storageEngine=biggie --excludeWithAnyTags=SERVER-38379,requires_persistence,requires_journaling,uses_transactions,requires_wiredtiger
+    test_flags: --storageEngine=biggie --excludeWithAnyTags=SERVER-38379,requires_persistence,requires_journaling,uses_transactions,requires_wiredtiger,requires_snapshot_read
     compile_flags: MONGO_DISTMOD=rhel62 -j$(grep -c ^processor /proc/cpuinfo) --dbg=off --opt=on --variables-files=etc/scons/mongodbtoolchain_v3_gcc.vars
     num_jobs_available: $(grep -c ^processor /proc/cpuinfo)
     scons_cache_scope: shared
@@ -12845,6 +12774,18 @@ buildvariants:
     - rhel62-large  # Some workloads require a lot of memory, use a bigger machine for this suite.
   - name: concurrency_sharded_causal_consistency_gen
   - name: concurrency_sharded_causal_consistency_and_balancer
+    distros:
+    - rhel62-large  # Some workloads require a lot of memory, use a bigger machine for this suite.
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn
+    distros:
+    - rhel62-large  # Some workloads require a lot of memory, use a bigger machine for this suite.
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn_with_balancer
+    distros:
+    - rhel62-large  # Some workloads require a lot of memory, use a bigger machine for this suite.
+  - name: concurrency_sharded_multi_stmt_txn
+    distros:
+    - rhel62-large  # Some workloads require a lot of memory, use a bigger machine for this suite.
+  - name: concurrency_sharded_multi_stmt_txn_with_balancer
     distros:
     - rhel62-large  # Some workloads require a lot of memory, use a bigger machine for this suite.
   - name: concurrency_sharded_with_stepdowns
@@ -12989,8 +12930,8 @@ buildvariants:
     # mobile storage engine.
     test_flags: >-
       --storageEngine=mobile
-      --excludeWithAnyTags=requires_wiredtiger,requires_replication,requires_sharding,uses_transactions,requires_capped,requires_profiling,requires_compact,requires_document_locking
-      --excludeWithAnyTags=SERVER-32709,SERVER-32869
+      --excludeWithAnyTags=requires_wiredtiger,requires_replication,requires_sharding,uses_transactions,requires_capped,requires_profiling,requires_compact,requires_document_locking,requires_snapshot_read
+      --excludeWithAnyTags=SERVER-32869
     compile_flags: >-
       -j$(grep -c ^processor /proc/cpuinfo)
       --mobile-se=on
@@ -13067,8 +13008,8 @@ buildvariants:
   expansions:
     test_flags: >-
       --storageEngine=mobile
-      --excludeWithAnyTags=requires_wiredtiger,requires_replication,requires_sharding,uses_transactions,requires_capped,requires_profiling,requires_compact,requires_document_locking
-      --excludeWithAnyTags=SERVER-32709,SERVER-32869
+      --excludeWithAnyTags=requires_wiredtiger,requires_replication,requires_sharding,uses_transactions,requires_capped,requires_profiling,requires_compact,requires_document_locking,requires_snapshot_read
+      --excludeWithAnyTags=SERVER-32869
     compile_flags: >-
         -j$(grep -c ^processor /proc/cpuinfo)
         --mobile-se=on
@@ -13144,8 +13085,8 @@ buildvariants:
     # mobile storage engine.
     test_flags: >-
       --storageEngine=mobile
-      --excludeWithAnyTags=requires_wiredtiger,requires_replication,requires_sharding,uses_transactions,requires_capped,requires_profiling,requires_compact,requires_document_locking
-      --excludeWithAnyTags=SERVER-32709,SERVER-32869
+      --excludeWithAnyTags=requires_wiredtiger,requires_replication,requires_sharding,uses_transactions,requires_capped,requires_profiling,requires_compact,requires_document_locking,requires_snapshot_read
+      --excludeWithAnyTags=SERVER-32869
     compile_env: DEVELOPER_DIR=/Applications/Xcode10.1.app
     compile_flags: >-
       -j$(sysctl -n hw.logicalcpu)
@@ -13195,7 +13136,7 @@ buildvariants:
   expansions:
     # Transactions are not explicitly supported on the ephemeralForTest storage engine.
     # Speculative majority reads are currently only allowed for change streams, which are only supported on WiredTiger.
-    test_flags: --storageEngine=ephemeralForTest --excludeWithAnyTags=requires_persistence,requires_fsync,SERVER-21420,SERVER-21658,requires_journaling,requires_wiredtiger,uses_transactions,requires_document_locking,uses_speculative_majority
+    test_flags: --storageEngine=ephemeralForTest --excludeWithAnyTags=requires_persistence,requires_fsync,SERVER-21420,SERVER-21658,requires_journaling,requires_wiredtiger,uses_transactions,requires_document_locking,uses_speculative_majority,requires_snapshot_read
     compile_flags: -j$(grep -c ^processor /proc/cpuinfo) --dbg=off --opt=on --variables-files=etc/scons/mongodbtoolchain_v3_gcc.vars
     scons_cache_scope: shared
     tooltags: ""
@@ -13488,7 +13429,7 @@ buildvariants:
     # We need llvm-symbolizer in the PATH for ASAN for clang-3.7 or later.
     variant_path_suffix: /opt/mongodbtoolchain/v3/bin
     lang_environment: LANG=C
-    san_options: LSAN_OPTIONS="suppressions=etc/lsan.suppressions:report_objects=1" ASAN_OPTIONS=detect_leaks=1:check_initialization_order=true:strict_init_order=true:abort_on_error=1:disable_coredump=0:handle_abort=0:handle_segv=0:handle_sigbus=0:handle_sigill=0:handle_sigfpe=0
+    san_options: LSAN_OPTIONS="suppressions=etc/lsan.suppressions:report_objects=1" ASAN_OPTIONS=detect_leaks=1:check_initialization_order=true:strict_init_order=true:abort_on_error=1:disable_coredump=0:handle_abort=1
     compile_flags: --variables-files=etc/scons/mongodbtoolchain_v3_clang.vars --dbg=on --opt=on --allocator=system --sanitize=address --ssl --enable-free-mon=on -j$(grep -c ^processor /proc/cpuinfo) --nostrip
     multiversion_platform: ubuntu1604
     multiversion_edition: enterprise
@@ -13538,13 +13479,13 @@ buildvariants:
   - name: concurrency_replication_causal_consistency
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_sharded_causal_consistency_gen
   - name: concurrency_sharded_causal_consistency_and_balancer
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn_with_balancer
+  - name: concurrency_sharded_multi_stmt_txn
+  - name: concurrency_sharded_multi_stmt_txn_with_balancer
   - name: concurrency_sharded_with_stepdowns
   - name: concurrency_sharded_with_stepdowns_and_balancer
   - name: concurrency_simultaneous
@@ -13651,7 +13592,7 @@ buildvariants:
     # We need llvm-symbolizer in the PATH for ASAN for clang-3.7 or later.
     variant_path_suffix: /opt/mongodbtoolchain/v3/bin
     lang_environment: LANG=C
-    san_options: LSAN_OPTIONS="suppressions=etc/lsan.suppressions:report_objects=1" ASAN_OPTIONS=detect_leaks=1:check_initialization_order=true:strict_init_order=true:abort_on_error=1:disable_coredump=0:handle_abort=0:handle_segv=0:handle_sigbus=0:handle_sigill=0:handle_sigfpe=0
+    san_options: LSAN_OPTIONS="suppressions=etc/lsan.suppressions:report_objects=1" ASAN_OPTIONS=detect_leaks=1:check_initialization_order=true:strict_init_order=true:abort_on_error=1:disable_coredump=0:handle_abort=1
     compile_flags: --variables-files=etc/scons/mongodbtoolchain_v3_clang.vars --opt=on --allocator=system --sanitize=address --ssl -j$(grep -c ^processor /proc/cpuinfo) --nostrip
     resmoke_jobs_factor: 0.3  # Avoid starting too many mongod's under ASAN build.
     tooltags: "ssl"
@@ -13696,7 +13637,7 @@ buildvariants:
     # We need llvm-symbolizer in the PATH for UBSAN.
     variant_path_suffix: /opt/mongodbtoolchain/v3/bin
     lang_environment: LANG=C
-    san_options: UBSAN_OPTIONS="print_stacktrace=1:handle_abort=0:handle_segv=0:handle_sigbus=0:handle_sigill=0:handle_sigfpe=0"
+    san_options: UBSAN_OPTIONS="print_stacktrace=1"
     compile_flags: --variables-files=etc/scons/mongodbtoolchain_v3_clang.vars --dbg=on --opt=on --sanitize=undefined --ssl --enable-free-mon=on -j$(grep -c ^processor /proc/cpuinfo) --nostrip
     multiversion_platform: ubuntu1604
     multiversion_edition: enterprise
@@ -13749,6 +13690,10 @@ buildvariants:
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_sharded_causal_consistency_gen
   - name: concurrency_sharded_causal_consistency_and_balancer
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn
+  - name: concurrency_sharded_local_read_write_multi_stmt_txn_with_balancer
+  - name: concurrency_sharded_multi_stmt_txn
+  - name: concurrency_sharded_multi_stmt_txn_with_balancer
   - name: concurrency_sharded_with_stepdowns
   - name: concurrency_sharded_with_stepdowns_and_balancer
   - name: concurrency_simultaneous
@@ -13848,7 +13793,7 @@ buildvariants:
     # We need llvm-symbolizer in the PATH for ASAN for clang-3.7 or later.
     variant_path_suffix: /opt/mongodbtoolchain/v3/bin
     lang_environment: LANG=C
-    san_options: UBSAN_OPTIONS="print_stacktrace=1:handle_abort=0:handle_segv=0:handle_sigbus=0:handle_sigill=0:handle_sigfpe=0" LSAN_OPTIONS="suppressions=etc/lsan.suppressions:report_objects=1" ASAN_OPTIONS=detect_leaks=1:check_initialization_order=true:strict_init_order=true:abort_on_error=1:disable_coredump=0:handle_abort=0:handle_segv=0:handle_sigbus=0:handle_sigill=0:handle_sigfpe=0
+    san_options: UBSAN_OPTIONS="print_stacktrace=1" LSAN_OPTIONS="suppressions=etc/lsan.suppressions:report_objects=1" ASAN_OPTIONS=detect_leaks=1:check_initialization_order=true:strict_init_order=true:abort_on_error=1:disable_coredump=0:handle_abort=1
     compile_flags: --variables-files=etc/scons/mongodbtoolchain_v3_clang.vars --dbg=on --opt=on --allocator=system --sanitize=undefined,address --ssl -j$(grep -c ^processor /proc/cpuinfo) --nostrip
     resmoke_jobs_factor: 0.3  # Avoid starting too many mongod's under {A,UB}SAN build.
     tooltags: "ssl"
@@ -13881,7 +13826,7 @@ buildvariants:
     # We need llvm-symbolizer in the PATH for ASAN for clang-3.7 or later.
     variant_path_suffix: /opt/mongodbtoolchain/v3/bin
     lang_environment: LANG=C
-    san_options: UBSAN_OPTIONS="print_stacktrace=1:handle_abort=0:handle_segv=0:handle_sigbus=0:handle_sigill=0:handle_sigfpe=0" LSAN_OPTIONS="suppressions=etc/lsan.suppressions:report_objects=1" ASAN_OPTIONS=detect_leaks=1:check_initialization_order=true:strict_init_order=true:abort_on_error=1:disable_coredump=0:handle_abort=0:handle_segv=0:handle_sigbus=0:handle_sigill=0:handle_sigfpe=0
+    san_options: UBSAN_OPTIONS="print_stacktrace=1" LSAN_OPTIONS="suppressions=etc/lsan.suppressions:report_objects=1" ASAN_OPTIONS=detect_leaks=1:check_initialization_order=true:strict_init_order=true:abort_on_error=1:disable_coredump=0:handle_abort=1
     compile_flags: --variables-files=etc/scons/mongodbtoolchain_v3_clang.vars --dbg=on --opt=on --allocator=system --sanitize=undefined,address --ssl -j$(grep -c ^processor /proc/cpuinfo) --nostrip
     resmoke_jobs_factor: 0.3  # Avoid starting too many mongod's under {A,UB}SAN build.
     tooltags: "ssl"
@@ -13915,10 +13860,6 @@ buildvariants:
   - name: concurrency_replication_causal_consistency
   - name: concurrency_replication_multi_stmt_txn
   - name: concurrency_sharded_replication
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_local_read_write_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn # Removed until SERVER-38499 is resolved.
-  #- name: concurrency_sharded_replication_multi_stmt_txn_with_balancer # Removed until SERVER-38499 is resolved.
   - name: concurrency_sharded_replication_with_balancer
   - name: concurrency_simultaneous
   - name: concurrency_simultaneous_replication

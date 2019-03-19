@@ -49,6 +49,8 @@ ReplicationCoordinatorEmbedded::~ReplicationCoordinatorEmbedded() = default;
 
 void ReplicationCoordinatorEmbedded::startup(OperationContext* opCtx) {}
 
+void ReplicationCoordinatorEmbedded::enterTerminalShutdown() {}
+
 void ReplicationCoordinatorEmbedded::shutdown(OperationContext* opCtx) {}
 
 const ReplSettings& ReplicationCoordinatorEmbedded::getSettings() const {
@@ -149,6 +151,10 @@ MemberState ReplicationCoordinatorEmbedded::getMemberState() const {
     UASSERT_NOT_IMPLEMENTED;
 }
 
+std::vector<repl::MemberData> ReplicationCoordinatorEmbedded::getMemberData() const {
+    UASSERT_NOT_IMPLEMENTED;
+}
+
 Status ReplicationCoordinatorEmbedded::waitForMemberState(MemberState, Milliseconds) {
     UASSERT_NOT_IMPLEMENTED;
 }
@@ -238,8 +244,8 @@ Status ReplicationCoordinatorEmbedded::waitUntilOpTimeForReadUntil(OperationCont
     UASSERT_NOT_IMPLEMENTED;
 }
 
-Status ReplicationCoordinatorEmbedded::awaitOpTimeCommitted(OperationContext* opCtx,
-                                                            OpTime opTime) {
+Status ReplicationCoordinatorEmbedded::awaitTimestampCommitted(OperationContext* opCtx,
+                                                               Timestamp ts) {
     UASSERT_NOT_IMPLEMENTED;
 }
 

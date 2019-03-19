@@ -1592,7 +1592,7 @@ TEST_F(ReplCoordTest, ConcurrentStepDownShouldNotSignalTheSameFinishEventMoreTha
     // Prevent _stepDownFinish() from running and becoming secondary by blocking in this
     // exclusive task.
     const auto opCtx = makeOperationContext();
-    boost::optional<ReplicationStateTransitionLockGuard> transitionGuard(opCtx.get());
+    boost::optional<ReplicationStateTransitionLockGuard> transitionGuard({opCtx.get(), MODE_X});
 
     TopologyCoordinator::UpdateTermResult termUpdated2;
     auto updateTermEvh2 = getReplCoord()->updateTerm_forTest(2, &termUpdated2);
@@ -1927,7 +1927,7 @@ TEST_F(StepDownTest,
 
     // Make sure stepDown cannot grab the RSTL in mode X. We need to use a different
     // locker to test this, or otherwise stepDown will be granted the lock automatically.
-    ReplicationStateTransitionLockGuard transitionGuard(opCtx.get());
+    ReplicationStateTransitionLockGuard transitionGuard(opCtx.get(), MODE_X);
     ASSERT_TRUE(opCtx->lockState()->isRSTLExclusive());
     auto locker = opCtx.get()->swapLockState(stdx::make_unique<LockerImpl>());
 
@@ -2706,7 +2706,7 @@ TEST_F(ReplCoordTest,
 
     // We must take the RSTL in mode X before transitioning to RS_ROLLBACK.
     const auto opCtx = makeOperationContext();
-    ReplicationStateTransitionLockGuard transitionGuard(opCtx.get());
+    ReplicationStateTransitionLockGuard transitionGuard(opCtx.get(), MODE_X);
 
     // If we go into rollback while in maintenance mode, our state changes to RS_ROLLBACK.
     ASSERT_OK(getReplCoord()->setFollowerModeStrict(opCtx.get(), MemberState::RS_ROLLBACK));
@@ -2773,7 +2773,7 @@ TEST_F(ReplCoordTest, SettingAndUnsettingMaintenanceModeShouldNotAffectRollbackS
 
     // We must take the RSTL in mode X before transitioning to RS_ROLLBACK.
     const auto opCtx = makeOperationContext();
-    ReplicationStateTransitionLockGuard transitionGuard(opCtx.get());
+    ReplicationStateTransitionLockGuard transitionGuard(opCtx.get(), MODE_X);
 
     // From rollback, entering and exiting maintenance mode doesn't change perceived
     // state.
@@ -2896,7 +2896,7 @@ TEST_F(ReplCoordTest, DoNotAllowSettingMaintenanceModeWhileConductingAnElection)
     ASSERT_EQUALS(ErrorCodes::NotSecondary, status);
 
     // We must take the RSTL in mode X before transitioning to RS_ROLLBACK.
-    ReplicationStateTransitionLockGuard transitionGuard(opCtx.get());
+    ReplicationStateTransitionLockGuard transitionGuard(opCtx.get(), MODE_X);
 
     // This cancels the actual election.
     // We do not need to respond to any pending network operations because setFollowerMode() will
@@ -4219,7 +4219,7 @@ TEST_F(StableOpTimeTest, ClearOpTimeCandidatesPastCommonPointAfterRollback) {
 
     // We must take the RSTL in mode X before transitioning to RS_ROLLBACK.
     const auto opCtx = makeOperationContext();
-    ReplicationStateTransitionLockGuard transitionGuard(opCtx.get());
+    ReplicationStateTransitionLockGuard transitionGuard(opCtx.get(), MODE_X);
 
     // Transition to ROLLBACK. The set of stable optime candidates should not have changed.
     ASSERT_OK(repl->setFollowerModeStrict(opCtx.get(), MemberState::RS_ROLLBACK));
@@ -5112,7 +5112,7 @@ TEST_F(ReplCoordTest, DoNotScheduleElectionWhenCancelAndRescheduleElectionTimeou
 
     // We must take the RSTL in mode X before transitioning to RS_ROLLBACK.
     const auto opCtx = makeOperationContext();
-    ReplicationStateTransitionLockGuard transitionGuard(opCtx.get());
+    ReplicationStateTransitionLockGuard transitionGuard(opCtx.get(), MODE_X);
     ASSERT_OK(replCoord->setFollowerModeStrict(opCtx.get(), MemberState::RS_ROLLBACK));
 
     getReplCoord()->cancelAndRescheduleElectionTimeout();
@@ -6240,6 +6240,58 @@ TEST_F(ReplCoordTest, NodeFailsVoteRequestIfItFailsToStoreLastVote) {
     // our vote in.
     ASSERT_EQUALS(lastVote.getTerm(), initTerm);
     ASSERT_EQUALS(lastVote.getCandidateIndex(), 0);
+}
+
+TEST_F(ReplCoordTest, NodeNodesNotGrantVoteIfInTerminalShutdown) {
+    // Set up a 2-node replica set config.
+    assertStartSuccess(BSON("_id"
+                            << "mySet"
+                            << "version"
+                            << 2
+                            << "members"
+                            << BSON_ARRAY(BSON("host"
+                                               << "node1:12345"
+                                               << "_id"
+                                               << 0)
+                                          << BSON("host"
+                                                  << "node2:12345"
+                                                  << "_id"
+                                                  << 1))),
+                       HostAndPort("node1", 12345));
+    auto time = OpTimeWithTermOne(100, 1);
+    ASSERT_OK(getReplCoord()->setFollowerMode(MemberState::RS_SECONDARY));
+    getReplCoord()->setMyLastAppliedOpTime(time);
+    getReplCoord()->setMyLastDurableOpTime(time);
+    simulateSuccessfulV1Election();
+
+    // Get our current term, as primary.
+    ASSERT(getReplCoord()->getMemberState().primary());
+    auto initTerm = getReplCoord()->getTerm();
+
+    auto opCtx = makeOperationContext();
+
+    ReplSetRequestVotesArgs args;
+    ASSERT_OK(args.initialize(BSON("replSetRequestVotes" << 1 << "setName"
+                                                         << "mySet"
+                                                         << "term"
+                                                         << initTerm + 1  // term of new candidate.
+                                                         << "candidateIndex"
+                                                         << 1LL
+                                                         << "configVersion"
+                                                         << 2LL
+                                                         << "dryRun"
+                                                         << false
+                                                         << "lastCommittedOp"
+                                                         << time.asOpTime().toBSON())));
+    ReplSetRequestVotesResponse response;
+
+    getReplCoord()->enterTerminalShutdown();
+
+    auto r = getReplCoord()->processReplSetRequestVotes(opCtx.get(), args, &response);
+
+    ASSERT_NOT_OK(r);
+    ASSERT_EQUALS("In the process of shutting down", r.reason());
+    ASSERT_EQUALS(ErrorCodes::ShutdownInProgress, r.code());
 }
 
 // TODO(schwerin): Unit test election id updating

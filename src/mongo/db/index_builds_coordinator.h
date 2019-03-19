@@ -152,9 +152,6 @@ public:
      * This should only be called when certain the server will not start any new index builds --
      * i.e. when the server is not accepting user requests and no internal operations are
      * concurrently starting new index builds.
-     *
-     * TODO: not yet fully implemented. IndexBuildsManager::interruptIndexBuild is not yet
-     * implemented.
      */
     void interruptAllIndexBuilds(const std::string& reason);
 
@@ -362,10 +359,16 @@ protected:
      * Runs the index build on the caller thread. Handles unregistering the index build and setting
      * the index build's Promise with the outcome of the index build.
      */
-    virtual void _runIndexBuild(OperationContext* opCtx, const UUID& buildUUID) noexcept;
+    void _runIndexBuild(OperationContext* opCtx, const UUID& buildUUID) noexcept;
 
     /**
-     * Modularizes the _indexBuildsManager calls part of _runIndexBuild. Throws on error.
+     * Acquires locks and runs index build. Throws on error.
+     */
+    void _runIndexBuildInner(OperationContext* opCtx,
+                             std::shared_ptr<ReplIndexBuildState> replState);
+
+    /**
+     * Modularizes the _indexBuildsManager calls part of _runIndexBuildInner. Throws on error.
      */
     void _buildIndex(OperationContext* opCtx,
                      Collection* collection,

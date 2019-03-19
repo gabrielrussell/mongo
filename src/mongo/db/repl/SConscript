@@ -27,6 +27,7 @@ env.Library(
         'dbcheck',
         'repl_coordinator_interface',
         'repl_settings',
+        'timestamp_block',
         '$BUILD_DIR/mongo/base',
         '$BUILD_DIR/mongo/db/background',
         '$BUILD_DIR/mongo/db/catalog/catalog_helpers',
@@ -38,6 +39,7 @@ env.Library(
         '$BUILD_DIR/mongo/db/op_observer',
         '$BUILD_DIR/mongo/db/stats/counters',
         '$BUILD_DIR/mongo/db/stats/server_read_concern_write_concern_metrics',
+        '$BUILD_DIR/mongo/db/storage/flow_control',
         '$BUILD_DIR/mongo/idl/idl_parser',
     ],
 )
@@ -97,6 +99,17 @@ env.CppUnitTest(
     ],
 )
 
+env.Library(
+    target='timestamp_block',
+    source=[
+        'timestamp_block.cpp',
+    ],
+    LIBDEPS_PRIVATE=[
+        '$BUILD_DIR/mongo/db/service_context',
+        '$BUILD_DIR/mongo/db/storage/storage_options',
+    ],
+)
+
 env.CppUnitTest(
     target='do_txn_test',
     source=[
@@ -131,7 +144,6 @@ env.Library(
         '$BUILD_DIR/mongo/db/concurrency/lock_manager',
         '$BUILD_DIR/mongo/db/db_raii',
         '$BUILD_DIR/mongo/db/dbhelpers',
-        '$BUILD_DIR/mongo/db/index_d',
         '$BUILD_DIR/mongo/db/index/index_descriptor',
         '$BUILD_DIR/mongo/db/query_exec',
         '$BUILD_DIR/mongo/util/fail_point',
@@ -709,6 +721,7 @@ env.Library(
     LIBDEPS=[
         'sync_tail_test_fixture',
         '$BUILD_DIR/mongo/db/auth/authmocks',
+        '$BUILD_DIR/mongo/db/index_builds_coordinator_interface',
     ],
 )
 
@@ -735,8 +748,11 @@ env.CppUnitTest(
     ],
     LIBDEPS=[
         '$BUILD_DIR/mongo/db/auth/authmocks',
+        '$BUILD_DIR/mongo/db/catalog_raii',
         '$BUILD_DIR/mongo/db/dbdirectclient',
         '$BUILD_DIR/mongo/db/commands/mongod_fcv',
+        '$BUILD_DIR/mongo/db/logical_session_id_helpers',
+        '$BUILD_DIR/mongo/db/stats/counters',
         '$BUILD_DIR/mongo/util/clock_source_mock',
         'idempotency_test_fixture',
         'oplog_buffer_blocking_queue',
@@ -1634,7 +1650,6 @@ env.Library(
         '$BUILD_DIR/mongo/db/concurrency/lock_manager',
         '$BUILD_DIR/mongo/db/curop',
         '$BUILD_DIR/mongo/db/free_mon/free_mon_mongod',
-        '$BUILD_DIR/mongo/db/index_d',
         '$BUILD_DIR/mongo/db/kill_sessions_local',
         '$BUILD_DIR/mongo/db/lasterror',
         '$BUILD_DIR/mongo/db/logical_clock',

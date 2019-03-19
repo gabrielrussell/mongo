@@ -1819,11 +1819,6 @@ boost::optional<Timestamp> WiredTigerKVEngine::getRecoveryTimestamp() const {
 }
 
 boost::optional<Timestamp> WiredTigerKVEngine::getLastStableRecoveryTimestamp() const {
-    if (!supportsRecoverToStableTimestamp()) {
-        severe() << "WiredTiger is configured to not support recover to a stable timestamp";
-        fassertFailed(50770);
-    }
-
     if (_ephemeral) {
         Timestamp stable(_stableTimestamp.load());
         Timestamp initialData(_initialDataTimestamp.load());
@@ -1859,6 +1854,11 @@ boost::optional<Timestamp> WiredTigerKVEngine::getOplogNeededForCrashRecovery() 
 
 Timestamp WiredTigerKVEngine::getPinnedOplog() const {
     stdx::lock_guard<stdx::mutex> lock(_oplogPinnedByBackupMutex);
+    if (!storageGlobalParams.allowOplogTruncation) {
+        // If oplog truncation is not allowed, then return the min timestamp so that no history is
+        // ever allowed to be deleted.
+        return Timestamp::min();
+    }
     if (_oplogPinnedByBackup) {
         // All the oplog since `_oplogPinnedByBackup` should remain intact during the backup.
         return _oplogPinnedByBackup.get();

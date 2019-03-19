@@ -47,6 +47,8 @@ public:
 
     void startup(OperationContext* opCtx) override;
 
+    void enterTerminalShutdown() override;
+
     void shutdown(OperationContext* opCtx) override;
 
     // Returns the ServiceContext where this instance runs.
@@ -90,6 +92,8 @@ public:
 
     repl::MemberState getMemberState() const override;
 
+    std::vector<repl::MemberData> getMemberData() const override;
+
     Status waitForMemberState(repl::MemberState, Milliseconds) override;
 
     Seconds getSlaveDelaySecs() const override;
@@ -128,7 +132,7 @@ public:
                                        boost::optional<Date_t>) override;
 
     Status waitUntilOpTimeForRead(OperationContext*, const repl::ReadConcernArgs&) override;
-    Status awaitOpTimeCommitted(OperationContext* opCtx, repl::OpTime opTime) override;
+    Status awaitTimestampCommitted(OperationContext* opCtx, Timestamp ts) override;
 
     OID getElectionId() override;
 

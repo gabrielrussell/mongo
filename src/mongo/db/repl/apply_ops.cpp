@@ -34,6 +34,7 @@
 #include "mongo/db/repl/apply_ops.h"
 
 #include "mongo/bson/util/bson_extract.h"
+#include "mongo/db/background.h"
 #include "mongo/db/catalog/collection.h"
 #include "mongo/db/catalog/database.h"
 #include "mongo/db/catalog/database_holder.h"
@@ -217,7 +218,7 @@ Status _applyOps(OperationContext* opCtx,
                         auto entry = uassertStatusOK(OplogEntry::parse(entryObj));
                         if (*opType == 'c') {
                             invariant(opCtx->lockState()->isW());
-                            uassertStatusOK(repl::applyCommand_inlock(
+                            uassertStatusOK(applyCommand_inlock(
                                 opCtx, opObj, entry, oplogApplicationMode, boost::none));
                             return Status::OK();
                         }
@@ -289,6 +290,18 @@ Status _applyPrepareTransaction(OperationContext* opCtx,
         50946,
         "applyOps with prepared must only include CRUD operations and cannot have precondition.",
         !info.getPreCondition() && info.areOpsCrudOnly());
+
+    // Block application of prepare oplog entry on secondaries when a concurrent background index
+    // build is running.
+    // This will prevent hybrid index builds from corrupting an index on secondary nodes if a
+    // prepared transaction becomes prepared during a build but commits after the index build
+    // commits.
+    for (const auto& opObj : info.getOperations()) {
+        auto ns = opObj.getField("ns").checkAndGetStringData();
+        if (BackgroundOperation::inProgForNs(ns)) {
+            BackgroundOperation::awaitNoBgOpInProgForNs(ns);
+        }
+    }
 
     // Transaction operations are in its own batch, so we can modify their opCtx.
     invariant(entry.getSessionId());

@@ -80,7 +80,6 @@
 #include "mongo/db/s/collection_sharding_state.h"
 #include "mongo/db/s/operation_sharding_state.h"
 #include "mongo/db/server_options.h"
-#include "mongo/db/server_parameters.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/storage/oplog_hack.h"
 #include "mongo/db/storage/storage_options.h"
@@ -232,10 +231,10 @@ void fillOutPlannerParams(OperationContext* opCtx,
     // overrides this behavior by not outputting a collscan even if there are no indexed
     // solutions.
     if (storageGlobalParams.noTableScan.load()) {
-        const string& ns = canonicalQuery->ns();
+        const auto& nss = canonicalQuery->nss();
         // There are certain cases where we ignore this restriction:
-        bool ignore = canonicalQuery->getQueryObj().isEmpty() ||
-            (string::npos != ns.find(".system.")) || (0 == ns.find("local."));
+        bool ignore =
+            canonicalQuery->getQueryObj().isEmpty() || nss.isSystem() || nss.isOnInternalDb();
         if (!ignore) {
             plannerParams->options |= QueryPlannerParams::NO_TABLE_SCAN;
         }

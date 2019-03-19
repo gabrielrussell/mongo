@@ -339,9 +339,8 @@ bool MigrationChunkClonerSourceLegacy::isDocumentInMigratingChunk(const BSONObj&
 
 void MigrationChunkClonerSourceLegacy::onInsertOp(OperationContext* opCtx,
                                                   const BSONObj& insertedDoc,
-                                                  const repl::OpTime& opTime,
-                                                  const bool fromPreparedTransactionCommit) {
-    dassert(opCtx->lockState()->isCollectionLockedForMode(_args.getNss().ns(), MODE_IX));
+                                                  const repl::OpTime& opTime) {
+    dassert(opCtx->lockState()->isCollectionLockedForMode(_args.getNss(), MODE_IX));
 
     BSONElement idElement = insertedDoc["_id"];
     if (idElement.eoo()) {
@@ -358,11 +357,6 @@ void MigrationChunkClonerSourceLegacy::onInsertOp(OperationContext* opCtx,
         return;
     }
 
-    if (fromPreparedTransactionCommit) {
-        _consumeOperationTrackRequestAndAddToTransferModsQueue(idElement.wrap(), 'i', opTime, {});
-        return;
-    }
-
     if (opCtx->getTxnNumber()) {
         opCtx->recoveryUnit()->registerChange(
             new LogOpForShardingHandler(this, idElement.wrap(), 'i', opTime, {}));
@@ -375,9 +369,8 @@ void MigrationChunkClonerSourceLegacy::onInsertOp(OperationContext* opCtx,
 void MigrationChunkClonerSourceLegacy::onUpdateOp(OperationContext* opCtx,
                                                   const BSONObj& updatedDoc,
                                                   const repl::OpTime& opTime,
-                                                  const repl::OpTime& prePostImageOpTime,
-                                                  const bool fromPreparedTransactionCommit) {
-    dassert(opCtx->lockState()->isCollectionLockedForMode(_args.getNss().ns(), MODE_IX));
+                                                  const repl::OpTime& prePostImageOpTime) {
+    dassert(opCtx->lockState()->isCollectionLockedForMode(_args.getNss(), MODE_IX));
 
     BSONElement idElement = updatedDoc["_id"];
     if (idElement.eoo()) {
@@ -394,11 +387,6 @@ void MigrationChunkClonerSourceLegacy::onUpdateOp(OperationContext* opCtx,
         return;
     }
 
-    if (fromPreparedTransactionCommit) {
-        _consumeOperationTrackRequestAndAddToTransferModsQueue(idElement.wrap(), 'u', opTime, {});
-        return;
-    }
-
     if (opCtx->getTxnNumber()) {
         opCtx->recoveryUnit()->registerChange(
             new LogOpForShardingHandler(this, idElement.wrap(), 'u', opTime, prePostImageOpTime));
@@ -411,9 +399,8 @@ void MigrationChunkClonerSourceLegacy::onUpdateOp(OperationContext* opCtx,
 void MigrationChunkClonerSourceLegacy::onDeleteOp(OperationContext* opCtx,
                                                   const BSONObj& deletedDocId,
                                                   const repl::OpTime& opTime,
-                                                  const repl::OpTime& preImageOpTime,
-                                                  const bool fromPreparedTransactionCommit) {
-    dassert(opCtx->lockState()->isCollectionLockedForMode(_args.getNss().ns(), MODE_IX));
+                                                  const repl::OpTime& preImageOpTime) {
+    dassert(opCtx->lockState()->isCollectionLockedForMode(_args.getNss(), MODE_IX));
 
     BSONElement idElement = deletedDocId["_id"];
     if (idElement.eoo()) {
@@ -423,11 +410,6 @@ void MigrationChunkClonerSourceLegacy::onDeleteOp(OperationContext* opCtx,
     }
 
     if (!_addedOperationToOutstandingOperationTrackRequests()) {
-        return;
-    }
-
-    if (fromPreparedTransactionCommit) {
-        _consumeOperationTrackRequestAndAddToTransferModsQueue(idElement.wrap(), 'd', opTime, {});
         return;
     }
 
@@ -518,7 +500,7 @@ uint64_t MigrationChunkClonerSourceLegacy::getCloneBatchBufferAllocationSize() {
 Status MigrationChunkClonerSourceLegacy::nextCloneBatch(OperationContext* opCtx,
                                                         Collection* collection,
                                                         BSONArrayBuilder* arrBuilder) {
-    dassert(opCtx->lockState()->isCollectionLockedForMode(_args.getNss().ns(), MODE_IS));
+    dassert(opCtx->lockState()->isCollectionLockedForMode(_args.getNss(), MODE_IS));
 
     ElapsedTracker tracker(opCtx->getServiceContext()->getFastClockSource(),
                            internalQueryExecYieldIterations.load(),
@@ -557,7 +539,7 @@ Status MigrationChunkClonerSourceLegacy::nextCloneBatch(OperationContext* opCtx,
 Status MigrationChunkClonerSourceLegacy::nextModsBatch(OperationContext* opCtx,
                                                        Database* db,
                                                        BSONObjBuilder* builder) {
-    dassert(opCtx->lockState()->isCollectionLockedForMode(_args.getNss().ns(), MODE_IS));
+    dassert(opCtx->lockState()->isCollectionLockedForMode(_args.getNss(), MODE_IS));
 
     stdx::lock_guard<stdx::mutex> sl(_mutex);
 

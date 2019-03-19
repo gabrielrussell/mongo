@@ -54,7 +54,6 @@
 #include "mongo/db/repl/storage_interface.h"
 #include "mongo/db/s/shard_identity_rollback_notifier.h"
 #include "mongo/db/s/type_shard_identity.h"
-#include "mongo/db/server_parameters.h"
 #include "mongo/db/server_recovery.h"
 #include "mongo/db/server_transactions_metrics.h"
 #include "mongo/db/session_catalog_mongod.h"
@@ -341,7 +340,7 @@ Status RollbackImpl::_transitionToRollback(OperationContext* opCtx) {
 
     log() << "transition to ROLLBACK";
     {
-        ReplicationStateTransitionLockGuard transitionGuard(opCtx);
+        ReplicationStateTransitionLockGuard transitionGuard(opCtx, MODE_X);
 
         auto status =
             _replicationCoordinator->setFollowerModeStrict(opCtx, MemberState::RS_ROLLBACK);
@@ -811,6 +810,8 @@ StatusWith<RollBackLocalOperations::RollbackCommonPoint> RollbackImpl::_findComm
     OpTime commonPointOpTime = commonPointSW.getValue().getOpTime();
     OpTime lastCommittedOpTime = _replicationCoordinator->getLastCommittedOpTime();
     OpTime committedSnapshot = _replicationCoordinator->getCurrentCommittedSnapshotOpTime();
+    auto stableTimestamp =
+        _storageInterface->getLastStableRecoveryTimestamp(opCtx->getServiceContext());
 
     log() << "Rollback common point is " << commonPointOpTime;
 
@@ -821,6 +822,16 @@ StatusWith<RollBackLocalOperations::RollbackCommonPoint> RollbackImpl::_findComm
     // Rollback common point should be >= the committed snapshot optime.
     invariant(commonPointOpTime.getTimestamp() >= committedSnapshot.getTimestamp());
     invariant(commonPointOpTime >= committedSnapshot);
+
+    // Rollback common point should be >= the stable timestamp.
+    invariant(stableTimestamp);
+    if (commonPointOpTime.getTimestamp() < *stableTimestamp) {
+        // This is an fassert rather than an invariant, since it can happen if the server was
+        // recently upgraded to enableMajorityReadConcern=true.
+        severe() << "Common point must be at least stable timestamp, common point: "
+                 << commonPointOpTime.getTimestamp() << ", stable timestamp: " << *stableTimestamp;
+        fassertFailedNoTrace(51121);
+    }
 
     return commonPointSW.getValue();
 }
@@ -1044,7 +1055,7 @@ void RollbackImpl::_transitionFromRollbackToSecondary(OperationContext* opCtx) {
 
     log() << "transition to SECONDARY";
 
-    ReplicationStateTransitionLockGuard transitionGuard(opCtx);
+    ReplicationStateTransitionLockGuard transitionGuard(opCtx, MODE_X);
 
     auto status = _replicationCoordinator->setFollowerMode(MemberState::RS_SECONDARY);
     if (!status.isOK()) {

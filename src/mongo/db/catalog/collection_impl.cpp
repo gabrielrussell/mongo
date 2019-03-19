@@ -68,7 +68,6 @@
 #include "mongo/db/query/internal_plans.h"
 #include "mongo/db/repl/oplog.h"
 #include "mongo/db/repl/replication_coordinator.h"
-#include "mongo/db/server_parameters.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/storage/key_string.h"
 #include "mongo/db/storage/record_store.h"
@@ -229,7 +228,7 @@ CollectionImpl::CollectionImpl(OperationContext* opCtx,
 }
 
 CollectionImpl::~CollectionImpl() {
-    verify(ok());
+    invariant(ok());
     if (isCapped()) {
         _recordStore->setCappedCallback(nullptr);
         _cappedNotifier->kill();
@@ -266,7 +265,7 @@ bool CollectionImpl::requiresIdIndex() const {
 
 std::unique_ptr<SeekableRecordCursor> CollectionImpl::getCursor(OperationContext* opCtx,
                                                                 bool forward) const {
-    dassert(opCtx->lockState()->isCollectionLockedForMode(ns().toString(), MODE_IS));
+    dassert(opCtx->lockState()->isCollectionLockedForMode(ns(), MODE_IS));
     invariant(ok());
 
     return _recordStore->getCursor(opCtx, forward);
@@ -276,7 +275,7 @@ std::unique_ptr<SeekableRecordCursor> CollectionImpl::getCursor(OperationContext
 bool CollectionImpl::findDoc(OperationContext* opCtx,
                              RecordId loc,
                              Snapshotted<BSONObj>* out) const {
-    dassert(opCtx->lockState()->isCollectionLockedForMode(ns().toString(), MODE_IS));
+    dassert(opCtx->lockState()->isCollectionLockedForMode(ns(), MODE_IS));
 
     RecordData rd;
     if (!_recordStore->findRecord(opCtx, loc, &rd))
@@ -457,7 +456,7 @@ Status CollectionImpl::insertDocumentForBulkLoader(OperationContext* opCtx,
         return status;
     }
 
-    dassert(opCtx->lockState()->isCollectionLockedForMode(ns().toString(), MODE_IX));
+    dassert(opCtx->lockState()->isCollectionLockedForMode(ns(), MODE_IX));
 
     // TODO SERVER-30638: using timestamp 0 for these inserts, which are non-oplog so we don't yet
     // care about their correct timestamps.
@@ -495,7 +494,7 @@ Status CollectionImpl::_insertDocuments(OperationContext* opCtx,
                                         const vector<InsertStatement>::const_iterator begin,
                                         const vector<InsertStatement>::const_iterator end,
                                         OpDebug* opDebug) {
-    dassert(opCtx->lockState()->isCollectionLockedForMode(ns().toString(), MODE_IX));
+    dassert(opCtx->lockState()->isCollectionLockedForMode(ns(), MODE_IX));
 
     const size_t count = std::distance(begin, end);
     if (isCapped() && _indexCatalog->haveAnyIndexes() && count > 1) {
@@ -547,6 +546,12 @@ Status CollectionImpl::_insertDocuments(OperationContext* opCtx,
     }
 
     return status;
+}
+
+void CollectionImpl::setMinimumVisibleSnapshot(Timestamp newMinimumVisibleSnapshot) {
+    if (!_minVisibleSnapshot || (newMinimumVisibleSnapshot > _minVisibleSnapshot.get())) {
+        _minVisibleSnapshot = newMinimumVisibleSnapshot;
+    }
 }
 
 bool CollectionImpl::haveCappedWaiters() {
@@ -637,7 +642,7 @@ RecordId CollectionImpl::updateDocument(OperationContext* opCtx,
         }
     }
 
-    dassert(opCtx->lockState()->isCollectionLockedForMode(ns().toString(), MODE_IX));
+    dassert(opCtx->lockState()->isCollectionLockedForMode(ns(), MODE_IX));
     invariant(oldDoc.snapshotId() == opCtx->recoveryUnit()->getSnapshotId());
     invariant(newDoc.isOwned());
 
@@ -711,7 +716,7 @@ StatusWith<RecordData> CollectionImpl::updateDocumentWithDamages(
     const char* damageSource,
     const mutablebson::DamageVector& damages,
     CollectionUpdateArgs* args) {
-    dassert(opCtx->lockState()->isCollectionLockedForMode(ns().toString(), MODE_IX));
+    dassert(opCtx->lockState()->isCollectionLockedForMode(ns(), MODE_IX));
     invariant(oldRec.snapshotId() == opCtx->recoveryUnit()->getSnapshotId());
     invariant(updateWithDamagesSupported());
 
@@ -780,7 +785,7 @@ uint64_t CollectionImpl::getIndexSize(OperationContext* opCtx, BSONObjBuilder* d
  * 4) re-write indexes
  */
 Status CollectionImpl::truncate(OperationContext* opCtx) {
-    dassert(opCtx->lockState()->isCollectionLockedForMode(ns().toString(), MODE_X));
+    dassert(opCtx->lockState()->isCollectionLockedForMode(ns(), MODE_X));
     BackgroundOperation::assertNoBgOpInProgForNs(ns());
     invariant(_indexCatalog->numIndexesInProgress(opCtx) == 0);
 
@@ -814,7 +819,7 @@ Status CollectionImpl::truncate(OperationContext* opCtx) {
 }
 
 void CollectionImpl::cappedTruncateAfter(OperationContext* opCtx, RecordId end, bool inclusive) {
-    dassert(opCtx->lockState()->isCollectionLockedForMode(ns().toString(), MODE_X));
+    dassert(opCtx->lockState()->isCollectionLockedForMode(ns(), MODE_X));
     invariant(isCapped());
     BackgroundOperation::assertNoBgOpInProgForNs(ns());
     invariant(_indexCatalog->numIndexesInProgress(opCtx) == 0);
@@ -823,7 +828,7 @@ void CollectionImpl::cappedTruncateAfter(OperationContext* opCtx, RecordId end, 
 }
 
 Status CollectionImpl::setValidator(OperationContext* opCtx, BSONObj validatorDoc) {
-    invariant(opCtx->lockState()->isCollectionLockedForMode(ns().toString(), MODE_X));
+    invariant(opCtx->lockState()->isCollectionLockedForMode(ns(), MODE_X));
 
     // Make owned early so that the parsed match expression refers to the owned object.
     if (!validatorDoc.isOwned())
@@ -874,7 +879,7 @@ StringData CollectionImpl::getValidationAction() const {
 }
 
 Status CollectionImpl::setValidationLevel(OperationContext* opCtx, StringData newLevel) {
-    invariant(opCtx->lockState()->isCollectionLockedForMode(ns().toString(), MODE_X));
+    invariant(opCtx->lockState()->isCollectionLockedForMode(ns(), MODE_X));
 
     auto levelSW = _parseValidationLevel(newLevel);
     if (!levelSW.isOK()) {
@@ -892,7 +897,7 @@ Status CollectionImpl::setValidationLevel(OperationContext* opCtx, StringData ne
 }
 
 Status CollectionImpl::setValidationAction(OperationContext* opCtx, StringData newAction) {
-    invariant(opCtx->lockState()->isCollectionLockedForMode(ns().toString(), MODE_X));
+    invariant(opCtx->lockState()->isCollectionLockedForMode(ns(), MODE_X));
 
     auto actionSW = _parseValidationAction(newAction);
     if (!actionSW.isOK()) {
@@ -913,7 +918,7 @@ Status CollectionImpl::updateValidator(OperationContext* opCtx,
                                        BSONObj newValidator,
                                        StringData newLevel,
                                        StringData newAction) {
-    invariant(opCtx->lockState()->isCollectionLockedForMode(ns().toString(), MODE_X));
+    invariant(opCtx->lockState()->isCollectionLockedForMode(ns(), MODE_X));
 
     opCtx->recoveryUnit()->onRollback([
         this,
@@ -1269,7 +1274,7 @@ Status CollectionImpl::validate(OperationContext* opCtx,
                                 std::unique_ptr<Lock::CollectionLock> collLk,
                                 ValidateResults* results,
                                 BSONObjBuilder* output) {
-    dassert(opCtx->lockState()->isCollectionLockedForMode(ns().toString(), MODE_IS));
+    dassert(opCtx->lockState()->isCollectionLockedForMode(ns(), MODE_IS));
 
     try {
         ValidateResultsMap indexNsResultsMap;

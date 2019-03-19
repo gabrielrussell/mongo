@@ -84,7 +84,6 @@
 using namespace std::literals::string_literals;
 using namespace mongo;
 
-std::string historyFile;
 bool gotInterrupted = false;
 bool inMultiLine = false;
 static AtomicWord<bool> atPrompt(false);  // can eval before getting to prompt
@@ -106,6 +105,52 @@ MONGO_INITIALIZER_WITH_PREREQUISITES(SetFeatureCompatibilityVersion42, ("EndStar
     return Status::OK();
 }
 const auto kAuthParam = "authSource"s;
+
+/**
+ * This throws away all log output while inside of a LoggingDisabledScope.
+ */
+class ShellConsoleAppender final : public logger::ConsoleAppender<logger::MessageEventEphemeral> {
+    using Base = logger::ConsoleAppender<logger::MessageEventEphemeral>;
+
+public:
+    using Base::Base;
+
+    Status append(const Event& event) override {
+        auto lk = stdx::lock_guard(mx);
+        if (!loggingEnabled)
+            return Status::OK();
+        return Base::append(event);
+    }
+
+    struct LoggingDisabledScope {
+        LoggingDisabledScope() {
+            disableLogging();
+        }
+
+        ~LoggingDisabledScope() {
+            enableLogging();
+        }
+    };
+
+private:
+    static void enableLogging() {
+        auto lk = stdx::lock_guard(mx);
+        invariant(!loggingEnabled);
+        loggingEnabled = true;
+    }
+
+    static void disableLogging() {
+        auto lk = stdx::lock_guard(mx);
+        invariant(loggingEnabled);
+        loggingEnabled = false;
+    }
+
+    // This needs to use a mutex rather than an atomic bool because we need to ensure that no more
+    // logging will happen once we return from disable().
+    static inline stdx::mutex mx;
+    static inline bool loggingEnabled = true;
+};
+
 }  // namespace
 
 namespace mongo {
@@ -153,14 +198,7 @@ void completionHook(const char* text, linenoiseCompletions* lc) {
 }
 
 void shellHistoryInit() {
-    std::stringstream ss;
-    const char* h = shell_utils::getUserDir();
-    if (h)
-        ss << h << "/";
-    ss << ".dbshell";
-    historyFile = ss.str();
-
-    Status res = linenoiseHistoryLoad(historyFile.c_str());
+    Status res = linenoiseHistoryLoad(shell_utils::getHistoryFilePath().string().c_str());
     if (!res.isOK()) {
         error() << "Error loading history file: " << res;
     }
@@ -168,7 +206,7 @@ void shellHistoryInit() {
 }
 
 void shellHistoryDone() {
-    Status res = linenoiseHistorySave(historyFile.c_str());
+    Status res = linenoiseHistorySave(shell_utils::getHistoryFilePath().string().c_str());
     if (!res.isOK()) {
         error() << "Error saving history file: " << res;
     }
@@ -218,6 +256,7 @@ void quitNicely(int sig) {
 
 // the returned string is allocated with strdup() or malloc() and must be freed by calling free()
 char* shellReadline(const char* prompt, int handlesigint = 0) {
+    auto lds = ShellConsoleAppender::LoggingDisabledScope();
     atPrompt.store(true);
 
     char* ret = linenoise(prompt);
@@ -684,7 +723,10 @@ static void edit(const std::string& whatToEdit) {
     // Pass file to editor
     StringBuilder sb;
     sb << editor << " " << filename;
-    int ret = ::system(sb.str().c_str());
+    int ret = [&] {
+        auto lds = ShellConsoleAppender::LoggingDisabledScope();
+        return ::system(sb.str().c_str());
+    }();
     if (ret) {
         if (ret == -1) {
             int systemErrno = errno;
@@ -761,6 +803,10 @@ int _main(int argc, char* argv[], char** envp) {
     setupSignalHandlers();
     setupSignals();
 
+    logger::globalLogManager()->getGlobalDomain()->clearAppenders();
+    logger::globalLogManager()->getGlobalDomain()->attachAppender(
+        std::make_unique<ShellConsoleAppender>(
+            std::make_unique<logger::MessageEventDetailsEncoder>()));
     mongo::shell_utils::RecordMyLocation(argv[0]);
 
     mongo::runGlobalInitializersOrDie(argc, argv, envp);
@@ -789,7 +835,7 @@ int _main(int argc, char* argv[], char** envp) {
 
     logger::globalLogManager()
         ->getNamedDomain("javascriptOutput")
-        ->attachAppender(std::make_unique<logger::ConsoleAppender<logger::MessageEventEphemeral>>(
+        ->attachAppender(std::make_unique<ShellConsoleAppender>(
             std::make_unique<logger::MessageEventUnadornedEncoder>()));
 
     // Get the URL passed to the shell
@@ -811,14 +857,14 @@ int _main(int argc, char* argv[], char** envp) {
         std::stringstream ss;
         ss << "DB.prototype._defaultAuthenticationMechanism = \"" << escape(authMechanisms.get())
            << "\";" << std::endl;
-        mongo::shell_utils::_dbConnect += ss.str();
+        mongo::shell_utils::dbConnect += ss.str();
     }
 
     if (const auto gssapiServiveName = parsedURI.getOption("gssapiServiceName")) {
         std::stringstream ss;
         ss << "DB.prototype._defaultGssapiServiceName = \"" << escape(gssapiServiveName.get())
            << "\";" << std::endl;
-        mongo::shell_utils::_dbConnect += ss.str();
+        mongo::shell_utils::dbConnect += ss.str();
     }
 
     if (!shellGlobalParams.nodb) {  // connect to db
@@ -855,7 +901,7 @@ int _main(int argc, char* argv[], char** envp) {
             ss << "db = db.getMongo().startSession().getDatabase(db.getName());" << std::endl;
         }
 
-        mongo::shell_utils::_dbConnect += ss.str();
+        mongo::shell_utils::dbConnect += ss.str();
     }
 
     mongo::ScriptEngine::setConnectCallback(mongo::shell_utils::onConnect);

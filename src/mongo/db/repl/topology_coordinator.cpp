@@ -55,7 +55,6 @@
 #include "mongo/db/repl/repl_set_heartbeat_response.h"
 #include "mongo/db/repl/repl_set_request_votes_args.h"
 #include "mongo/db/repl/rslog.h"
-#include "mongo/db/server_parameters.h"
 #include "mongo/rpc/metadata/oplog_query_metadata.h"
 #include "mongo/rpc/metadata/repl_set_metadata.h"
 #include "mongo/util/assert_util.h"
@@ -2131,6 +2130,10 @@ MemberState TopologyCoordinator::getMemberState() const {
         return MemberState::RS_RECOVERING;
     }
     return _followerMode;
+}
+
+std::vector<MemberData> TopologyCoordinator::getMemberData() const {
+    return _memberData;
 }
 
 bool TopologyCoordinator::canAcceptWrites() const {

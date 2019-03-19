@@ -196,20 +196,20 @@ public:
     virtual bool unlockGlobal() = 0;
 
     /**
-     * Requests the RSTL to be acquired in mode X. This should only be called inside
-     * ReplicationStateTransitionLockGuard.
+     * Requests the RSTL to be acquired in the requested mode (typically mode X) . This should only
+     * be called inside ReplicationStateTransitionLockGuard.
      *
      * See the comments for lockBegin/Complete for more information on the semantics.
      */
-    virtual LockResult lockRSTLBegin(OperationContext* opCtx) = 0;
+    virtual LockResult lockRSTLBegin(OperationContext* opCtx, LockMode mode) = 0;
 
     /**
-     * Waits for the completion of acquiring the RSTL in mode X. This should only be called inside
+     * Waits for the completion of acquiring the RSTL. This should only be called inside
      * ReplicationStateTransitionLockGuard.
      *
      * It may throw an exception if it is interrupted.
      */
-    virtual void lockRSTLComplete(OperationContext* opCtx, Date_t deadline) = 0;
+    virtual void lockRSTLComplete(OperationContext* opCtx, LockMode mode, Date_t deadline) = 0;
 
     /**
      * Unlocks the RSTL when the transaction becomes prepared. This is used to bypass two-phase
@@ -295,7 +295,7 @@ public:
     // hierarchy is properly locked and because of this they are very expensive to call.
     // Do not use them in performance critical code paths.
     virtual bool isDbLockedForMode(StringData dbName, LockMode mode) const = 0;
-    virtual bool isCollectionLockedForMode(StringData ns, LockMode mode) const = 0;
+    virtual bool isCollectionLockedForMode(const NamespaceString& nss, LockMode mode) const = 0;
 
     /**
      * Returns the resource that this locker is waiting/blocked on (if any). If the locker is

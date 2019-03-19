@@ -100,6 +100,8 @@ public:
 
     void startup(OperationContext* opCtx) override;
 
+    void enterTerminalShutdown() override;
+
     void shutdown(OperationContext* opCtx) override;
 
     const ReplSettings& getSettings() const override;
@@ -107,6 +109,8 @@ public:
     Mode getReplicationMode() const override;
 
     MemberState getMemberState() const override;
+
+    std::vector<MemberData> getMemberData() const override;
 
     Status waitForMemberState(MemberState expectedState, Milliseconds timeout) override;
 
@@ -171,8 +175,8 @@ public:
                                        boost::optional<Date_t> deadline) override;
 
     Status waitUntilOpTimeForRead(OperationContext* opCtx,
-                                  const ReadConcernArgs& readConcern) override;
-    Status awaitOpTimeCommitted(OperationContext* opCtx, OpTime opTime) override;
+                                          const ReadConcernArgs& readConcern) override;
+    Status awaitTimestampCommitted(OperationContext* opCtx, Timestamp ts) override;
     OID getElectionId() override;
 
     int getMyId() const override;
@@ -1427,6 +1431,9 @@ private:
     // When we decide to step down due to hearing about a higher term, we remember the term we heard
     // here so we can update our term to match as part of finishing stepdown.
     boost::optional<long long> _pendingTermUpdateDuringStepDown;  // (M)
+
+    // If we're in terminal shutdown.  If true, we'll refuse to vote in elections.
+    bool _inTerminalShutdown = false;  // (M)
 };
 
 }  // namespace repl

@@ -74,7 +74,6 @@
 #include "mongo/db/repl/update_position_args.h"
 #include "mongo/db/repl/vote_requester.h"
 #include "mongo/db/server_options.h"
-#include "mongo/db/server_parameters.h"
 #include "mongo/db/server_transactions_metrics.h"
 #include "mongo/db/transaction_participant.h"
 #include "mongo/db/write_concern.h"
@@ -97,7 +96,6 @@ namespace mongo {
 namespace repl {
 
 MONGO_FAIL_POINT_DEFINE(stepdownHangBeforePerformingPostMemberStateUpdateActions);
-MONGO_FAIL_POINT_DEFINE(transitionToPrimaryHangBeforeTakingGlobalExclusiveLock);
 MONGO_FAIL_POINT_DEFINE(holdStableTimestampAtSpecificTimestamp);
 
 // Tracks the number of operations killed on step down.
@@ -174,15 +172,6 @@ BSONObj incrementConfigVersionByRandom(BSONObj config) {
     }
     return builder.obj();
 }
-
-// This is a special flag that allows for testing of snapshot behavior by skipping the replication
-// related checks and isolating the storage/query side of snapshotting.
-// SERVER-31304 rename this parameter to something more appropriate.
-bool testingSnapshotBehaviorInIsolation = false;
-ExportedServerParameter<bool, ServerParameterType::kStartupOnly> TestingSnapshotBehaviorInIsolation(
-    ServerParameterSet::getGlobal(),
-    "testingSnapshotBehaviorInIsolation",
-    &testingSnapshotBehaviorInIsolation);
 
 }  // namespace
 
@@ -766,7 +755,7 @@ void ReplicationCoordinatorImpl::_startDataReplication(OperationContext* opCtx,
 void ReplicationCoordinatorImpl::startup(OperationContext* opCtx) {
     if (!isReplEnabled()) {
         if (ReplSettings::shouldRecoverFromOplogAsStandalone()) {
-            if (!_storage->supportsRecoverToStableTimestamp(opCtx->getServiceContext())) {
+            if (!_storage->supportsRecoveryTimestamp(opCtx->getServiceContext())) {
                 severe() << "Cannot use 'recoverFromOplogAsStandalone' with a storage engine that "
                             "does not support recover to stable timestamp.";
                 fassertFailedNoTrace(50805);
@@ -812,6 +801,11 @@ void ReplicationCoordinatorImpl::startup(OperationContext* opCtx) {
         invariant(!_rsConfig.isInitialized());
         _setConfigState_inlock(kConfigUninitialized);
     }
+}
+
+void ReplicationCoordinatorImpl::enterTerminalShutdown() {
+    stdx::lock_guard lk(_mutex);
+    _inTerminalShutdown = true;
 }
 
 void ReplicationCoordinatorImpl::shutdown(OperationContext* opCtx) {
@@ -878,6 +872,11 @@ ReplicationCoordinator::Mode ReplicationCoordinatorImpl::getReplicationMode() co
 MemberState ReplicationCoordinatorImpl::getMemberState() const {
     stdx::lock_guard<stdx::mutex> lk(_mutex);
     return _getMemberState_inlock();
+}
+
+std::vector<MemberData> ReplicationCoordinatorImpl::getMemberData() const {
+    stdx::lock_guard<stdx::mutex> lk(_mutex);
+    return _topCoord->getMemberData();
 }
 
 MemberState ReplicationCoordinatorImpl::_getMemberState_inlock() const {
@@ -1002,7 +1001,7 @@ void ReplicationCoordinatorImpl::signalDrainComplete(OperationContext* opCtx,
 
     _externalState->onDrainComplete(opCtx);
 
-    ReplicationStateTransitionLockGuard transitionGuard(opCtx);
+    ReplicationStateTransitionLockGuard transitionGuard(opCtx, MODE_X);
     lk.lock();
 
     // Exit drain mode only if we're actually in draining mode, the apply buffer is empty in the
@@ -1453,15 +1452,13 @@ Status ReplicationCoordinatorImpl::_waitUntilOpTimeForReadDeprecated(
     return _waitUntilOpTime(opCtx, isMajorityCommittedRead, targetOpTime);
 }
 
-Status ReplicationCoordinatorImpl::awaitOpTimeCommitted(OperationContext* opCtx, OpTime opTime) {
-    // The optime given to this method is required to be an optime in this node's local oplog.
-    // Furthermore, the execution of this method must not span rollbacks, so the oplog at the start
-    // of the waiting period will be a prefix of the oplog at the end of the waiting period. This
-    // makes it valid to compare optimes from this node's oplog based on their timestamps alone, and
-    // so allows this method to determine if an optime is committed by comparing its timestamp to
-    // the timestamp of the last committed optime.
+Status ReplicationCoordinatorImpl::awaitTimestampCommitted(OperationContext* opCtx, Timestamp ts) {
+    // Using an uninitialized term means that this optime will be compared to other optimes only by
+    // its timestamp. This allows us to wait only on the timestamp of the commit point surpassing
+    // this timestamp, without worrying about terms.
+    OpTime waitOpTime(ts, OpTime::kUninitializedTerm);
     const bool isMajorityCommittedRead = true;
-    return _waitUntilOpTime(opCtx, isMajorityCommittedRead, opTime);
+    return _waitUntilOpTime(opCtx, isMajorityCommittedRead, waitOpTime);
 }
 
 OpTime ReplicationCoordinatorImpl::_getMyLastAppliedOpTime_inlock() const {
@@ -1547,7 +1544,7 @@ bool ReplicationCoordinatorImpl::_doneWaitingForReplication_inlock(
             }
 
             // Fall through to wait for "majority" write concern.
-        } else if (_externalState->snapshotsEnabled() && !testingSnapshotBehaviorInIsolation) {
+        } else if (_externalState->snapshotsEnabled() && !gTestingSnapshotBehaviorInIsolation) {
             // Make sure we have a valid "committed" snapshot up to the needed optime.
             if (!_currentCommittedSnapshot) {
                 return false;
@@ -1869,7 +1866,7 @@ void ReplicationCoordinatorImpl::stepDown(OperationContext* opCtx,
     uassert(ErrorCodes::NotMaster, "not primary so can't step down", getMemberState().primary());
 
     ReplicationStateTransitionLockGuard rstlLock(
-        opCtx, ReplicationStateTransitionLockGuard::EnqueueOnly());
+        opCtx, MODE_X, ReplicationStateTransitionLockGuard::EnqueueOnly());
 
     // Kill all write operations which are no longer safe to run on step down. Also, operations that
     // have taken global lock in S mode will be killed to avoid 3-way deadlock between read,
@@ -2165,7 +2162,7 @@ Status ReplicationCoordinatorImpl::checkCanServeReadsFor_UNSAFE(OperationContext
 
     auto txnParticipant = TransactionParticipant::get(opCtx);
     if (txnParticipant && txnParticipant.inMultiDocumentTransaction()) {
-        if (!_readWriteAbility->canAcceptNonLocalWrites_UNSAFE() && !getTestCommandsEnabled()) {
+        if (!_readWriteAbility->canAcceptNonLocalWrites_UNSAFE()) {
             return Status(ErrorCodes::NotMaster,
                           "Multi-document transactions are only allowed on replica set primaries.");
         }
@@ -2548,7 +2545,7 @@ void ReplicationCoordinatorImpl::_finishReplSetReconfig(
         // Since it's a force reconfig, the primary node may not be electable after the
         // configuration change.  In case we are that primary node, finish the reconfig under the
         // RSTL, so that the step down occurs safely.
-        transitionGuard.emplace(opCtx.get());
+        transitionGuard.emplace(opCtx.get(), MODE_X);
     }
     stdx::unique_lock<stdx::mutex> lk(_mutex);
 
@@ -3445,6 +3442,8 @@ boost::optional<OpTime> ReplicationCoordinatorImpl::_recalculateStableOpTime(Wit
     return stableOpTime;
 }
 
+MONGO_FAIL_POINT_DEFINE(disableSnapshotting);
+
 void ReplicationCoordinatorImpl::_setStableTimestampForStorage(WithLock lk) {
     // Get the current stable optime.
     auto stableOpTime = _recalculateStableOpTime(lk);
@@ -3454,7 +3453,7 @@ void ReplicationCoordinatorImpl::_setStableTimestampForStorage(WithLock lk) {
     if (stableOpTime) {
         LOG(2) << "Setting replication's stable optime to " << stableOpTime.value();
 
-        if (!testingSnapshotBehaviorInIsolation) {
+        if (!gTestingSnapshotBehaviorInIsolation) {
             // Update committed snapshot and wake up any threads waiting on read concern or
             // write concern.
             if (serverGlobalParams.enableMajorityReadConcern) {
@@ -3473,7 +3472,9 @@ void ReplicationCoordinatorImpl::_setStableTimestampForStorage(WithLock lk) {
                 }
                 // Set the stable timestamp regardless of whether the majority commit point moved
                 // forward.
-                _storage->setStableTimestamp(getServiceContext(), stableOpTime->getTimestamp());
+                if (!MONGO_FAIL_POINT(disableSnapshotting)) {
+                    _storage->setStableTimestamp(getServiceContext(), stableOpTime->getTimestamp());
+                }
             }
         }
         _cleanupStableOpTimeCandidates(&_stableOpTimeCandidates, stableOpTime.get());
@@ -3515,6 +3516,13 @@ Status ReplicationCoordinatorImpl::processReplSetRequestVotes(
 
     {
         stdx::lock_guard<stdx::mutex> lk(_mutex);
+
+        // We should only enter terminal shutdown from global terminal exit.  In that case, rather
+        // than voting in a term we don't plan to stay alive in, refuse to vote.
+        if (_inTerminalShutdown) {
+            return Status(ErrorCodes::ShutdownInProgress, "In the process of shutting down");
+        }
+
         _topCoord->processReplSetRequestVotes(args, response);
     }
 
@@ -3706,11 +3714,9 @@ size_t ReplicationCoordinatorImpl::getNumUncommittedSnapshots() {
     return _uncommittedSnapshotsSize.load();
 }
 
-MONGO_FAIL_POINT_DEFINE(disableSnapshotting);
-
 bool ReplicationCoordinatorImpl::_updateCommittedSnapshot_inlock(
     const OpTime& newCommittedSnapshot) {
-    if (testingSnapshotBehaviorInIsolation) {
+    if (gTestingSnapshotBehaviorInIsolation) {
         return false;
     }
 
