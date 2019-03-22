@@ -157,18 +157,23 @@ public:
 
     bool shouldRelaxIndexConstraints(OperationContext* opCtx, const NamespaceString& ns) override;
 
-    void setMyLastAppliedOpTime(const OpTime& opTime) override;
-    void setMyLastDurableOpTime(const OpTime& opTime) override;
+    void setMyLastAppliedOpTimeAndWallTime(const OpTimeAndWallTime& opTimeAndWallTime)override;
+    void setMyLastDurableOpTimeAndWallTime(const OpTimeAndWallTime& opTimeAndWallTime)override;
 
-    void setMyLastAppliedOpTimeForward(const OpTime& opTime, DataConsistency consistency) override;
-    void setMyLastDurableOpTimeForward(const OpTime& opTime) override;
+    void setMyLastAppliedOpTimeAndWallTimeForward(
+        const OpTimeAndWallTime& opTimeAndWallTime, DataConsistency consistency)override;
+    void setMyLastDurableOpTimeAndWallTimeForward(
+        const OpTimeAndWallTime& opTimeAndWallTime)override;
 
     void resetMyLastOpTimes() override;
 
     void setMyHeartbeatMessage(const std::string& msg) override;
 
     OpTime getMyLastAppliedOpTime() const override;
+    OpTimeAndWallTime getMyLastAppliedOpTimeAndWallTime() const override;
+
     OpTime getMyLastDurableOpTime() const override;
+    OpTimeAndWallTime getMyLastDurableOpTimeAndWallTime() const override;
 
     Status waitUntilOpTimeForReadUntil(OperationContext* opCtx,
                                        const ReadConcernArgs& readConcern,
@@ -752,7 +757,10 @@ private:
     int _getMyId_inlock() const;
 
     OpTime _getMyLastAppliedOpTime_inlock() const;
+    OpTimeAndWallTime _getMyLastAppliedOpTimeAndWallTime_inlock() const;
+
     OpTime _getMyLastDurableOpTime_inlock() const;
+    OpTimeAndWallTime _getMyLastDurableOpTimeAndWallTime_inlock() const;
 
     /**
      * Helper method for updating our tracking of the last optime applied by a given node.
@@ -776,11 +784,13 @@ private:
     /**
      * Helpers to set the last applied and durable OpTime.
      */
-    void _setMyLastAppliedOpTime(WithLock lk,
-                                 const OpTime& opTime,
-                                 bool isRollbackAllowed,
-                                 DataConsistency consistency);
-    void _setMyLastDurableOpTime(WithLock lk, const OpTime& opTime, bool isRollbackAllowed);
+    void _setMyLastAppliedOpTimeAndWallTime(WithLock lk,
+                                            const OpTimeAndWallTime& opTime,
+                                            bool isRollbackAllowed,
+                                            DataConsistency consistency);
+    void _setMyLastDurableOpTimeAndWallTime(WithLock lk,
+                                            const OpTimeAndWallTime& opTimeAndWallTime,
+                                            bool isRollbackAllowed);
 
     /**
      * Schedules a heartbeat to be sent to "target" at "when". "targetIndex" is the index
@@ -862,7 +872,7 @@ private:
      */
     void _finishLoadLocalConfig(const executor::TaskExecutor::CallbackArgs& cbData,
                                 const ReplSetConfig& localConfig,
-                                const StatusWith<OpTime>& lastOpTimeStatus,
+                                const StatusWith<OpTimeAndWallTime>& lastOpTimeAndWallTimeStatus,
                                 const StatusWith<LastVote>& lastVoteStatus);
 
     /**

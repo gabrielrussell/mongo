@@ -266,6 +266,9 @@ functions:
           dsi_analysis_atlas_pw: "${dsi_analysis_atlas_pw}"
           EOF
           chmod 400 runtime_secret.yml
+    - command: expansions.write
+      params:
+        file: work/expansions.yml
     - command: shell.exec
       params:
         working_dir: work
@@ -317,6 +320,17 @@ functions:
         script: |
           ../src/dsi/dsi/run-dsi detect-changes
     - command: shell.exec
+      type: test
+      params:
+        working_dir: work
+        script: |
+          set -o verbose
+          TAG="4.0.2-Baseline"
+          OVERRIDEFILE="../src/dsi/dsi/analysis/${branch_name}/system_perf_override.json"
+          python -u ../src/dsi/dsi/analysis/post_run_check.py ${script_flags} --reports-analysis reports --perf-file perf.json --rev ${revision} --refTag $TAG --overrideFile $OVERRIDEFILE --project_id sys-perf --variant ${build_variant} --task ${task_name}
+          # detect outliers needs to run, so defer the post_run_check exit status to later
+          echo $? > post_run_check.status
+    - command: shell.exec
       params:
         working_dir: work
         script: |
@@ -326,11 +340,8 @@ functions:
       params:
         working_dir: work
         script: |
-          set -o errexit
           set -o verbose
-          TAG="4.0.2-Baseline"
-          OVERRIDEFILE="../src/dsi/dsi/analysis/${branch_name}/system_perf_override.json"
-          python -u ../src/dsi/dsi/analysis/post_run_check.py ${script_flags} --reports-analysis reports --perf-file perf.json --rev ${revision} --refTag $TAG --overrideFile $OVERRIDEFILE --project_id sys-perf --variant ${build_variant} --task ${task_name}
+          exit $(cat post_run_check.status)
 
 #######################################
 #               Tasks                 #

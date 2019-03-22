@@ -107,6 +107,22 @@ public:
 private:
     OperationContext* _opCtx;
 };
+
+class IgnorePrepareBlock {
+public:
+    IgnorePrepareBlock(OperationContext* opCtx) : _opCtx(opCtx) {
+        _opCtx->recoveryUnit()->abandonSnapshot();
+        _opCtx->recoveryUnit()->setIgnorePrepared(true);
+    }
+
+    ~IgnorePrepareBlock() {
+        _opCtx->recoveryUnit()->abandonSnapshot();
+        _opCtx->recoveryUnit()->setIgnorePrepared(false);
+    }
+
+private:
+    OperationContext* _opCtx;
+};
 }
 
 const auto kIndexVersion = IndexDescriptor::IndexVersion::kV2;
@@ -416,8 +432,8 @@ public:
 
     void assertOldestActiveTxnTimestampEquals(const boost::optional<Timestamp>& ts,
                                               const Timestamp& atTs) {
-        OneOffRead oor(_opCtx, atTs);
-        ASSERT_EQ(TransactionParticipant::getOldestActiveTimestamp(_opCtx), ts);
+        auto oldest = TransactionParticipant::getOldestActiveTimestamp(atTs);
+        ASSERT_EQ(oldest, ts);
     }
 
     void assertHasStartOpTime() {
@@ -430,9 +446,9 @@ public:
         ASSERT_FALSE(txnDoc.hasField(SessionTxnRecord::kStartOpTimeFieldName));
     }
 
-    void setReplCoordAppliedOpTime(const repl::OpTime& opTime) {
+    void setReplCoordAppliedOpTime(const repl::OpTime& opTime, Date_t wallTime = Date_t::min()) {
         repl::ReplicationCoordinator::get(getGlobalServiceContext())
-            ->setMyLastAppliedOpTime(opTime);
+            ->setMyLastAppliedOpTimeAndWallTime({opTime, wallTime});
         ASSERT_OK(repl::ReplicationCoordinator::get(getGlobalServiceContext())
                       ->updateTerm(_opCtx, opTime.getTerm()));
     }
@@ -2981,9 +2997,15 @@ public:
             assertDocumentAtTimestamp(coll, beforeTxnTs, BSONObj());
             assertDocumentAtTimestamp(coll, firstOplogEntryTs, BSONObj());
             assertDocumentAtTimestamp(coll, secondOplogEntryTs, BSONObj());
-            assertDocumentAtTimestamp(coll, prepareEntryTs, BSONObj());
-            assertDocumentAtTimestamp(coll, commitEntryTs, BSONObj());
-            assertDocumentAtTimestamp(coll, nullTs, BSONObj());
+
+            {
+                IgnorePrepareBlock ignorePrepare(_opCtx);
+                // Perform the following while ignoring prepare conflicts. These calls would
+                // otherwise wait forever until the prepared transaction committed or aborted.
+                assertDocumentAtTimestamp(coll, prepareEntryTs, BSONObj());
+                assertDocumentAtTimestamp(coll, commitEntryTs, BSONObj());
+                assertDocumentAtTimestamp(coll, nullTs, BSONObj());
+            }
 
             assertOplogDocumentExistsAtTimestamp(prepareFilter, presentTs, false);
             assertOplogDocumentExistsAtTimestamp(prepareFilter, beforeTxnTs, false);

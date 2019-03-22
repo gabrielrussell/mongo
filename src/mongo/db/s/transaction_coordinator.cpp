@@ -59,7 +59,7 @@ CoordinatorCommitDecision makeDecisionFromPrepareVoteConsensus(
                                              result.maxPrepareTimestamp->getInc() + 1);
 
         LOG(3) << "Advancing cluster time to commit Timestamp " << decision.commitTimestamp.get()
-               << " of transaction " << txnNumber << " on session " << lsid.toBSON();
+               << " of transaction " << txnNumber << " on session " << lsid.getId();
 
         uassertStatusOK(LogicalClock::get(service)->advanceClusterTime(
             LogicalTime(result.maxPrepareTimestamp.get())));
@@ -79,21 +79,25 @@ TransactionCoordinator::TransactionCoordinator(ServiceContext* serviceContext,
       _lsid(lsid),
       _txnNumber(txnNumber),
       _scheduler(std::move(scheduler)),
-      _driver(serviceContext, _scheduler->makeChildScheduler()) {
+      _driver(serviceContext, *_scheduler) {
     if (coordinateCommitDeadline) {
         _deadlineScheduler = _scheduler->makeChildScheduler();
         _deadlineScheduler
-            ->scheduleWorkAt(*coordinateCommitDeadline,
-                             [this](OperationContext* opCtx) { cancelIfCommitNotYetStarted(); })
-            .getAsync([](const Status&) {});
+            ->scheduleWorkAt(*coordinateCommitDeadline, [](OperationContext* opCtx) {})
+            .getAsync([this](const Status& s) {
+                if (s == ErrorCodes::TransactionCoordinatorDeadlineTaskCanceled)
+                    return;
+                cancelIfCommitNotYetStarted();
+            });
     }
 }
 
 TransactionCoordinator::~TransactionCoordinator() {
-    _cancelTimeoutWaitForCommitTask();
+    cancelIfCommitNotYetStarted();
 
+    // Wait for all scheduled asynchronous activity to complete
     if (_deadlineScheduler)
-        _deadlineScheduler.reset();
+        _deadlineScheduler->join();
 
     stdx::lock_guard<stdx::mutex> lk(_mutex);
     invariant(_state == TransactionCoordinator::CoordinatorState::kDone);
@@ -158,7 +162,7 @@ Future<void> TransactionCoordinator::onCompletion() {
     }
 
     auto completionPromiseFuture = makePromiseFuture<void>();
-    _completionPromises.push_back(std::move(completionPromiseFuture.promise));
+    _completionPromises.emplace_back(std::move(completionPromiseFuture.promise));
 
     return std::move(completionPromiseFuture.future)
         .onError<ErrorCodes::TransactionCoordinatorSteppingDown>(
@@ -183,8 +187,8 @@ void TransactionCoordinator::cancelIfCommitNotYetStarted() {
 
 void TransactionCoordinator::_cancelTimeoutWaitForCommitTask() {
     if (_deadlineScheduler) {
-        _deadlineScheduler->shutdown(
-            {ErrorCodes::CallbackCanceled, "Interrupting the commit received deadline task"});
+        _deadlineScheduler->shutdown({ErrorCodes::TransactionCoordinatorDeadlineTaskCanceled,
+                                      "Interrupting the commit received deadline task"});
     }
 }
 
@@ -216,8 +220,7 @@ Future<void> TransactionCoordinator::_runPhaseTwo(const std::vector<ShardId>& pa
             return _driver.deleteCoordinatorDoc(_lsid, _txnNumber);
         })
         .then([this] {
-            LOG(3) << "Two-phase commit completed for session " << _lsid.toBSON()
-                   << ", transaction number " << _txnNumber;
+            LOG(3) << "Two-phase commit completed for " << _lsid.getId() << ':' << _txnNumber;
 
             stdx::unique_lock<stdx::mutex> ul(_mutex);
             _transitionToDone(std::move(ul));
@@ -229,13 +232,11 @@ Future<void> TransactionCoordinator::_sendDecisionToParticipants(
     invariant(_state == CoordinatorState::kPreparing);
     _decisionPromise.emplaceValue(decision.decision);
 
-    // Send the decision to all participants.
     switch (decision.decision) {
         case txn::CommitDecision::kCommit:
             _state = CoordinatorState::kCommitting;
-            invariant(decision.commitTimestamp);
             return _driver.sendCommit(
-                participantShards, _lsid, _txnNumber, decision.commitTimestamp.get());
+                participantShards, _lsid, _txnNumber, *decision.commitTimestamp);
         case txn::CommitDecision::kAbort:
             _state = CoordinatorState::kAborting;
             return _driver.sendAbort(participantShards, _lsid, _txnNumber);
@@ -252,8 +253,8 @@ void TransactionCoordinator::_handleCompletionError(Status s) {
 
     stdx::unique_lock<stdx::mutex> lk(_mutex);
 
-    LOG(3) << "Two-phase commit failed with error in state " << _state << " for transaction "
-           << _txnNumber << " on session " << _lsid.toBSON() << causedBy(s);
+    LOG(3) << "Two-phase commit failed with error in state " << _state << " for " << _lsid.getId()
+           << ':' << _txnNumber << causedBy(s);
 
     // If an error occurred prior to making a decision, set an error on the decision promise to
     // propagate it to callers of runCommit
@@ -265,7 +266,10 @@ void TransactionCoordinator::_handleCompletionError(Status s) {
         // InterruptedDueToStepDown, because InterruptedDueToStepDown indicates the *receiving*
         // node was stepping down.
         if (s == ErrorCodes::TransactionCoordinatorSteppingDown) {
-            s = Status(ErrorCodes::InterruptedDueToStepDown, s.reason());
+            s = Status(ErrorCodes::InterruptedDueToStepDown,
+                       str::stream() << "Coordinator " << _lsid.getId() << ':' << _txnNumber
+                                     << " stopping due to: "
+                                     << s.reason());
         }
 
         _decisionPromise.setError(s);

@@ -110,16 +110,6 @@ std::string buildParticipantListString(const std::vector<ShardId>& participantLi
     return ss.str();
 }
 
-bool checkIsLocalShard(ServiceContext* serviceContext, const ShardId& shardId) {
-    if (serverGlobalParams.clusterRole == ClusterRole::ConfigServer) {
-        return shardId == ShardRegistry::kConfigServerShardId;
-    }
-    if (serverGlobalParams.clusterRole == ClusterRole::ShardServer) {
-        return shardId == ShardingState::get(serviceContext)->shardId();
-    }
-    MONGO_UNREACHABLE;  // Only sharded systems should use the two-phase commit path.
-}
-
 bool shouldRetryPersistingCoordinatorState(const Status& responseStatus) {
     // Writes to the local node are expected to succeed if this node is still primary, so *only*
     // retry if the write was explicitly interrupted (we do not allow a user to stop a commit
@@ -131,19 +121,16 @@ bool shouldRetryPersistingCoordinatorState(const Status& responseStatus) {
 
 }  // namespace
 
-TransactionCoordinatorDriver::TransactionCoordinatorDriver(
-    ServiceContext* serviceContext, std::unique_ptr<txn::AsyncWorkScheduler> scheduler)
-    : _serviceContext(serviceContext), _scheduler(std::move(scheduler)) {}
-
-TransactionCoordinatorDriver::~TransactionCoordinatorDriver() = default;
+TransactionCoordinatorDriver::TransactionCoordinatorDriver(ServiceContext* serviceContext,
+                                                           txn::AsyncWorkScheduler& scheduler)
+    : _serviceContext(serviceContext), _scheduler(scheduler) {}
 
 namespace {
 void persistParticipantListBlocking(OperationContext* opCtx,
                                     const LogicalSessionId& lsid,
                                     TxnNumber txnNumber,
                                     const std::vector<ShardId>& participantList) {
-    LOG(0) << "Going to write participant list for lsid: " << lsid.toBSON()
-           << ", txnNumber: " << txnNumber;
+    LOG(0) << "Going to write participant list for " << lsid.getId() << ':' << txnNumber;
 
     if (MONGO_FAIL_POINT(hangBeforeWritingParticipantList)) {
         LOG(0) << "Hit hangBeforeWritingParticipantList failpoint";
@@ -199,19 +186,18 @@ void persistParticipantListBlocking(OperationContext* opCtx,
         uasserted(51025,
                   str::stream() << "While attempting to write participant list "
                                 << buildParticipantListString(participantList)
-                                << " for lsid "
-                                << lsid.toBSON()
-                                << " and txnNumber "
+                                << " for "
+                                << lsid.getId()
+                                << ':'
                                 << txnNumber
-                                << ", found document for the (lsid, txnNumber) with a different "
-                                   "participant list. Current document for the (lsid, txnNumber): "
+                                << ", found document with a different participant list: "
                                 << doc);
     }
 
     // Throw any other error.
     uassertStatusOK(upsertStatus);
 
-    LOG(0) << "Wrote participant list for lsid: " << lsid.toBSON() << ", txnNumber: " << txnNumber;
+    LOG(0) << "Wrote participant list for " << lsid.getId() << ':' << txnNumber;
 
     if (MONGO_FAIL_POINT(hangBeforeWaitingForParticipantListWriteConcern)) {
         LOG(0) << "Hit hangBeforeWaitingForParticipantListWriteConcern failpoint";
@@ -230,11 +216,11 @@ void persistParticipantListBlocking(OperationContext* opCtx,
 
 Future<void> TransactionCoordinatorDriver::persistParticipantList(
     const LogicalSessionId& lsid, TxnNumber txnNumber, std::vector<ShardId> participantList) {
-    return txn::doWhile(*_scheduler,
+    return txn::doWhile(_scheduler,
                         boost::none /* no need for a backoff */,
                         [](const Status& s) { return shouldRetryPersistingCoordinatorState(s); },
                         [this, lsid, txnNumber, participantList] {
-                            return _scheduler->scheduleWork(
+                            return _scheduler.scheduleWork(
                                 [lsid, txnNumber, participantList](OperationContext* opCtx) {
                                     persistParticipantListBlocking(
                                         opCtx, lsid, txnNumber, participantList);
@@ -257,7 +243,7 @@ Future<txn::PrepareVoteConsensus> TransactionCoordinatorDriver::sendPrepare(
 
     // Send prepare to all participants asynchronously and collect their future responses in a
     // vector of responses.
-    auto prepareScheduler = _scheduler->makeChildScheduler();
+    auto prepareScheduler = _scheduler.makeChildScheduler();
 
     for (const auto& participant : participantShards) {
         responses.push_back(sendPrepareToShard(*prepareScheduler, participant, prepareObj));
@@ -309,8 +295,8 @@ void persistDecisionBlocking(OperationContext* opCtx,
                              TxnNumber txnNumber,
                              const std::vector<ShardId>& participantList,
                              const boost::optional<Timestamp>& commitTimestamp) {
-    LOG(0) << "Going to write decision " << (commitTimestamp ? "commit" : "abort")
-           << " for lsid: " << lsid.toBSON() << ", txnNumber: " << txnNumber;
+    LOG(0) << "Going to write decision " << (commitTimestamp ? "commit" : "abort") << " for "
+           << lsid.getId() << ':' << txnNumber;
 
     if (MONGO_FAIL_POINT(hangBeforeWritingDecision)) {
         LOG(0) << "Hit hangBeforeWritingDecision failpoint";
@@ -387,19 +373,18 @@ void persistDecisionBlocking(OperationContext* opCtx,
         uasserted(51026,
                   str::stream() << "While attempting to write decision "
                                 << (commitTimestamp ? "'commit'" : "'abort'")
-                                << " for lsid "
-                                << lsid.toBSON()
-                                << " and txnNumber "
+                                << " for"
+                                << lsid.getId()
+                                << ':'
                                 << txnNumber
-                                << ", either failed to find document for this (lsid, txnNumber) or "
-                                   "document existed with a different participant list, different "
-                                   "decision, or different commitTimestamp. Current document for "
-                                   "the (lsid, txnNumber): "
+                                << ", either failed to find document for this lsid:txnNumber or "
+                                   "document existed with a different participant list, decision "
+                                   "or commitTimestamp: "
                                 << doc);
     }
 
-    LOG(0) << "Wrote decision " << (commitTimestamp ? "commit" : "abort")
-           << " for lsid: " << lsid.toBSON() << ", txnNumber: " << txnNumber;
+    LOG(0) << "Wrote decision " << (commitTimestamp ? "commit" : "abort") << " for " << lsid.getId()
+           << ':' << txnNumber;
 
     if (MONGO_FAIL_POINT(hangBeforeWaitingForDecisionWriteConcern)) {
         LOG(0) << "Hit hangBeforeWaitingForDecisionWriteConcern failpoint";
@@ -422,11 +407,11 @@ Future<void> TransactionCoordinatorDriver::persistDecision(
     std::vector<ShardId> participantList,
     const boost::optional<Timestamp>& commitTimestamp) {
     return txn::doWhile(
-        *_scheduler,
+        _scheduler,
         boost::none /* no need for a backoff */,
         [](const Status& s) { return shouldRetryPersistingCoordinatorState(s); },
         [this, lsid, txnNumber, participantList, commitTimestamp] {
-            return _scheduler->scheduleWork([lsid, txnNumber, participantList, commitTimestamp](
+            return _scheduler.scheduleWork([lsid, txnNumber, participantList, commitTimestamp](
                 OperationContext* opCtx) {
                 persistDecisionBlocking(opCtx, lsid, txnNumber, participantList, commitTimestamp);
             });
@@ -447,7 +432,7 @@ Future<void> TransactionCoordinatorDriver::sendCommit(const std::vector<ShardId>
 
     std::vector<Future<void>> responses;
     for (const auto& participant : participantShards) {
-        responses.push_back(sendDecisionToParticipantShard(*_scheduler, participant, commitObj));
+        responses.push_back(sendDecisionToParticipantShard(_scheduler, participant, commitObj));
     }
     return txn::whenAll(responses);
 }
@@ -464,7 +449,7 @@ Future<void> TransactionCoordinatorDriver::sendAbort(const std::vector<ShardId>&
 
     std::vector<Future<void>> responses;
     for (const auto& participant : participantShards) {
-        responses.push_back(sendDecisionToParticipantShard(*_scheduler, participant, abortObj));
+        responses.push_back(sendDecisionToParticipantShard(_scheduler, participant, abortObj));
     }
     return txn::whenAll(responses);
 }
@@ -473,8 +458,7 @@ namespace {
 void deleteCoordinatorDocBlocking(OperationContext* opCtx,
                                   const LogicalSessionId& lsid,
                                   TxnNumber txnNumber) {
-    LOG(0) << "Going to delete coordinator doc for lsid: " << lsid.toBSON()
-           << ", txnNumber: " << txnNumber;
+    LOG(0) << "Going to delete coordinator doc for " << lsid.getId() << ':' << txnNumber;
 
     if (MONGO_FAIL_POINT(hangBeforeDeletingCoordinatorDoc)) {
         LOG(0) << "Hit hangBeforeDeletingCoordinatorDoc failpoint";
@@ -522,26 +506,24 @@ void deleteCoordinatorDocBlocking(OperationContext* opCtx,
             NamespaceString::kTransactionCoordinatorsNamespace.toString(),
             QUERY(TransactionCoordinatorDocument::kIdFieldName << sessionInfo.toBSON()));
         uasserted(51027,
-                  str::stream() << "While attempting to delete document for lsid " << lsid.toBSON()
-                                << " and txnNumber "
+                  str::stream() << "While attempting to delete document for " << lsid.getId() << ':'
                                 << txnNumber
-                                << ", either failed to find document for this (lsid, txnNumber) or "
-                                   "document existed without a decision. Current document for the "
-                                   "(lsid, txnNumber): "
+                                << ", either failed to find document for this lsid:txnNumber or "
+                                   "document existed without a decision: "
                                 << doc);
     }
 
-    LOG(0) << "Deleted coordinator doc for lsid: " << lsid.toBSON() << ", txnNumber: " << txnNumber;
+    LOG(0) << "Deleted coordinator doc for " << lsid.getId() << ':' << txnNumber;
 }
 }  // namespace
 
 Future<void> TransactionCoordinatorDriver::deleteCoordinatorDoc(const LogicalSessionId& lsid,
                                                                 TxnNumber txnNumber) {
-    return txn::doWhile(*_scheduler,
+    return txn::doWhile(_scheduler,
                         boost::none /* no need for a backoff */,
                         [](const Status& s) { return shouldRetryPersistingCoordinatorState(s); },
                         [this, lsid, txnNumber] {
-                            return _scheduler->scheduleWork(
+                            return _scheduler.scheduleWork(
                                 [lsid, txnNumber](OperationContext* opCtx) {
                                     deleteCoordinatorDocBlocking(opCtx, lsid, txnNumber);
                                 });
@@ -569,7 +551,7 @@ std::vector<TransactionCoordinatorDocument> TransactionCoordinatorDriver::readAl
 
 Future<PrepareResponse> TransactionCoordinatorDriver::sendPrepareToShard(
     txn::AsyncWorkScheduler& scheduler, const ShardId& shardId, const BSONObj& commandObj) {
-    const bool isLocalShard = checkIsLocalShard(_serviceContext, shardId);
+    const bool isLocalShard = (shardId == txn::getLocalShardId(_serviceContext));
 
     auto f = txn::doWhile(
         scheduler,
@@ -651,7 +633,7 @@ Future<PrepareResponse> TransactionCoordinatorDriver::sendPrepareToShard(
 
 Future<void> TransactionCoordinatorDriver::sendDecisionToParticipantShard(
     txn::AsyncWorkScheduler& scheduler, const ShardId& shardId, const BSONObj& commandObj) {
-    const bool isLocalShard = checkIsLocalShard(_serviceContext, shardId);
+    const bool isLocalShard = (shardId == txn::getLocalShardId(_serviceContext));
 
     return txn::doWhile(
         scheduler,
