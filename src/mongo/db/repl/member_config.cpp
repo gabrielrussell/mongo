@@ -78,7 +78,7 @@ const Seconds kMaxSlaveDelay(3600 * 24 * 366);
 
 }  // namespace
 
-Status MemberConfig::initialize(const BSONObj& mcfg, ReplSetTagConfig* tagConfig) try {
+MemberConfig::MemberConfig(const BSONObj& mcfg, ReplSetTagConfig* tagConfig) {
     Status status = bsonCheckOnlyHasFields(
         "replica set member configuration", mcfg, kLegalMemberConfigFieldNames);
     if (!status.isOK())
@@ -89,12 +89,12 @@ Status MemberConfig::initialize(const BSONObj& mcfg, ReplSetTagConfig* tagConfig
     //
     BSONElement idElement = mcfg[kIdFieldName];
     if (idElement.eoo()) {
-        return Status(ErrorCodes::NoSuchKey, str::stream() << kIdFieldName << " field is missing");
+        uassertStatusOK(Status(ErrorCodes::NoSuchKey, str::stream() << kIdFieldName << " field is missing"));
     }
     if (!idElement.isNumber()) {
-        return Status(ErrorCodes::TypeMismatch,
+        uassertStatusOK( Status(ErrorCodes::TypeMismatch,
                       str::stream() << kIdFieldName << " field has non-numeric type "
-                                    << typeName(idElement.type()));
+                                    << typeName(idElement.type())));
     }
     _id = idElement.numberInt();
 
@@ -106,13 +106,24 @@ Status MemberConfig::initialize(const BSONObj& mcfg, ReplSetTagConfig* tagConfig
     if (!status.isOK())
         return status;
     boost::trim(hostAndPortString);
-    status = _host.initialize(hostAndPortString);
+    HostAndPort host;
+    status = host.initialize(hostAndPortString);
     if (!status.isOK())
         return status;
-    if (!_host.hasPort()) {
+    if (!host.hasPort()) {
         // make port explicit even if default.
-        _host = HostAndPort(_host.host(), _host.port());
+        host = HostAndPort(host.host(), host.port());
     }
+
+    this->_altNames.insert( { "__default", std::move( host ) } );
+    std::cerr << "Added default host" << std::endl;
+    std::cerr << "Hosts now have: " << std::endl;
+    for( auto &host: this->_altNames )
+    {
+        std::cerr << "Horizon: " << host.first << " port: " << host.second << std::endl;
+    }
+
+    assert( !this->_altNames.empty() );
 
     //
     // Parse votes field.
@@ -201,8 +212,6 @@ Status MemberConfig::initialize(const BSONObj& mcfg, ReplSetTagConfig* tagConfig
         return status;
     }
 
-    _altNames.clear();
-
     auto horizonsElement=
     [&]()-> boost::optional< BSONElement >{
     try
@@ -253,10 +262,6 @@ Status MemberConfig::initialize(const BSONObj& mcfg, ReplSetTagConfig* tagConfig
     }
 
     return Status::OK();
-}
-catch( const DBException &ex )
-{
-    return ex.toStatus();
 }
 
 Status MemberConfig::validate() const {
@@ -323,7 +328,7 @@ bool MemberConfig::hasTags(const ReplSetTagConfig& tagConfig) const {
 BSONObj MemberConfig::toBSON(const ReplSetTagConfig& tagConfig) const {
     BSONObjBuilder configBuilder;
     configBuilder.append("_id", _id);
-    configBuilder.append("host", _host.toString());
+    configBuilder.append("host", _host().toString());
     configBuilder.append("arbiterOnly", _arbiterOnly);
     configBuilder.append("buildIndexes", _buildIndexes);
     configBuilder.append("hidden", _hidden);

@@ -31,6 +31,7 @@
 
 #include <string>
 #include <vector>
+#include <boost/bimap.hpp>
 
 #include "mongo/base/status.h"
 #include "mongo/db/repl/repl_set_tag.h"
@@ -69,7 +70,7 @@ public:
      * Must successfully call initialze() before calling validate() or the
      * accessors.
      */
-    MemberConfig() : _slaveDelay(0) {}
+    //MemberConfig() : _slaveDelay(0) {}
 
     /**
      * Initializes this MemberConfig from the contents of "mcfg".
@@ -79,7 +80,8 @@ public:
      * have the effect of altering "tagConfig" when "mcfg" describes a
      * tag not previously added to "tagConfig".
      */
-    Status initialize(const BSONObj& mcfg, ReplSetTagConfig* tagConfig);
+    //Status initialize
+	MemberConfig(const BSONObj& mcfg, ReplSetTagConfig* tagConfig);
 
     /**
      * Performs basic consistency checks on the member configuration.
@@ -98,18 +100,17 @@ public:
      * will contact it.
      */
     const HostAndPort& getHostAndPort( const std::string &zone= "__default" ) const {
-        return zone == "__default" ? this->_host : [&] () -> const HostAndPort & {
-			auto found= this->_altNames.find( zone );
-			if( found == end( this->_altNames ) )
-			{
-				abort();
-				uasserted( ErrorCodes::NoSuchKey, str::stream() << "No zone named " << zone );
-			}
-			return found->second;
-		}();
+		assert( !this->_altNames.empty() );
+		auto found= this->_altNames.find( zone );
+		if( found == end( this->_altNames ) )
+		{
+			abort();
+			uasserted( ErrorCodes::NoSuchKey, str::stream() << "No horizon named " << zone );
+		}
+		return found->second;
     }
 
-	const std::map<std::string, HostAndPort> &
+	const auto &
 	getAltNames() const
 	{
 		return this->_altNames;
@@ -211,8 +212,10 @@ public:
     BSONObj toBSON(const ReplSetTagConfig& tagConfig) const;
 
 private:
+	const HostAndPort &_host() const { return this->_altNames.find( "__default" )->second; }
+	//HostAndPort &_host() { return this->_altNames.left.find( "__default" )->second; }
+
     int _id;
-    HostAndPort _host;
     double _priority;  // 0 means can never be primary
     int _votes;        // Can this member vote? Only 0 and 1 are valid.  Default 1.
     bool _arbiterOnly;

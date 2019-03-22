@@ -45,7 +45,9 @@ TEST(MemberConfig, ParseMinimalMemberConfigAndCheckDefaults) {
     ASSERT_OK(mc.initialize(BSON("_id" << 0 << "host"
                                        << "localhost:12345"),
                             &tagConfig));
-    ASSERT_EQUALS(0, mc.getId());
+    //ASSERT_EQUALS(0, mc.getId());
+    mc.getHostAndPort();
+    abort();
     ASSERT_EQUALS(HostAndPort("localhost", 12345), mc.getHostAndPort());
     ASSERT_EQUALS(1.0, mc.getPriority());
     ASSERT_EQUALS(Seconds(0), mc.getSlaveDelay());
