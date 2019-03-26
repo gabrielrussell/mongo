@@ -1498,7 +1498,7 @@ public:
         ASSERT_EQ(lastTime.getTimestamp(), insertTime2.asTimestamp());
 
         // Wait for the index build to finish before making any assertions.
-        IndexBuildsCoordinator::get(_opCtx)->awaitNoBgOpInProgForNs(_opCtx, nss);
+        IndexBuildsCoordinator::get(_opCtx)->awaitNoIndexBuildInProgressForCollection(uuid);
 
         AutoGetCollection autoColl(_opCtx, nss, LockMode::MODE_X, LockMode::MODE_IX);
 
@@ -2914,7 +2914,8 @@ public:
 
             sessionInfo = getSessionTxnInfoAtTimestamp(secondOplogEntryTs, true);
             ASSERT_EQ(sessionInfo["state"].String(), "inProgress");
-            ASSERT_EQ(sessionInfo["lastWriteOpTime"]["ts"].timestamp(), secondOplogEntryTs);
+            // The transaction table is only updated at the start of the transaction.
+            ASSERT_EQ(sessionInfo["lastWriteOpTime"]["ts"].timestamp(), firstOplogEntryTs);
 
             sessionInfo = getSessionTxnInfoAtTimestamp(commitEntryTs, true);
             ASSERT_EQ(sessionInfo["state"].String(), "committed");
@@ -3091,7 +3092,8 @@ public:
 
             sessionInfo = getSessionTxnInfoAtTimestamp(secondOplogEntryTs, true);
             ASSERT_EQ(sessionInfo["state"].String(), "inProgress");
-            ASSERT_EQ(sessionInfo["lastWriteOpTime"]["ts"].timestamp(), secondOplogEntryTs);
+            // The transaction table is only updated at the start of the transaction.
+            ASSERT_EQ(sessionInfo["lastWriteOpTime"]["ts"].timestamp(), firstOplogEntryTs);
 
             sessionInfo = getSessionTxnInfoAtTimestamp(prepareEntryTs, true);
             ASSERT_EQ(sessionInfo["state"].String(), "prepared");
