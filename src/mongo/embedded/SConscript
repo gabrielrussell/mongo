@@ -151,6 +151,7 @@ if get_option('link-model') != 'dynamic-sdk':
             '$BUILD_DIR/mongo/transport/service_entry_point',
             '$BUILD_DIR/mongo/transport/transport_layer_manager',
             '$BUILD_DIR/mongo/util/signal_handlers',
+            "$BUILD_DIR/mongo/db/storage/wiredtiger/storage_wiredtiger",
         ],
         INSTALL_ALIAS=[
             'embedded-test',
