@@ -1473,21 +1473,18 @@ StatusWith<TLSVersion> mapTLSVersion(SSL* conn) {
 }
 
 StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeerCertificate(
-    SSL* conn, const std::string& remoteHost, const HostAndPort& hostForLogging) {
+    SSL* conn, const std::string& remoteHost, const HostAndPort& hostForLogging) try {
 
-    auto tlsVersionStatus = mapTLSVersion(conn);
-    if (!tlsVersionStatus.isOK()) {
-        return tlsVersionStatus.getStatus();
-    }
+    auto tlsVersion = uassertStatusOK(mapTLSVersion(conn));
 
-    recordTLSVersion(tlsVersionStatus.getValue(), hostForLogging);
+    recordTLSVersion(tlsVersion, hostForLogging);
 
     if (!_sslConfiguration.hasCA && isSSLServer)
         return {boost::none};
 
     X509* peerCert = SSL_get_peer_certificate(conn);
 
-    if (NULL == peerCert) {  // no certificate presented by peer
+    if (peerCert == nullptr) {  // no certificate presented by peer
         if (_weakValidation) {
             // do not give warning if certificate warnings are  suppressed
             if (!_suppressNoCertificateWarning) {
@@ -1527,16 +1524,13 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
         warning() << "Client connecting with server's own TLS certificate";
     }
 
-    StatusWith<stdx::unordered_set<RoleName>> swPeerCertificateRoles = _parsePeerRoles(peerCert);
-    if (!swPeerCertificateRoles.isOK()) {
-        return swPeerCertificateRoles.getStatus();
-    }
+    stdx::unordered_set<RoleName> peerCertificateRoles = uassertStatusOK(_parsePeerRoles(peerCert));
 
     // If this is an SSL client context (on a MongoDB server or client)
     // perform hostname validation of the remote server
     if (remoteHost.empty()) {
-        return boost::make_optional(
-            SSLPeerInfo(peerSubject, std::move(swPeerCertificateRoles.getValue())));
+        // TODO: Write `getSniName` from reference in `SSLConnectionInterface`
+        return SSLPeerInfo(peerSubject, getSniName(), std::move(peerCertificateRoles));
     }
 
     // This is to standardize the IPAddress format for comparison.
@@ -1551,14 +1545,24 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
     bool cnMatch = false;
     StringBuilder certificateNames;
 
-    STACK_OF(GENERAL_NAME)* sanNames = static_cast<STACK_OF(GENERAL_NAME)*>(
-        X509_get_ext_d2i(peerCert, NID_subject_alt_name, NULL, NULL));
+    using StackType= STACK_OF(GENERAL_NAME);
+    struct StackDeleter
+    {
+        void operator()( StackType *const names ) const noexcept { 
+            sk_GENERAL_NAME_pop_free(names, GENERAL_NAME_free);
+        }
+    };
 
-    if (sanNames != NULL) {
-        int sanNamesList = sk_GENERAL_NAME_num(sanNames);
+    
+    std::unique_ptr<StackType, StackDeleter>sanNames (
+    static_cast<StackType*>(
+        X509_get_ext_d2i(peerCert, NID_subject_alt_name, nullptr, nullptr)));
+
+    if (sanNames != nullptr) {
+        int sanNamesList = sk_GENERAL_NAME_num(sanNames.get());
         certificateNames << "SAN(s): ";
         for (int i = 0; i < sanNamesList; i++) {
-            const GENERAL_NAME* currentName = sk_GENERAL_NAME_value(sanNames, i);
+            const GENERAL_NAME* currentName = sk_GENERAL_NAME_value(sanNames.get(), i);
             if (currentName && currentName->type == GEN_DNS) {
                 std::string dnsName(
                     reinterpret_cast<char*>(ASN1_STRING_data(currentName->d.dNSName)));
@@ -1600,7 +1604,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
                 certificateNames << ipAddress << ", ";
             }
         }
-        sk_GENERAL_NAME_pop_free(sanNames, GENERAL_NAME_free);
+        sanNames.reset();
     } else {
         // If Subject Alternate Name (SAN) doesn't exist and Common Name (CN) does,
         // check Common Name.
@@ -1625,11 +1629,15 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
             warning() << msg;
         } else {
             error() << msg;
-            return Status(ErrorCodes::SSLHandshakeFailed, msg);
+            uassertStatusOK( Status(ErrorCodes::SSLHandshakeFailed, msg));
         }
     }
 
-    return boost::make_optional(SSLPeerInfo(peerSubject, stdx::unordered_set<RoleName>()));
+    return SSLPeerInfo(peerSubject, stdx::unordered_set<RoleName>());
+}
+catch( const DBException &ex )
+{
+    return ex.toStatus();
 }
 
 

@@ -109,15 +109,7 @@ MemberConfig::MemberConfig(const BSONObj& mcfg, ReplSetTagConfig* tagConfig) {
         host = HostAndPort(host.host(), host.port());
     }
 
-    this->_altNames.insert( { "__default", std::move( host ) } );
-    std::cerr << "Added default host" << std::endl;
-    std::cerr << "Hosts now have: " << std::endl;
-    for( auto &host: this->_altNames )
-    {
-        std::cerr << "Horizon: " << host.first << " port: " << host.second << std::endl;
-    }
-
-    assert( !this->_altNames.empty() );
+    this->_horizonForward.insert( { "__default", std::move( host ) } );
 
     //
     // Parse votes field.
@@ -214,8 +206,8 @@ MemberConfig::MemberConfig(const BSONObj& mcfg, ReplSetTagConfig* tagConfig) {
         using std::begin;
         using std::end;
         std::transform( begin( horizonsObject ), end( horizonsObject ),
-                inserter( _altNames, end( _altNames ) ),
-                []( auto &&horizon ) -> decltype( _altNames )::value_type
+                inserter( _horizonForward, end( _horizonForward ) ),
+                []( auto &&horizon ) -> decltype( _horizonForward )::value_type
                 {
                     const auto horizonName= horizon.fieldName();
 
@@ -299,8 +291,8 @@ Status MemberConfig::validate() const {
 }
 
 bool MemberConfig::hasTags(const ReplSetTagConfig& tagConfig) const {
-    for (std::vector<ReplSetTag>::const_iterator tag = _tags.begin(); tag != _tags.end(); tag++) {
-        std::string tagKey = tagConfig.getTagKey(*tag);
+    for (auto  &tag : _tags){
+        std::string tagKey = tagConfig.getTagKey(tag);
         if (tagKey[0] == '$') {
             // Filter out internal tags
             continue;
@@ -330,10 +322,10 @@ BSONObj MemberConfig::toBSON(const ReplSetTagConfig& tagConfig) const {
     }
     tags.done();
 
-    if( !_altNames.empty() )
+    if( !_horizonForward.empty() )
     {
         BSONObjBuilder horizons( configBuilder.subobjStart( "horizons" ) );
-        for( const auto &horizon: _altNames )
+        for( const auto &horizon: _horizonForward )
         {
             configBuilder.append( horizon.first, horizon.second.toString() );
         }

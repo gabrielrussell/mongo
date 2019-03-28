@@ -235,11 +235,11 @@ protected:
         return doHandshake().then([this, target] {
             _ranHandshake = true;
 
-            auto swPeerInfo = uassertStatusOK(getSSLManager()->parseAndValidatePeerCertificate(
+            auto optPeerInfo = uassertStatusOK(getSSLManager()->parseAndValidatePeerCertificate(
                 _sslSocket->native_handle(), target.host(), target));
 
-            if (swPeerInfo) {
-                SSLPeerInfo::forSession(shared_from_this()) = std::move(*swPeerInfo);
+            if (optPeerInfo) {
+                SSLPeerInfo::forSession(shared_from_this()) = std::move(*optPeerInfo);
             }
         });
     }
@@ -509,6 +509,11 @@ private:
 
         return boost::none;
     }
+
+	boost::optional< std::string > getSniName() const override
+	{
+		return SSLPeerInfo::forSession(shared_from_this()).sniName;
+	}
 #endif
 
     template <typename Stream, typename ConstBufferSequence>
@@ -613,8 +618,8 @@ private:
                 auto& sslPeerInfo = SSLPeerInfo::forSession(shared_from_this());
 
                 if (sslPeerInfo.subjectName.empty()) {
-                    auto swPeerInfo = getSSLManager()->parseAndValidatePeerCertificate(
-                        _sslSocket->native_handle(), "", _remote);
+                    auto optPeerInfo = uassertStatusOK(getSSLManager()->parseAndValidatePeerCertificate(
+                        _sslSocket->native_handle(), "", _remote));
 
                     // The value of swPeerInfo is a bit complicated:
                     //
@@ -628,7 +633,7 @@ private:
                     // Otherwise the SSL handshake was successful and the peer did provide
                     // a certificate that is valid, and we should store that info on the
                     // session's SSLPeerInfo decoration.
-                    if (auto optPeerInfo = uassertStatusOK(swPeerInfo)) {
+                    if (optPeerInfo) {
                         sslPeerInfo = *optPeerInfo;
                     }
                 }
