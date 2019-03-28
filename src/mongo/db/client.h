@@ -154,6 +154,25 @@ public:
     ServiceContext::UniqueOperationContext makeOperationContext();
 
     /**
+     * returns an anonomous struct that wrapps up an OperationContext and optionally a
+     * ServiceContext::UniqueOperationContext in the case that one needed to be created
+     */
+    auto vivifyOperationContext() {
+        struct {
+            OperationContext* opCtx;
+            ServiceContext::UniqueOperationContext uOpCtx;
+            OperationContext* get() {
+                return opCtx;
+            }
+        } vOpCtx;
+        if (_opCtx) {
+            vOpCtx.uOpCtx = std::move(this->makeOperationContext());
+        }
+        vOpCtx.opCtx = _opCtx;
+        return vOpCtx;
+    }
+
+    /**
      * Sets the active operation context on this client to "opCtx", which must be non-NULL.
      *
      * It is an error to call this method if there is already an operation context on Client.

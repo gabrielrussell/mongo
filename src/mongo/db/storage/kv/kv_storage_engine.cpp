@@ -847,13 +847,8 @@ void KVStorageEngine::_onMinOfCheckpointAndOldestTimestampChanged(const Timestam
         if (timestamp > *earliestDropTimestamp) {
             log() << "Removing drop-pending idents with drop timestamps before timestamp "
                   << timestamp;
-            auto opCtx = cc().getOperationContext();
-            mongo::ServiceContext::UniqueOperationContext uOpCtx;
-            if (!opCtx) {
-                uOpCtx = cc().makeOperationContext();
-                opCtx = uOpCtx.get();
-            }
-            _dropPendingIdentReaper.dropIdentsOlderThan(opCtx, timestamp);
+            auto vOpCtx = cc().vivifyOperationContext();
+            _dropPendingIdentReaper.dropIdentsOlderThan(vOpCtx.get(), timestamp);
         }
     }
 }
@@ -897,13 +892,8 @@ void KVStorageEngine::TimestampMonitor::startup() {
             // Take a global lock in MODE_IS while fetching timestamps to guarantee that
             // rollback-to-stable isn't running concurrently.
             {
-                auto opCtx = client->getOperationContext();
-                mongo::ServiceContext::UniqueOperationContext uOpCtx;
-                if (!opCtx) {
-                    uOpCtx = client->makeOperationContext();
-                    opCtx = uOpCtx.get();
-                }
-                Lock::GlobalLock lock(opCtx, MODE_IS);
+                auto vOpCtx = client->vivifyOperationContext();
+                Lock::GlobalLock lock(vOpCtx.get(), MODE_IS);
 
                 // The checkpoint timestamp is not cached in mongod and needs to be fetched with a
                 // call into WiredTiger, all the other timestamps are cached in mongod.
