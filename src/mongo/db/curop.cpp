@@ -37,14 +37,12 @@
 
 #include <iomanip>
 
-#include "mongo/base/disallow_copying.h"
 #include "mongo/bson/mutable/document.h"
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/client.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/commands/server_status_metric.h"
 #include "mongo/db/concurrency/d_concurrency.h"
-#include "mongo/db/concurrency/global_lock_acquisition_tracker.h"
 #include "mongo/db/concurrency/locker.h"
 #include "mongo/db/json.h"
 #include "mongo/db/query/getmore_request.h"
@@ -147,7 +145,8 @@ BSONObj upconvertGetMoreEntry(const NamespaceString& nss, CursorId cursorId, int
  * The stack itself is represented in the _parent pointers of the CurOp class.
  */
 class CurOp::CurOpStack {
-    MONGO_DISALLOW_COPYING(CurOpStack);
+    CurOpStack(const CurOpStack&) = delete;
+    CurOpStack& operator=(const CurOpStack&) = delete;
 
 public:
     CurOpStack() : _base(nullptr, this) {}
@@ -406,9 +405,7 @@ bool CurOp::completeAndLogOperation(OperationContext* opCtx,
 
     if (shouldLogOp || (shouldSample && _debug.executionTimeMicros > slowMs * 1000LL)) {
         auto lockerInfo = opCtx->lockState()->getLockerInfo(_lockStatsBase);
-        const GlobalLockAcquisitionTracker& globalLockTracker =
-            GlobalLockAcquisitionTracker::get(opCtx);
-        if (_debug.storageStats == nullptr && globalLockTracker.getGlobalLockTaken() &&
+        if (_debug.storageStats == nullptr && opCtx->lockState()->wasGlobalLockTaken() &&
             opCtx->getServiceContext()->getStorageEngine()) {
             // Do not fetch operation statistics again if we have already got them (for instance,
             // as a part of stashing the transaction).

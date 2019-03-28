@@ -422,10 +422,10 @@ variables:
   - enterprise-windows-64-2k8-nopush-template
   - enterprise-windows-64-2k8-openssl
   - enterprise-windows-64-2k8-wtdevelop
-  - ubuntu1604-debug-asan
-  - ubuntu1604-debug-ubsan
-  - ubuntu1604-debug-aubsan-lite
-  - ubuntu1604-debug-aubsan-async
+  - ubuntu1804-debug-asan
+  - ubuntu1804-debug-ubsan
+  - ubuntu1804-debug-aubsan-lite
+  - ubuntu1804-debug-aubsan-async
 
 #######################################
 #            Functions                #
@@ -6358,6 +6358,14 @@ tasks:
       resmoke_args: --storageEngine=wiredTiger
       fallback_num_sub_suites: 7
 
+- name: replica_sets_multi_oplog_txns_gen
+  commands:
+  - func: "generate resmoke tasks"
+    vars:
+      task: replica_sets_multi_oplog_txns
+      resmoke_args: --storageEngine=wiredTiger
+      fallback_num_sub_suites: 1
+
 - <<: *task_template
   name: sasl
   commands:
@@ -7853,6 +7861,7 @@ buildvariants:
   - name: replica_sets_initsync_jscore_passthrough
   - name: replica_sets_initsync_static_jscore_passthrough
   - name: replica_sets_jscore_passthrough
+  - name: replica_sets_multi_oplog_txns_gen
   - name: replica_sets_multi_oplog_txns_jscore_passthrough
   - name: replica_sets_multi_stmt_txn_jscore_passthrough
   - name: replica_sets_multi_stmt_txn_stepdown_jscore_passthrough_gen
@@ -8068,6 +8077,7 @@ buildvariants:
   - name: replica_sets
   - name: replica_sets_auth_gen
   - name: replica_sets_jscore_passthrough
+  - name: replica_sets_multi_oplog_txns_gen
   - name: powercycle
   - name: powercycle_fcv4.0
   - name: powercycle_kill_mongod
@@ -9652,6 +9662,7 @@ buildvariants:
   - name: replica_sets_jscore_passthrough
     distros:
     - windows-64-vs2017-compile
+  - name: replica_sets_multi_oplog_txns_gen
   - name: replica_sets_multi_oplog_txns_jscore_passthrough
     distros:
     - windows-64-vs2017-compile
@@ -9765,6 +9776,7 @@ buildvariants:
   - name: replica_sets_auth_gen
   - name: replica_sets_ese_gen
   - name: replica_sets_jscore_passthrough
+  - name: replica_sets_multi_oplog_txns_gen
   - name: replica_sets_multi_oplog_txns_jscore_passthrough
   - name: sasl
   - name: sharded_causally_consistent_jscore_txns_passthrough_gen
@@ -10233,6 +10245,7 @@ buildvariants:
   - name: causally_consistent_jscore_txns_passthrough
   - name: mongosTest
   - name: replica_sets
+  - name: replica_sets_multi_oplog_txns_gen
   - name: ssl_gen
   - name: sslSpecial_gen
   - name: stitch_support_lib_build_and_test
@@ -10449,7 +10462,7 @@ buildvariants:
       --variables-files=etc/scons/xcode_tvos.vars
       FRAMEWORKPATH='$BUILD_ROOT/mongo-embedded-sdk-$MONGO_VERSION/Frameworks'
       --lto
-    cdriver_cmake_osx_deployment_target: "10.2"
+    cdriver_cmake_osx_deployment_target: "11.0"
     cdriver_cmake_flags: >-
         -DCMAKE_BUILD_TYPE=RelWithDebInfo
         -DCMAKE_OSX_SYSROOT="$(xcrun --sdk appletvos --show-sdk-path)"
@@ -10481,7 +10494,7 @@ buildvariants:
       --variables-files=etc/scons/xcode_tvos_sim.vars
       FRAMEWORKPATH='$BUILD_ROOT/mongo-embedded-sdk-$MONGO_VERSION/Frameworks'
       --lto
-    cdriver_cmake_osx_deployment_target: "10.2"
+    cdriver_cmake_osx_deployment_target: "11.0"
     cdriver_cmake_flags: >-
         -DCMAKE_BUILD_TYPE=RelWithDebInfo
         -DCMAKE_OSX_SYSROOT="$(xcrun --sdk appletvsimulator --show-sdk-path)"
@@ -10497,7 +10510,7 @@ buildvariants:
     disable_unit_tests: true
     enable_embedded_tests: ios_tvos_simulator
     ios_sim_device: Apple-TV-1080p
-    ios_sim_runtime: tvOS-10-2
+    ios_sim_runtime: tvOS-11-0
     dump_scons_config_on_failure: true
   tasks:
   - name: embedded_sdk_build_and_test
@@ -10961,6 +10974,7 @@ buildvariants:
   - name: replica_sets_initsync_static_jscore_passthrough
     distros:
     - rhel62-large
+  - name: replica_sets_multi_oplog_txns_gen
   - name: replica_sets_multi_oplog_txns_jscore_passthrough
   - name: replica_sets_multi_stmt_txn_jscore_passthrough
     distros:
@@ -11355,6 +11369,7 @@ buildvariants:
   - name: replica_sets_multi_oplog_txns_jscore_passthrough
   - name: replica_sets_initsync_jscore_passthrough
   - name: replica_sets_initsync_static_jscore_passthrough
+  - name: replica_sets_multi_oplog_txns_gen
   - name: replica_sets_multi_stmt_txn_jscore_passthrough
   - name: replica_sets_multi_stmt_txn_stepdown_jscore_passthrough_gen
   - name: replica_sets_kill_primary_jscore_passthrough
@@ -11449,6 +11464,7 @@ buildvariants:
   - name: external_auth
   - name: replica_sets_auth_gen
   - name: replica_sets_jscore_passthrough
+  - name: replica_sets_multi_oplog_txns_gen
   - name: replica_sets_multi_oplog_txns_jscore_passthrough
   - name: sasl
   - name: sharding_auth_gen
@@ -13298,7 +13314,7 @@ buildvariants:
     # mobile storage engine.
     test_flags: >-
       --storageEngine=mobile
-      --excludeWithAnyTags=requires_wiredtiger,requires_replication,requires_sharding,uses_transactions,requires_capped,requires_profiling,requires_compact,requires_document_locking,requires_snapshot_read
+      --excludeWithAnyTags=requires_wiredtiger,requires_replication,requires_sharding,uses_transactions,requires_capped,requires_profiling,requires_compact,requires_document_locking,requires_snapshot_read,requires_db_locking
       --excludeWithAnyTags=SERVER-32869
     compile_flags: >-
       -j$(grep -c ^processor /proc/cpuinfo)
@@ -13378,7 +13394,7 @@ buildvariants:
   expansions:
     test_flags: >-
       --storageEngine=mobile
-      --excludeWithAnyTags=requires_wiredtiger,requires_replication,requires_sharding,uses_transactions,requires_capped,requires_profiling,requires_compact,requires_document_locking,requires_snapshot_read
+      --excludeWithAnyTags=requires_wiredtiger,requires_replication,requires_sharding,uses_transactions,requires_capped,requires_profiling,requires_compact,requires_document_locking,requires_snapshot_read,requires_db_locking
       --excludeWithAnyTags=SERVER-32869
     compile_flags: >-
         -j$(grep -c ^processor /proc/cpuinfo)
@@ -13455,7 +13471,7 @@ buildvariants:
     # mobile storage engine.
     test_flags: >-
       --storageEngine=mobile
-      --excludeWithAnyTags=requires_wiredtiger,requires_replication,requires_sharding,uses_transactions,requires_capped,requires_profiling,requires_compact,requires_document_locking,requires_snapshot_read
+      --excludeWithAnyTags=requires_wiredtiger,requires_replication,requires_sharding,uses_transactions,requires_capped,requires_profiling,requires_compact,requires_document_locking,requires_snapshot_read,requires_db_locking
       --excludeWithAnyTags=SERVER-32869
     compile_env: DEVELOPER_DIR=/Applications/Xcode10.1.app
     compile_flags: >-
@@ -13805,12 +13821,12 @@ buildvariants:
 #     Experimental buildvariants          #
 ###########################################
 
-- name: ubuntu1604-debug-asan
-  display_name: ~ ASAN Enterprise SSL Ubuntu 16.04 DEBUG
+- name: ubuntu1804-debug-asan
+  display_name: ~ ASAN Enterprise SSL Ubuntu 18.04 DEBUG
   modules:
   - enterprise
   run_on:
-  - ubuntu1604-build
+  - ubuntu1804-build
   stepback: true
   batchtime: 1440 # 1 day
   expansions:
@@ -13819,7 +13835,7 @@ buildvariants:
     lang_environment: LANG=C
     san_options: LSAN_OPTIONS="suppressions=etc/lsan.suppressions:report_objects=1" ASAN_OPTIONS=detect_leaks=1:check_initialization_order=true:strict_init_order=true:abort_on_error=1:disable_coredump=0:handle_abort=1
     compile_flags: --variables-files=etc/scons/mongodbtoolchain_v3_clang.vars --dbg=on --opt=on --allocator=system --sanitize=address --ssl --enable-free-mon=on -j$(grep -c ^processor /proc/cpuinfo) --nostrip
-    multiversion_platform: ubuntu1604
+    multiversion_platform: ubuntu1804
     multiversion_edition: enterprise
     resmoke_jobs_factor: 0.3  # Avoid starting too many mongod's under ASAN build.
     tooltags: "ssl"
@@ -13970,10 +13986,10 @@ buildvariants:
   - name: write_concern_majority_passthrough
   - name: secondary_reads_passthrough_gen
 
-- name: ubuntu1604-asan
-  display_name: ~ ASAN SSL Ubuntu 16.04
+- name: ubuntu1804-asan
+  display_name: ~ ASAN SSL Ubuntu 18.04
   run_on:
-  - ubuntu1604-build
+  - ubuntu1804-build
   stepback: true
   batchtime: 1440 # 1 day
   expansions:
@@ -14013,12 +14029,12 @@ buildvariants:
   - name: jstestfuzz_sharded_continuous_stepdown_gen
   - name: jstestfuzz_sharded_session_gen
 
-- name: ubuntu1604-debug-ubsan
-  display_name: ~ UBSAN Enterprise Ubuntu 16.04 DEBUG
+- name: ubuntu1804-debug-ubsan
+  display_name: ~ UBSAN Enterprise Ubuntu 18.04 DEBUG
   modules:
   - enterprise
   run_on:
-  - ubuntu1604-build
+  - ubuntu1804-build
   stepback: true
   batchtime: 1440 # 1 day
   expansions:
@@ -14027,7 +14043,7 @@ buildvariants:
     lang_environment: LANG=C
     san_options: UBSAN_OPTIONS="print_stacktrace=1"
     compile_flags: --variables-files=etc/scons/mongodbtoolchain_v3_clang.vars --dbg=on --opt=on --sanitize=undefined --ssl --enable-free-mon=on -j$(grep -c ^processor /proc/cpuinfo) --nostrip
-    multiversion_platform: ubuntu1604
+    multiversion_platform: ubuntu1804
     multiversion_edition: enterprise
     resmoke_jobs_factor: 0.3  # Avoid starting too many mongod's under UBSAN build.
     tooltags: "ssl sasl"
@@ -14170,12 +14186,12 @@ buildvariants:
   - name: write_concern_majority_passthrough
   - name: secondary_reads_passthrough_gen
 
-- name: ubuntu1604-debug-aubsan-lite
-  display_name: "! {A,UB}SAN Enterprise SSL Ubuntu 16.04 DEBUG"
+- name: ubuntu1804-debug-aubsan-lite
+  display_name: "! {A,UB}SAN Enterprise SSL Ubuntu 18.04 DEBUG"
   modules:
   - enterprise
   run_on:
-  - ubuntu1604-build
+  - ubuntu1804-build
   stepback: true
   expansions:
     # We need llvm-symbolizer in the PATH for ASAN for clang-3.7 or later.
@@ -14202,12 +14218,12 @@ buildvariants:
   - name: logical_session_cache_standalone_1sec_refresh_jscore_passthrough_gen
   - name: watchdog_wiredtiger
 
-- name: ubuntu1604-debug-aubsan-async
-  display_name: "~ {A,UB}SAN Enterprise SSL Ubuntu 16.04 async"
+- name: ubuntu1804-debug-aubsan-async
+  display_name: "~ {A,UB}SAN Enterprise SSL Ubuntu 18.04 async"
   modules:
   - enterprise
   run_on:
-  - ubuntu1604-build
+  - ubuntu1804-build
   stepback: true
   batchtime: 1440 # 1 day
   expansions:
@@ -14293,6 +14309,7 @@ buildvariants:
   - name: replica_sets_initsync_jscore_passthrough
   - name: replica_sets_initsync_static_jscore_passthrough
   - name: replica_sets_kill_secondaries_jscore_passthrough
+  - name: replica_sets_multi_oplog_txns_gen
   - name: sasl
   - name: sharded_causally_consistent_jscore_txns_passthrough_gen
   - name: sharded_collections_causally_consistent_jscore_txns_passthrough

@@ -44,7 +44,6 @@
 #include "mongo/db/commands.h"
 #include "mongo/db/commands/test_commands_enabled.h"
 #include "mongo/db/commands/txn_cmds_gen.h"
-#include "mongo/db/concurrency/global_lock_acquisition_tracker.h"
 #include "mongo/db/curop.h"
 #include "mongo/db/curop_failpoint_helpers.h"
 #include "mongo/db/curop_metrics.h"
@@ -198,7 +197,8 @@ void generateErrorResponse(OperationContext* opCtx,
  * elsewhere.
  */
 class MaintenanceModeSetter {
-    MONGO_DISALLOW_COPYING(MaintenanceModeSetter);
+    MaintenanceModeSetter(const MaintenanceModeSetter&) = delete;
+    MaintenanceModeSetter& operator=(const MaintenanceModeSetter&) = delete;
 
 public:
     MaintenanceModeSetter(OperationContext* opCtx)
@@ -373,9 +373,14 @@ void appendClusterAndOperationTime(OperationContext* opCtx,
 
 void invokeWithSessionCheckedOut(OperationContext* opCtx,
                                  CommandInvocation* invocation,
-                                 TransactionParticipant::Participant txnParticipant,
                                  const OperationSessionInfoFromClient& sessionOptions,
                                  rpc::ReplyBuilderInterface* replyBuilder) {
+    // This constructor will check out the session. It handles the appropriate state management
+    // for both multi-statement transactions and retryable writes. Currently, only requests with
+    // a transaction number will check out the session.
+    MongoDOperationContextSession sessionTxnState(opCtx);
+    auto txnParticipant = TransactionParticipant::get(opCtx);
+
     if (!opCtx->getClient()->isInDirectClient()) {
         txnParticipant.beginOrContinue(opCtx,
                                        *sessionOptions.getTxnNumber(),
@@ -469,12 +474,13 @@ bool runCommandImpl(OperationContext* opCtx,
 #endif
     replyBuilder->reserveBytes(bytesToReserve);
 
-    auto txnParticipant = TransactionParticipant::get(opCtx);
+    const bool shouldCheckOutSession =
+        sessionOptions.getTxnNumber() && !shouldCommandSkipSessionCheckout(command->getName());
+
     if (!invocation->supportsWriteConcern()) {
         behaviors.uassertCommandDoesNotSpecifyWriteConcern(request.body);
-        if (txnParticipant) {
-            invokeWithSessionCheckedOut(
-                opCtx, invocation, txnParticipant, sessionOptions, replyBuilder);
+        if (shouldCheckOutSession) {
+            invokeWithSessionCheckedOut(opCtx, invocation, sessionOptions, replyBuilder);
         } else {
             invocation->run(opCtx, replyBuilder);
             MONGO_FAIL_POINT_BLOCK(waitAfterReadCommandFinishesExecution, options) {
@@ -515,9 +521,8 @@ bool runCommandImpl(OperationContext* opCtx,
         };
 
         try {
-            if (txnParticipant) {
-                invokeWithSessionCheckedOut(
-                    opCtx, invocation, txnParticipant, sessionOptions, replyBuilder);
+            if (shouldCheckOutSession) {
+                invokeWithSessionCheckedOut(opCtx, invocation, sessionOptions, replyBuilder);
             } else {
                 invocation->run(opCtx, replyBuilder);
             }
@@ -618,16 +623,6 @@ void execCommandDatabase(OperationContext* opCtx,
             NamespaceString::validDBName(dbname, NamespaceString::DollarInDbNameBehavior::Allow));
 
         validateSessionOptions(sessionOptions, command->getName(), dbname);
-
-        // This constructor will check out the session and start a transaction, if necessary. It
-        // handles the appropriate state management for both multi-statement transactions and
-        // retryable writes. Currently, only requests with a transaction number will check out the
-        // session.
-        boost::optional<MongoDOperationContextSession> sessionTxnState;
-        const bool shouldCheckOutSession =
-            sessionOptions.getTxnNumber() && !shouldCommandSkipSessionCheckout(command->getName());
-        if (shouldCheckOutSession)
-            sessionTxnState.emplace(opCtx);
 
         std::unique_ptr<MaintenanceModeSetter> mmSetter;
 

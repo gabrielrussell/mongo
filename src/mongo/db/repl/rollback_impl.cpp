@@ -65,6 +65,9 @@
 
 namespace mongo {
 namespace repl {
+
+MONGO_FAIL_POINT_DEFINE(rollbackHangAfterTransitionToRollback);
+
 namespace {
 
 // Used to set RollbackImpl::_newCounts to force a collection scan to fix count.
@@ -171,6 +174,13 @@ Status RollbackImpl::runRollback(OperationContext* opCtx) {
         return status;
     }
     _listener->onTransitionToRollback();
+
+    if (MONGO_FAIL_POINT(rollbackHangAfterTransitionToRollback)) {
+        log() << "rollbackHangAfterTransitionToRollback fail point enabled. Blocking until fail "
+                 "point is disabled (rollback_impl).";
+        MONGO_FAIL_POINT_PAUSE_WHILE_SET_OR_INTERRUPTED(opCtx,
+                                                        rollbackHangAfterTransitionToRollback);
+    }
 
     // We clear the SizeRecoveryState before we recover to a stable timestamp. This ensures that we
     // only use size adjustment markings from the storage and replication recovery processes in this
@@ -632,6 +642,15 @@ Status RollbackImpl::_processRollbackOp(const OplogEntry& oplogEntry) {
 
     // For applyOps entries, we process each sub-operation individually.
     if (oplogEntry.getCommandType() == OplogEntry::CommandType::kApplyOps) {
+        if (oplogEntry.getPrepare()) {
+            // Uncommitted prepared transactions are always aborted before rollback begins, which
+            // rolls back collection counts. Processing the operation here would result in
+            // double-counting the sub-operations when correcting collection counts later.
+            // Additionally, this logic makes an assumption that transactions are only ever
+            // committed when the prepare operation is majority committed. This implies that when a
+            // prepare oplog entry is rolled-back, it is guaranteed that it has never committed.
+            return Status::OK();
+        }
         try {
             auto subOps = ApplyOps::extractOperations(oplogEntry);
             for (auto& subOp : subOps) {
