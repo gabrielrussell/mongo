@@ -98,12 +98,7 @@ typedef SSLContextRef SSLConnectionType;
  */
 template <typename Deleter, Deleter* impl>
 struct OpenSSLDeleter {
-    template <typename Obj>
-    void operator()(Obj* ptr) const {
-        if (ptr != nullptr) {
-            impl(ptr);
-        }
-    }
+    template <typename Obj> void operator()(Obj* ptr) const { impl(ptr); }
 };
 #endif
 /**

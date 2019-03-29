@@ -2303,11 +2303,11 @@ Status ReplicationCoordinatorImpl::processReplSetGetStatus(
 }
 
 void ReplicationCoordinatorImpl::fillIsMasterForReplSet(IsMasterResponse* response,
-                                                        const std::string& zone) {
+                                                        const std::string& horizon) {
     invariant(getSettings().usingReplSets());
 
     stdx::lock_guard<stdx::mutex> lk(_mutex);
-    _topCoord->fillIsMasterForReplSet(response, zone);
+    _topCoord->fillIsMasterForReplSet(response, horizon);
 
     OpTime lastOpTime = _getMyLastAppliedOpTime_inlock();
     response->setLastWrite(lastOpTime, lastOpTime.getTimestamp().getSecs());

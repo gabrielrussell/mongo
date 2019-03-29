@@ -1688,7 +1688,7 @@ void TopologyCoordinator::fillMemberData(BSONObjBuilder* result) {
     }
 }
 
-void TopologyCoordinator::fillIsMasterForReplSet(IsMasterResponse* response, const std::string &zone) {
+void TopologyCoordinator::fillIsMasterForReplSet(IsMasterResponse* response, const std::string &horizon) {
     const MemberState myState = getMemberState();
     if (!_rsConfig.isInitialized()) {
         response->markAsNoConfig();
@@ -1701,11 +1701,11 @@ void TopologyCoordinator::fillIsMasterForReplSet(IsMasterResponse* response, con
         }
 
         if (member.isElectable()) {
-            response->addHost(member.getHostAndPort( zone ), member.getAltNames());
+            response->addHost(member.getHostAndPort( horizon ), member.getAltNames());
         } else if (member.isArbiter()) {
-            response->addArbiter(member.getHostAndPort( zone ), member.getAltNames());
+            response->addArbiter(member.getHostAndPort( horizon ), member.getAltNames());
         } else {
-            response->addPassive(member.getHostAndPort( zone ), member.getAltNames());
+            response->addPassive(member.getHostAndPort( horizon ), member.getAltNames());
         }
     }
 
@@ -1724,7 +1724,7 @@ void TopologyCoordinator::fillIsMasterForReplSet(IsMasterResponse* response, con
 
     const MemberConfig* curPrimary = _currentPrimaryMember();
     if (curPrimary) {
-        response->setPrimary(curPrimary->getHostAndPort( zone ), curPrimary->getAltNames());
+        response->setPrimary(curPrimary->getHostAndPort( horizon ), curPrimary->getAltNames());
     }
 
     const MemberConfig& selfConfig = _rsConfig.getMemberAt(_selfIndex);

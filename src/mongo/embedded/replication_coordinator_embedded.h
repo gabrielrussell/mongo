@@ -165,7 +165,7 @@ public:
 
     Status processReplSetGetStatus(BSONObjBuilder*, ReplSetGetStatusResponseStyle) override;
 
-    void fillIsMasterForReplSet(repl::IsMasterResponse*, const std::string &zone) override;
+    void fillIsMasterForReplSet(repl::IsMasterResponse*, const std::string &horizon) override;
 
     void appendSlaveInfoData(BSONObjBuilder*) override;
 

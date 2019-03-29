@@ -359,6 +359,17 @@ private:
 std::vector<std::unique_ptr<stdx::recursive_mutex>> SSLThreadInfo::_mutex;
 SSLThreadInfo::ThreadIDManager SSLThreadInfo::_idManager;
 
+namespace
+{
+boost::optional<std::string>
+getRawSNIServerName( const SSL *const ssl )
+{
+    const char* name = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+    if( !name ) return boost::none;
+    return std::string(name);
+}
+}//namespace
+
 class SSLConnectionOpenSSL : public SSLConnectionInterface {
 public:
     SSL* ssl;
@@ -371,11 +382,8 @@ public:
     ~SSLConnectionOpenSSL();
 
     std::string getSNIServerName() const final {
-        const char* name = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
-        if (!name)
-            return "";
-
-        return name;
+        const auto name = getRawSNIServerName(ssl);
+        return name.value_or("");
     }
 };
 
@@ -631,7 +639,7 @@ MONGO_INITIALIZER_WITH_PREREQUISITES(SSLManager, ("SetupOpenSSL", "EndStartupOpt
 
 std::unique_ptr<SSLManagerInterface> SSLManagerInterface::create(const SSLParams& params,
                                                                  bool isServer) {
-    return stdx::make_unique<SSLManagerOpenSSL>(params, isServer);
+    return std::make_unique<SSLManagerOpenSSL>(params, isServer);
 }
 
 SSLX509Name getCertificateSubjectX509Name(X509* cert) {
@@ -1418,7 +1426,7 @@ bool SSLManagerOpenSSL::_doneWithSSLOp(SSLConnectionOpenSSL* conn, int status) {
 
 SSLConnectionInterface* SSLManagerOpenSSL::connect(Socket* socket) {
     std::unique_ptr<SSLConnectionOpenSSL> sslConn =
-        stdx::make_unique<SSLConnectionOpenSSL>(_clientContext.get(), socket, (const char*)NULL, 0);
+        std::make_unique<SSLConnectionOpenSSL>(_clientContext.get(), socket, nullptr, 0);
 
     const auto undotted = removeFQDNRoot(socket->remoteAddr().hostOrIp());
     int ret = ::SSL_set_tlsext_host_name(sslConn->ssl, undotted.c_str());
@@ -1480,9 +1488,9 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
     recordTLSVersion(tlsVersion, hostForLogging);
 
     if (!_sslConfiguration.hasCA && isSSLServer)
-        return {boost::none};
+        return boost::none;
 
-    X509* peerCert = SSL_get_peer_certificate(conn);
+    UniqueX509 peerCert ( SSL_get_peer_certificate(conn));
 
     if (peerCert == nullptr) {  // no certificate presented by peer
         if (_weakValidation) {
@@ -1490,14 +1498,13 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
             if (!_suppressNoCertificateWarning) {
                 warning() << "no SSL certificate provided by peer";
             }
-            return {boost::none};
+            return boost::none;
         } else {
             auto msg = "no SSL certificate provided by peer; connection rejected";
             error() << msg;
             return Status(ErrorCodes::SSLHandshakeFailed, msg);
         }
     }
-    ON_BLOCK_EXIT([&] { X509_free(peerCert); });
 
     long result = SSL_get_verify_result(conn);
 
@@ -1505,7 +1512,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
         if (_allowInvalidCertificates) {
             warning() << "SSL peer certificate validation failed: "
                       << X509_verify_cert_error_string(result);
-            return {boost::none};
+            return boost::none;
         } else {
             str::stream msg;
             msg << "SSL peer certificate validation failed: "
@@ -1516,7 +1523,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
     }
 
     // TODO: check optional cipher restriction, using cert.
-    auto peerSubject = getCertificateSubjectX509Name(peerCert);
+    auto peerSubject = getCertificateSubjectX509Name(peerCert.get());
     LOG(2) << "Accepted TLS connection from peer: " << peerSubject;
 
     // If this is a server and client and server certificate are the same, log a warning.
@@ -1524,13 +1531,14 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
         warning() << "Client connecting with server's own TLS certificate";
     }
 
-    stdx::unordered_set<RoleName> peerCertificateRoles = uassertStatusOK(_parsePeerRoles(peerCert));
+    stdx::unordered_set<RoleName> peerCertificateRoles =
+uassertStatusOK(_parsePeerRoles(peerCert.get()));
 
     // If this is an SSL client context (on a MongoDB server or client)
     // perform hostname validation of the remote server
     if (remoteHost.empty()) {
         // TODO: Write `getSniName` from reference in `SSLConnectionInterface`
-        return SSLPeerInfo(peerSubject, getSniName(), std::move(peerCertificateRoles));
+        return SSLPeerInfo(peerSubject, getRawSNIServerName(conn), std::move(peerCertificateRoles));
     }
 
     // This is to standardize the IPAddress format for comparison.
@@ -1556,7 +1564,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
     
     std::unique_ptr<StackType, StackDeleter>sanNames (
     static_cast<StackType*>(
-        X509_get_ext_d2i(peerCert, NID_subject_alt_name, nullptr, nullptr)));
+        X509_get_ext_d2i(peerCert.get(), NID_subject_alt_name, nullptr, nullptr)));
 
     if (sanNames != nullptr) {
         int sanNamesList = sk_GENERAL_NAME_num(sanNames.get());
@@ -1633,7 +1641,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
         }
     }
 
-    return SSLPeerInfo(peerSubject, stdx::unordered_set<RoleName>());
+    return SSLPeerInfo(peerSubject);
 }
 catch( const DBException &ex )
 {

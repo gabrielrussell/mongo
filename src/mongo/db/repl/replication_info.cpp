@@ -72,11 +72,11 @@ namespace repl {
 void appendReplicationInfo(OperationContext* opCtx,
                            BSONObjBuilder& result,
                            int level,
-                           const std::string& zone = ReplicationCoordinator::defaultZone) {
+                           const std::string& horizon = ReplicationCoordinator::defaultZone) {
     ReplicationCoordinator* replCoord = ReplicationCoordinator::get(opCtx);
     if (replCoord->getSettings().usingReplSets()) {
         IsMasterResponse isMasterResponse;
-        replCoord->fillIsMasterForReplSet(&isMasterResponse, zone);
+        replCoord->fillIsMasterForReplSet(&isMasterResponse, horizon);
         result.appendElements(isMasterResponse.toBSON());
         if (level) {
             replCoord->appendSlaveInfoData(&result);
@@ -211,6 +211,15 @@ public:
 } oplogInfoServerStatus;
 
 namespace {
+std::string
+determineHorizon( OperationContext *const opCtx, const boost::optional<ClientMetadata >&clientMetadata )
+{
+    constexpr std::string defaultHorizon = ReplicationCoordinator::defaultZone;
+    const auto sniName= SSLPeerInfo::forSession( opCtx->getClient()->session() )->getSniName();
+    if( sniName && 
+    return defaultHorizon;
+}
+
 class CmdIsMaster final : public BasicCommand {
 public:
     CmdIsMaster() : BasicCommand("isMaster", "ismaster") {}
@@ -259,12 +268,14 @@ public:
 
         auto& clientMetadataIsMasterState = ClientMetadataIsMasterState::get(opCtx->getClient());
         bool seenIsMaster = clientMetadataIsMasterState.hasSeenIsMaster();
+
+        // TODO(ADAM): Add horizon information to `clientMetadataIsMasterState`.  Rrrrghhh!
         if (!seenIsMaster) {
             clientMetadataIsMasterState.setSeenIsMaster();
         }
 
         BSONElement element = cmdObj[kMetadataDocumentName];
-        std::string zone = ReplicationCoordinator::defaultZone;
+        boost::optional<ClientMetadata> clientMetadata;
         if (!element.eoo()) {
             if (seenIsMaster) {
                 uasserted(ErrorCodes::ClientMetadataCannotBeMutated,
@@ -277,14 +288,16 @@ public:
 
             auto zoneName = parsedClientMetadata->getZoneName();
             if (!zoneName.empty()) {
-                zone = parsedClientMetadata->getZoneName().toString();
+                horizon = parsedClientMetadata->getZoneName().toString();
             }
 
             parsedClientMetadata->logClientMetadata(opCtx->getClient());
 
             clientMetadataIsMasterState.setClientMetadata(opCtx->getClient(),
                                                           std::move(parsedClientMetadata));
+            clientMetadata= std::move(parsedClientMetadata);
         }
+        const std::string horizon= determineHorizon( opCtx, clientMetadata );
 
         // Parse the optional 'internalClient' field. This is provided by incoming connections from
         // mongod and mongos.
@@ -356,7 +369,8 @@ public:
                 });
         }
 
-        appendReplicationInfo(opCtx, result, 0, zone);
+        appendReplicationInfo(opCtx, result, 0, clientMetadata ?
+clientMetadata->getApplicationName() : "" );
 
         if (serverGlobalParams.clusterRole == ClusterRole::ConfigServer) {
             const int configServerModeNumber = 2;

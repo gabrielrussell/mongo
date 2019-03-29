@@ -110,6 +110,7 @@ MemberConfig::MemberConfig(const BSONObj& mcfg, ReplSetTagConfig* tagConfig) {
     }
 
     this->_horizonForward.insert( { "__default", std::move( host ) } );
+    this->_horizonReverse.insert( { std::move( host ), "__default" } );
 
     //
     // Parse votes field.
@@ -203,12 +204,14 @@ MemberConfig::MemberConfig(const BSONObj& mcfg, ReplSetTagConfig* tagConfig) {
     {
         std::cerr << "Found a horizons element." << std::endl;
         const auto &horizonsObject= horizonsElement->Obj();
+        std::size_t horizonCount= 0;
         using std::begin;
         using std::end;
         std::transform( begin( horizonsObject ), end( horizonsObject ),
                 inserter( _horizonForward, end( _horizonForward ) ),
-                []( auto &&horizon ) -> decltype( _horizonForward )::value_type
+                [&horizonCount]( auto &&horizon ) -> decltype( _horizonForward )::value_type
                 {
+                    ++horizonCount;
                     const auto horizonName= horizon.fieldName();
 
                     if( horizon.type() != String ) {uasserted( ErrorCodes::TypeMismatch,
@@ -218,6 +221,18 @@ MemberConfig::MemberConfig(const BSONObj& mcfg, ReplSetTagConfig* tagConfig) {
 
                     return { horizonName, HostAndPort( horizon.valueStringData() ) };
                 } );
+        if( _horizonForward.size() < horizonCount ) 
+        uasserted( ErrorCodes::BadValue, "Duplicate horizon name found." );
+
+        std::transform( begin( _horizonForward ), end( _horizonForward ),
+                inserter( _horizonReverse, end(_horizonReverse ) ),
+                []( auto &&forwardHorizon ) -> decltype( _horizonReverse )::value_type
+                {
+                    return { forwardHorizon.second, forwardHorizon.first };
+                } );
+
+        if( _horizonForward.size() != _horizonReverse.size() ) 
+        uasserted( ErrorCodes::BadValue, "Duplicate horizon member found." );
     }
 
     //

@@ -177,7 +177,7 @@ public:
      */
     StringData getApplicationName() const;
 
-	StringData getZoneName() const;
+	StringData getHorizonName() const;
 
     /**
      * Get the BSON Document of the client metadata document. In the example above in the class
