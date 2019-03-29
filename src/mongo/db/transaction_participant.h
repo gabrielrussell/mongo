@@ -49,6 +49,7 @@
 #include "mongo/db/storage/recovery_unit.h"
 #include "mongo/db/storage/storage_engine.h"
 #include "mongo/db/transaction_metrics_observer.h"
+#include "mongo/idl/mutable_observer_registry.h"
 #include "mongo/stdx/unordered_map.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/concurrency/with_lock.h"
@@ -112,7 +113,8 @@ class TransactionParticipant {
             kCommittingWithPrepare = 1 << 4,
             kCommitted = 1 << 5,
             kAbortedWithoutPrepare = 1 << 6,
-            kAbortedWithPrepare = 1 << 7
+            kAbortedWithPrepare = 1 << 7,
+            kExecutedRetryableWrite = 1 << 8,
         };
 
         using StateSet = int;
@@ -161,6 +163,14 @@ class TransactionParticipant {
             return _state == kAbortedWithPrepare || _state == kAbortedWithoutPrepare;
         }
 
+        bool hasExecutedRetryableWrite() const {
+            return _state == kExecutedRetryableWrite;
+        }
+
+        bool isInRetryableWriteMode() const {
+            return _state == kNone || _state == kExecutedRetryableWrite;
+        }
+
         std::string toString() const {
             return toString(_state);
         }
@@ -174,6 +184,8 @@ class TransactionParticipant {
     };
 
 public:
+    static inline MutableObeserverRegistry<int32_t> observeTransactionLifetimeLimitSeconds;
+
     /**
      * Holds state for a snapshot read or multi-statement transaction in between network
      * operations.

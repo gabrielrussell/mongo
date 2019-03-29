@@ -1026,6 +1026,9 @@ functions:
             "../../../../../../mongo-tools/$i${exe|}" --version
         done
 
+        mkdir -p ../../../../../../mongo-tools/distsrc
+        cp THIRD-PARTY-NOTICES ../../../../../../mongo-tools/distsrc/THIRD-PARTY-NOTICES.gotools
+
   "get modified patch files":
     command: shell.exec
     params:
@@ -1128,6 +1131,7 @@ functions:
         # For patch builds determine if we can bypass compile.
         if [[ "${is_patch}" = "true" && "${task_name}" = "compile" ]]; then
           ${activate_virtualenv}
+          $python -m pip install -r etc/pip/constraints.txt
           $python buildscripts/bypass_compile_and_fetch_binaries.py            \
             --project ${project}                                               \
             --buildVariant ${build_variant}                                    \
@@ -4920,6 +4924,19 @@ tasks:
       jepsen_storage_engine: --storage-engine wiredTiger
       jepsen_test_name: read-concern-majority
       jepsen_write_concern: --write-concern w1
+
+## initial sync generational fuzzer ##
+- <<: *jstestfuzz_template
+  name: initial_sync_fuzzer_gen
+  commands:
+  - func: "generate fuzzer tasks"
+    vars:
+      <<: *jstestfuzz_config_vars
+      num_files: 10
+      num_tasks: 5
+      npm_command: initsync-fuzzer
+      resmoke_args: --suites=initial_sync_fuzzer
+      name: initial_sync_fuzzer
 
 ## Standalone generational fuzzer for aggregation pipelines ##
 - <<: *jstestfuzz_template
@@ -8753,7 +8770,7 @@ buildvariants:
     push_bucket: downloads.10gen.com
     push_name: linux
     push_arch: ppc64le-enterprise-ubuntu1604
-    compile_flags: --ssl MONGO_DISTMOD=ubuntu1804 -j$(echo "$(grep -c processor /proc/cpuinfo)/2" | bc) --release CCFLAGS="-mcpu=power8 -mtune=power8 -mcmodel=medium" --variables-files=etc/scons/mongodbtoolchain_v3_gcc.vars --allocator=system
+    compile_flags: --ssl MONGO_DISTMOD=ubuntu1804 -j$(echo "$(grep -c processor /proc/cpuinfo)/2" | bc) --release CCFLAGS="-mcpu=power8 -mtune=power8 -mcmodel=medium" --variables-files=etc/scons/mongodbtoolchain_v3_gcc.vars
     resmoke_jobs_max: 2
     has_packages: true
     packager_script: packager_enterprise.py
@@ -9572,6 +9589,7 @@ buildvariants:
   - name: disk_wiredtiger
   - name: failpoints
   - name: free_monitoring
+  - name: initial_sync_fuzzer_gen
   - name: integration_tests_standalone
     distros:
     - windows-64-vs2017-compile
@@ -10160,6 +10178,7 @@ buildvariants:
   - name: gle_auth_basics_passthrough
   - name: gle_auth_basics_passthrough_write_cmd
   - name: gle_auth_write_cmd
+  - name: initial_sync_fuzzer_gen
   - name: jsCore
   - name: jsCore_compatibility
   - name: jsCore_decimal
@@ -10890,6 +10909,7 @@ buildvariants:
   - name: gle_auth_basics_passthrough_write_cmd
   - name: gle_auth_write_cmd
   - name: idl_tests
+  - name: initial_sync_fuzzer_gen
   - name: integration_tests_replset
     distros:
     - rhel62-large
@@ -11120,6 +11140,7 @@ buildvariants:
   - name: gle_auth_basics_passthrough
   - name: gle_auth_basics_passthrough_write_cmd
   - name: gle_auth_write_cmd
+  - name: initial_sync_fuzzer_gen
   - name: integration_tests_replset
     distros:
     - rhel62-large
@@ -11333,6 +11354,7 @@ buildvariants:
   - name: gle_auth_basics_passthrough
   - name: gle_auth_basics_passthrough_write_cmd
   - name: gle_auth_write_cmd
+  - name: initial_sync_fuzzer_gen
   - name: integration_tests_replset
   - name: integration_tests_sharded
   - name: integration_tests_standalone
@@ -13904,6 +13926,7 @@ buildvariants:
   - name: gle_auth_basics_passthrough
   - name: gle_auth_basics_passthrough_write_cmd
   - name: gle_auth_write_cmd
+  - name: initial_sync_fuzzer_gen
   - name: integration_tests_replset
   - name: integration_tests_sharded
   - name: jsCore
@@ -14112,6 +14135,7 @@ buildvariants:
   - name: gle_auth_basics_passthrough
   - name: gle_auth_basics_passthrough_write_cmd
   - name: gle_auth_write_cmd
+  - name: initial_sync_fuzzer_gen
   - name: integration_tests_replset
   - name: integration_tests_sharded
   - name: integration_tests_standalone
