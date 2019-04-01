@@ -183,7 +183,6 @@ Status ClientMetadata::parseClientMetadataDocument(const BSONObj& doc) try {
     BSONObj docOwned = doc.getOwned();
 
     StringData appName;
-    StringData zoneName;
     bool foundDriver = false;
     bool foundOperatingSystem = false;
 
@@ -205,9 +204,6 @@ Status ClientMetadata::parseClientMetadataDocument(const BSONObj& doc) try {
             auto appDoc = parseApplicationDocument(e.Obj());
 
             appName = appDoc.name;
-
-            zoneName = appDoc.zone;
-
         } else if (name == kDriver) {
             if (!e.isABSONObj()) {
                 return Status(ErrorCodes::TypeMismatch,
@@ -257,7 +253,6 @@ Status ClientMetadata::parseClientMetadataDocument(const BSONObj& doc) try {
 
     _document = std::move(docOwned);
     _appName = std::move(appName);
-    _zoneName = std::move(zoneName);
 
     return Status::OK();
 } catch (const DBException& ex) {
@@ -473,10 +468,6 @@ Status ClientMetadata::serializePrivate(StringData driverName,
 
 StringData ClientMetadata::getApplicationName() const {
     return _appName;
-}
-
-StringData ClientMetadata::getZoneName() const {
-    return _zoneName;
 }
 
 const BSONObj& ClientMetadata::getDocument() const {

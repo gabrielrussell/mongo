@@ -1688,12 +1688,53 @@ void TopologyCoordinator::fillMemberData(BSONObjBuilder* result) {
     }
 }
 
-void TopologyCoordinator::fillIsMasterForReplSet(IsMasterResponse* response, const std::string &horizon) {
+namespace
+{
+std::string
+determineHorizon( const std::vector<MemberConfig>& members,
+        const int incomingPort,
+        const MemberConfig &self,
+        const ClientMetadataIsMasterState::SplitHorizonParameters &horizonParameters )
+{
+    const auto &forwardMapping= self.getHorizonMappings();
+    const auto &reverseMapping= self.getHorizonReverseMappings();
+
+    if( horizonParameters.explicitHorizonName )
+    {
+        // Unlike `appName`, the explicit horizon request isn't checked for validity with a fallback -- failure to select a valid horizon name explicitly will lead to command failure.
+        return *horizonParameters.explicitHorizonName;
+    }
+    else if( horizonParameters.connectionTarget )
+    {
+        const HostAndPort connectionTarget( *horizonParameters.connectionTarget );
+        auto found= reverseMapping.find( connectionTarget );
+        if( found != end( reverseMapping ) ) return found->second;
+    }
+    else if( horizonParameters.sniName )
+    {
+        const HostAndPort connectionTarget( *horizonParameters.sniName, incomingPort );
+        auto found= reverseMapping.find( connectionTarget );
+        if( found != end( reverseMapping ) ) return found->second;
+    }
+    else if( forwardMapping.count( horizonParameters.appName ) )
+    {
+        return horizonParameters.appName;
+    }
+    return ReplicationCoordinator::defaultZone;
+}
+}//namespace
+
+void
+TopologyCoordinator::fillIsMasterForReplSet( IsMasterResponse*const response, const int incomingPort, 
+        const ClientMetadataIsMasterState::SplitHorizonParameters &horizonParams) {
     const MemberState myState = getMemberState();
     if (!_rsConfig.isInitialized()) {
         response->markAsNoConfig();
         return;
     }
+
+    const std::string horizon= determineHorizon( _rsConfig.members(), incomingPort,
+            _rsConfig.members()[ _selfIndex], horizonParams );
 
     for (auto &member: _rsConfig.members()){
         if (member.isHidden() || member.getSlaveDelay() > Seconds{0}) {
@@ -1701,11 +1742,11 @@ void TopologyCoordinator::fillIsMasterForReplSet(IsMasterResponse* response, con
         }
 
         if (member.isElectable()) {
-            response->addHost(member.getHostAndPort( horizon ), member.getAltNames());
+            response->addHost(member.getHostAndPort( horizon ), member.getHorizonMappings());
         } else if (member.isArbiter()) {
-            response->addArbiter(member.getHostAndPort( horizon ), member.getAltNames());
+            response->addArbiter(member.getHostAndPort( horizon ), member.getHorizonMappings());
         } else {
-            response->addPassive(member.getHostAndPort( horizon ), member.getAltNames());
+            response->addPassive(member.getHostAndPort( horizon ), member.getHorizonMappings());
         }
     }
 
@@ -1724,7 +1765,7 @@ void TopologyCoordinator::fillIsMasterForReplSet(IsMasterResponse* response, con
 
     const MemberConfig* curPrimary = _currentPrimaryMember();
     if (curPrimary) {
-        response->setPrimary(curPrimary->getHostAndPort( horizon ), curPrimary->getAltNames());
+        response->setPrimary(curPrimary->getHostAndPort( horizon ), curPrimary->getHorizonMappings());
     }
 
     const MemberConfig& selfConfig = _rsConfig.getMemberAt(_selfIndex);

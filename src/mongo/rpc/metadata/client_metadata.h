@@ -177,8 +177,6 @@ public:
      */
     StringData getApplicationName() const;
 
-	StringData getHorizonName() const;
-
     /**
      * Get the BSON Document of the client metadata document. In the example above in the class
      * comment, this is the document in the "client" field.
@@ -251,7 +249,6 @@ private:
     // Application Name extracted from the client metadata document.
     // May be empty
     StringData _appName;
-    StringData _zoneName;
 };
 
 }  // namespace mongo

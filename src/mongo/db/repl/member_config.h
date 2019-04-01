@@ -96,16 +96,21 @@ public:
 		auto found= this->_horizonForward.find( zone );
 		if( found == end( this->_horizonForward ) )
 		{
-			abort();
 			uasserted( ErrorCodes::NoSuchKey, str::stream() << "No horizon named " << zone );
 		}
 		return found->second;
     }
 
 	const auto &
-	getAltNames() const
+	getHorizonMappings() const
 	{
 		return this->_horizonForward;
+	}
+
+	const auto &
+	getHorizonReverseMappings() const
+	{
+		return this->_horizonReverse;
 	}
 
     /**

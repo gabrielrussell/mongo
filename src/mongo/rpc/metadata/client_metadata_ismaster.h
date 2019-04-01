@@ -64,6 +64,27 @@ public:
                                   boost::optional<ClientMetadata> clientMetadata,
                                   bool setViaMetadata = false);
 
+	/**
+     * Set the split horizon connection parameters, for use by future is-master commands.
+     */
+	static void
+	setHorizonParameters( Client *const client, std::string appName,
+			boost::optional< std::string > sniName, boost::optional< std::string > connectionTarget,
+			boost::optional< std::string > explicitHorizonName );
+
+	struct SplitHorizonParameters
+	{
+		std::string appName;
+		boost::optional<std::string> sniName;
+		boost::optional<std::string> connectionTarget;
+		boost::optional<std::string> explicitHorizonName;
+	};
+
+    /**
+     * Get the client's SplitHorizonParameters object.
+     */
+	SplitHorizonParameters getSplitHorizonParameters() const;
+
     /**
      * Check a flag to indicate that isMaster has been seen for this Client.
      */
@@ -110,6 +131,8 @@ private:
     // Thread-Safety:
     //   None - must be only be read and written from the thread owning "Client".
     bool _setViaMetadata{false};
+
+	SplitHorizonParameters _splitHorizonParameters;
 };
 
 }  // namespace mongo

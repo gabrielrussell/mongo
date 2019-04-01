@@ -211,14 +211,6 @@ public:
 } oplogInfoServerStatus;
 
 namespace {
-std::string
-determineHorizon( OperationContext *const opCtx, const boost::optional<ClientMetadata >&clientMetadata )
-{
-    constexpr std::string defaultHorizon = ReplicationCoordinator::defaultZone;
-    const auto sniName= SSLPeerInfo::forSession( opCtx->getClient()->session() )->getSniName();
-    if( sniName && 
-    return defaultHorizon;
-}
 
 class CmdIsMaster final : public BasicCommand {
 public:
@@ -275,7 +267,6 @@ public:
         }
 
         BSONElement element = cmdObj[kMetadataDocumentName];
-        boost::optional<ClientMetadata> clientMetadata;
         if (!element.eoo()) {
             if (seenIsMaster) {
                 uasserted(ErrorCodes::ClientMetadataCannotBeMutated,
@@ -295,9 +286,8 @@ public:
 
             clientMetadataIsMasterState.setClientMetadata(opCtx->getClient(),
                                                           std::move(parsedClientMetadata));
-            clientMetadata= std::move(parsedClientMetadata);
+            clientMetadataIsMasterState.setHorizonParameters(
         }
-        const std::string horizon= determineHorizon( opCtx, clientMetadata );
 
         // Parse the optional 'internalClient' field. This is provided by incoming connections from
         // mongod and mongos.

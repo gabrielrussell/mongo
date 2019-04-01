@@ -447,8 +447,8 @@ Status ReplSetConfig::validate() const {
         Status status = memberI.validate();
         if (!status.isOK())
             return status;
-        if( !std::equal( begin( memberI.getAltNames() ), end( memberI.getAltNames() ),
-                begin( _members[ 0 ].getAltNames() ), end( _members[ 0 ].getAltNames() ),
+        if( !std::equal( begin( memberI.getHorizonMappings() ), end( memberI.getHorizonMappings() ),
+                begin( _members[ 0 ].getHorizonMappings() ), end( _members[ 0 ].getHorizonMappings() ),
                 []( auto &&left, auto &&right )
                 {
                     return left.first == right.first;

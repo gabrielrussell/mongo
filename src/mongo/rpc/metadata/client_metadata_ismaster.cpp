@@ -76,6 +76,25 @@ void ClientMetadataIsMasterState::setClientMetadata(Client* client,
     state._setViaMetadata = setViaMetadata;
 }
 
+void ClientMetadataIsMasterState::setHorizonParameters(
+    Client* const client,
+    std::string appName,
+    boost::optional<std::string> sniName,
+    boost::optional<std::string> connectionTarget,
+    boost::optional<std::string> explicitHorizonName) {
+    auto& state = get(client);
+
+    stdx::lock_guard<Client> lk(*client);
+    state._splitHorizonParameters = SplitHorizonParameters{std::move(appName),
+                                                           std::move(sniName),
+                                                           std::move(connectionTarget),
+                                                           std::move(explicitHorizonName)};
+}
+
+auto ClientMetadataIsMasterState::getSplitHorizonParameters() const -> SplitHorizonParameters {
+    return _splitHorizonParameters;
+}
+
 
 Status ClientMetadataIsMasterState::readFromMetadata(OperationContext* opCtx,
                                                      BSONElement& element) {
