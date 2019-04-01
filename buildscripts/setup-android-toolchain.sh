@@ -3,16 +3,13 @@
 set -o verbose
 set -o errexit
 
-ToolchainArch=$1
-shift
-API_VERSION=$1
+SDK_ROOT=$1
 shift
 
 if [ -z "$PYTHON" ] ; then
     PYTHON=`which python`
 fi
 
-SDK_ROOT=$PWD/android_sdk
 if [ ! -e  $SDK_ROOT ]; then
     mkdir $SDK_ROOT
     (
@@ -31,18 +28,9 @@ if [ ! -e  $SDK_ROOT ]; then
             "system-images;android-21;google_apis;x86_64" \
         | grep -v Unzipping
     )
-    NDK=android-ndk-r18b
+    NDK=android-ndk-r19c
     NDK_PACKAGE=$NDK-linux-x86_64.zip
     test -e $NDK_PACKAGE || curl -O https://dl.google.com/android/repository/$NDK_PACKAGE
     unzip -q $NDK_PACKAGE
     mv $NDK $SDK_ROOT/ndk-bundle
 fi
-
-TOOLCHAIN=$PWD/android_toolchain-${ToolchainArch}-${API_VERSION}
-rm -rf $TOOLCHAIN
-
-$PYTHON $SDK_ROOT/ndk-bundle/build/tools/make_standalone_toolchain.py --arch $ToolchainArch --api $API_VERSION --stl=libc++ --install-dir $TOOLCHAIN
-
-echo SDK_ROOT=${SDK_ROOT}
-echo TOOLCHAIN=${TOOLCHAIN}
-echo API_VERSION=${API_VERSION}
