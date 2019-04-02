@@ -65,12 +65,8 @@ void TransactionMetricsObserver::onStash(ServerTransactionsMetrics* serverTransa
     //
     // Per transaction metrics.
     //
-    // The transaction operation may be trying to stash its resources when it has already been
-    // aborted by another thread, so we check that the transaction is active before setting it as
-    // inactive.
-    if (_singleTransactionStats.isActive()) {
-        _singleTransactionStats.setInactive(tickSource, tickSource->getTicks());
-    }
+    invariant(_singleTransactionStats.isActive());
+    _singleTransactionStats.setInactive(tickSource, tickSource->getTicks());
 
     //
     // Server wide transactions metrics.
@@ -85,6 +81,7 @@ void TransactionMetricsObserver::onUnstash(ServerTransactionsMetrics* serverTran
     //
     // Per transaction metrics.
     //
+    invariant(!_singleTransactionStats.isActive());
     _singleTransactionStats.setActive(tickSource->getTicks());
 
     //
@@ -98,11 +95,7 @@ void TransactionMetricsObserver::onUnstash(ServerTransactionsMetrics* serverTran
 void TransactionMetricsObserver::onCommit(ServerTransactionsMetrics* serverTransactionsMetrics,
                                           TickSource* tickSource,
                                           boost::optional<repl::OpTime> oldestOplogEntryOpTime,
-                                          boost::optional<repl::OpTime> commitOpTime,
-                                          Top* top,
-                                          bool wasPrepared) {
-    invariant((oldestOplogEntryOpTime != boost::none && commitOpTime != boost::none) ||
-              (oldestOplogEntryOpTime == boost::none && commitOpTime == boost::none));
+                                          Top* top) {
     //
     // Per transaction metrics.
     //
@@ -110,11 +103,9 @@ void TransactionMetricsObserver::onCommit(ServerTransactionsMetrics* serverTrans
     // inactive. We use the same "now" time to prevent skew in the time-related metrics.
     auto curTick = tickSource->getTicks();
     _singleTransactionStats.setEndTime(curTick);
-    // The transaction operation may have already been aborted by another thread, so we check that
-    // the transaction is active before setting it as inactive.
-    if (_singleTransactionStats.isActive()) {
-        _singleTransactionStats.setInactive(tickSource, curTick);
-    }
+
+    invariant(_singleTransactionStats.isActive());
+    _singleTransactionStats.setInactive(tickSource, curTick);
 
     //
     // Server wide transactions metrics.
@@ -123,7 +114,7 @@ void TransactionMetricsObserver::onCommit(ServerTransactionsMetrics* serverTrans
     serverTransactionsMetrics->decrementCurrentOpen();
     serverTransactionsMetrics->decrementCurrentActive();
 
-    if (wasPrepared) {
+    if (_singleTransactionStats.isPrepared()) {
         serverTransactionsMetrics->incrementTotalPreparedThenCommitted();
         serverTransactionsMetrics->decrementCurrentPrepared();
     }
@@ -134,52 +125,48 @@ void TransactionMetricsObserver::onCommit(ServerTransactionsMetrics* serverTrans
 
     // Remove this transaction's oldest oplog entry OpTime if one was written.
     if (oldestOplogEntryOpTime) {
-        serverTransactionsMetrics->removeActiveOpTime(*oldestOplogEntryOpTime, commitOpTime);
+        serverTransactionsMetrics->removeActiveOpTime(*oldestOplogEntryOpTime);
     }
 }
 
-void TransactionMetricsObserver::onAbortActive(ServerTransactionsMetrics* serverTransactionsMetrics,
-                                               TickSource* tickSource,
-                                               boost::optional<repl::OpTime> oldestOplogEntryOpTime,
-                                               boost::optional<repl::OpTime> abortOpTime,
-                                               Top* top,
-                                               bool wasPrepared) {
-    invariant((oldestOplogEntryOpTime != boost::none && abortOpTime != boost::none) ||
-              (oldestOplogEntryOpTime == boost::none && abortOpTime == boost::none));
+void TransactionMetricsObserver::_onAbortActive(
+    ServerTransactionsMetrics* serverTransactionsMetrics,
+    TickSource* tickSource,
+    boost::optional<repl::OpTime> oldestOplogEntryOpTime,
+    Top* top) {
 
     auto curTick = tickSource->getTicks();
+    invariant(_singleTransactionStats.isActive());
     _onAbort(serverTransactionsMetrics, curTick, tickSource, top);
     //
     // Per transaction metrics.
     //
-    // The transaction operation may have already been aborted by another thread, so we check that
-    // the transaction is active before setting it as inactive.
-    if (_singleTransactionStats.isActive()) {
-        _singleTransactionStats.setInactive(tickSource, curTick);
-    }
+    _singleTransactionStats.setInactive(tickSource, curTick);
 
     //
     // Server wide transactions metrics.
     //
     serverTransactionsMetrics->decrementCurrentActive();
 
-    if (wasPrepared) {
+    if (_singleTransactionStats.isPrepared()) {
         serverTransactionsMetrics->incrementTotalPreparedThenAborted();
         serverTransactionsMetrics->decrementCurrentPrepared();
     }
 
     // Remove this transaction's oldest oplog entry OpTime if one was written.
     if (oldestOplogEntryOpTime) {
-        serverTransactionsMetrics->removeActiveOpTime(*oldestOplogEntryOpTime, abortOpTime);
+        serverTransactionsMetrics->removeActiveOpTime(*oldestOplogEntryOpTime);
     }
 }
 
-void TransactionMetricsObserver::onAbortInactive(
+void TransactionMetricsObserver::_onAbortInactive(
     ServerTransactionsMetrics* serverTransactionsMetrics,
     TickSource* tickSource,
     boost::optional<repl::OpTime> oldestOplogEntryOpTime,
     Top* top) {
     auto curTick = tickSource->getTicks();
+    invariant(!_singleTransactionStats.isActive());
+    invariant(!_singleTransactionStats.isPrepared());
     _onAbort(serverTransactionsMetrics, curTick, tickSource, top);
 
     //
@@ -189,7 +176,18 @@ void TransactionMetricsObserver::onAbortInactive(
 
     // Remove this transaction's oldest oplog entry OpTime if one was written.
     if (oldestOplogEntryOpTime) {
-        serverTransactionsMetrics->removeActiveOpTime(*oldestOplogEntryOpTime, boost::none);
+        serverTransactionsMetrics->removeActiveOpTime(*oldestOplogEntryOpTime);
+    }
+}
+
+void TransactionMetricsObserver::onAbort(ServerTransactionsMetrics* serverTransactionsMetrics,
+                                         TickSource* tickSource,
+                                         boost::optional<repl::OpTime> oldestOplogEntryOpTime,
+                                         Top* top) {
+    if (_singleTransactionStats.isActive()) {
+        _onAbortActive(serverTransactionsMetrics, tickSource, oldestOplogEntryOpTime, top);
+    } else {
+        _onAbortInactive(serverTransactionsMetrics, tickSource, oldestOplogEntryOpTime, top);
     }
 }
 
@@ -246,14 +244,13 @@ void TransactionMetricsObserver::_onAbort(ServerTransactionsMetrics* serverTrans
 void TransactionMetricsObserver::onPrepare(ServerTransactionsMetrics* serverTransactionsMetrics,
                                            repl::OpTime prepareOpTime,
                                            TickSource::Tick curTick) {
-
     //
     // Per transaction metrics.
     //
     _singleTransactionStats.setPreparedStartTime(curTick);
 
     // Since we currently only write an oplog entry for an in progress transaction when it is in
-    // the prepare state, the prepareOpTime is currently the oldest OpTime written to the
+    // the prepare state, the prepareOpTime is currently the oldest optime written to the
     // oplog for this transaction.
     serverTransactionsMetrics->addActiveOpTime(prepareOpTime);
     serverTransactionsMetrics->incrementCurrentPrepared();

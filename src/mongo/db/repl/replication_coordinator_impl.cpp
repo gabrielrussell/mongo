@@ -74,7 +74,6 @@
 #include "mongo/db/repl/update_position_args.h"
 #include "mongo/db/repl/vote_requester.h"
 #include "mongo/db/server_options.h"
-#include "mongo/db/server_transactions_metrics.h"
 #include "mongo/db/transaction_participant.h"
 #include "mongo/db/write_concern.h"
 #include "mongo/db/write_concern_options.h"
@@ -3378,22 +3377,6 @@ boost::optional<OpTime> ReplicationCoordinatorImpl::_chooseStableOpTimeFromCandi
 
     maximumStableOpTime = OpTime(maximumStableTimestamp, maximumStableOpTime.getTerm());
 
-    // When calculating the stable optime, compare it to the oldest oplog entry timestamp across
-    // transactions whose corresponding commit/abort oplog entries have not been majority committed.
-    const auto serverTxnMetrics = ServerTransactionsMetrics::get(getGlobalServiceContext());
-    const auto oldestNonMajCommittedOpTime =
-        serverTxnMetrics->getOldestNonMajorityCommittedOpTime();
-
-    if (oldestNonMajCommittedOpTime) {
-        if (oldestNonMajCommittedOpTime->getTimestamp() < maximumStableTimestamp) {
-            // If there is an oldest non-majority committed timestamp that is less than the current
-            // max stable timestamp, then update the max stable timestamp/optime accordingly.
-            maximumStableTimestamp = oldestNonMajCommittedOpTime->getTimestamp();
-            maximumStableOpTime =
-                OpTime(maximumStableTimestamp, oldestNonMajCommittedOpTime->getTerm());
-        }
-    }
-
     // Find the greatest optime candidate that is less than or equal to 'maximumStableOpTime'. To do
     // this we first find the upper bound of 'maximumStableOpTime', which points to the smallest
     // element in 'candidates' that is greater than 'maximumStableOpTime'. We then step back one
@@ -3453,16 +3436,6 @@ boost::optional<OpTime> ReplicationCoordinatorImpl::_recalculateStableOpTime(Wit
         invariant(snapshotOpTime <= commitPoint);
     }
 
-    // If we advanced the commit point and have prepared transactions, check if their commit or
-    // abort timestamps are <= the commit point. If so, remove them from our oldest non-majority
-    // committed optimes set because we know that the commit/abort oplog entries are majority
-    // committed.
-    // We must remove these optimes before calling _chooseStableOpTimeFromCandidates
-    // because we want the stable timestamp to advance up to the commit point if all transactions
-    // are committed or aborted.
-    auto txnMetrics = ServerTransactionsMetrics::get(getGlobalServiceContext());
-    txnMetrics->removeOpTimesLessThanOrEqToCommittedOpTime(commitPoint);
-
     // When majority read concern is disabled, the stable opTime is set to the lastApplied, rather
     // than the commit point.
     auto maximumStableOpTime = serverGlobalParams.enableMajorityReadConcern
@@ -3520,13 +3493,16 @@ void ReplicationCoordinatorImpl::_setStableTimestampForStorage(WithLock lk) {
     }
 }
 
-void ReplicationCoordinatorImpl::advanceCommitPoint(const OpTime& committedOpTime) {
+void ReplicationCoordinatorImpl::advanceCommitPoint(const OpTime& committedOpTime,
+                                                    bool fromSyncSource) {
     stdx::unique_lock<stdx::mutex> lk(_mutex);
-    _advanceCommitPoint(lk, committedOpTime);
+    _advanceCommitPoint(lk, committedOpTime, fromSyncSource);
 }
 
-void ReplicationCoordinatorImpl::_advanceCommitPoint(WithLock lk, const OpTime& committedOpTime) {
-    if (_topCoord->advanceLastCommittedOpTime(committedOpTime)) {
+void ReplicationCoordinatorImpl::_advanceCommitPoint(WithLock lk,
+                                                     const OpTime& committedOpTime,
+                                                     bool fromSyncSource) {
+    if (_topCoord->advanceLastCommittedOpTime(committedOpTime, fromSyncSource)) {
         if (_getMemberState_inlock().arbiter()) {
             // Arbiters do not store replicated data, so we consider their data trivially
             // consistent.

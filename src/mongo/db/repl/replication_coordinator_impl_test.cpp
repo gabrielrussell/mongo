@@ -58,7 +58,6 @@
 #include "mongo/db/repl/topology_coordinator.h"
 #include "mongo/db/repl/update_position_args.h"
 #include "mongo/db/server_options.h"
-#include "mongo/db/server_transactions_metrics.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/write_concern_options.h"
 #include "mongo/executor/network_interface_mock.h"
@@ -3866,8 +3865,6 @@ TEST_F(StableOpTimeTest, CalculateStableOpTime) {
 
     initReplSetMode();
     auto repl = getReplCoord();
-    getStorageInterface()->supportsDocLockingBool = true;
-    auto txnMetrics = ServerTransactionsMetrics::get(getGlobalServiceContext());
     OpTime commitPoint;
     boost::optional<OpTime> expectedStableOpTime, stableOpTime;
     std::set<OpTime> stableOpTimeCandidates;
@@ -3938,23 +3935,6 @@ TEST_F(StableOpTimeTest, CalculateStableOpTime) {
     stableOpTime =
         repl->chooseStableOpTimeFromCandidates_forTest(stableOpTimeCandidates, commitPoint);
     ASSERT_EQ(expectedStableOpTime, stableOpTime);
-
-    // Set the oldest oplog entry OpTime for non-majority committed aborts/commits associated
-    // with a multi-document transaction to be before the current commit point. We will then
-    // make expectedStableOpTime the new stable optime because it is the only candidate before
-    // the oldestNonMajCommittedOpTime.
-    commitPoint = OpTime({1, 5}, term);
-    const auto oldestNonMajCommittedOpTime = OpTime({1, 3}, term);
-    const auto finishOpTime = OpTime({1, 3}, term);
-    stableOpTimeCandidates = {oldestNonMajCommittedOpTime, OpTime({1, 4}, term)};
-
-    // Adds the oldestNonMajCommittedOpTime to both sets.
-    txnMetrics->addActiveOpTime(oldestNonMajCommittedOpTime);
-    // Update the finishOpTime.
-    txnMetrics->removeActiveOpTime(oldestNonMajCommittedOpTime, finishOpTime);
-    stableOpTime =
-        repl->chooseStableOpTimeFromCandidates_forTest(stableOpTimeCandidates, commitPoint);
-    ASSERT_EQ(oldestNonMajCommittedOpTime, stableOpTime);
 }
 
 TEST_F(StableOpTimeTest, CleanupStableOpTimeCandidates) {
@@ -4046,7 +4026,7 @@ TEST_F(StableOpTimeTest, SetMyLastAppliedSetsStableOpTimeForStorage) {
     simulateSuccessfulV1Election();
 
     // Advance the commit point so it's higher than all the others.
-    repl->advanceCommitPoint(OpTimeWithTermOne(10, 1));
+    repl->advanceCommitPoint(OpTimeWithTermOne(10, 1), false);
     ASSERT_EQUALS(Timestamp(1, 1), getStorageInterface()->getStableTimestamp());
 
     // Check that the stable timestamp is not updated if the all-committed timestamp is behind.
@@ -4154,19 +4134,19 @@ TEST_F(StableOpTimeTest, AdvanceCommitPointSetsStableOpTimeForStorage) {
     replCoordSetMyLastAppliedOpTime(OpTime({3, 2}, term));
 
     // Set a commit point and check the stable optime.
-    repl->advanceCommitPoint(OpTime({2, 1}, term));
+    repl->advanceCommitPoint(OpTime({2, 1}, term), false);
     stableTimestamp = getStorageInterface()->getStableTimestamp();
     ASSERT_EQUALS(Timestamp(2, 1), stableTimestamp);
 
     // Check that the stable timestamp is not updated if the all-committed timestamp is behind.
-    repl->advanceCommitPoint(OpTime({2, 2}, term));
+    repl->advanceCommitPoint(OpTime({2, 2}, term), false);
     stableTimestamp = getStorageInterface()->getStableTimestamp();
     ASSERT_EQUALS(Timestamp(2, 1), stableTimestamp);
 
     getStorageInterface()->allCommittedTimestamp = Timestamp(4, 4);
 
     // Check that the stable timestamp is updated when we advance the commit point.
-    repl->advanceCommitPoint(OpTime({3, 2}, term));
+    repl->advanceCommitPoint(OpTime({3, 2}, term), false);
     stableTimestamp = getStorageInterface()->getStableTimestamp();
     ASSERT_EQUALS(Timestamp(3, 2), stableTimestamp);
 
@@ -4201,7 +4181,7 @@ TEST_F(StableOpTimeTest, ClearOpTimeCandidatesPastCommonPointAfterRollback) {
 
     replCoordSetMyLastAppliedOpTime(OpTime({0, 1}, term));
     // Advance commit point when it has the same term as the last applied.
-    repl->advanceCommitPoint(commitPoint);
+    repl->advanceCommitPoint(commitPoint, false);
 
     replCoordSetMyLastAppliedOpTime(OpTime({1, 1}, term));
     replCoordSetMyLastAppliedOpTime(OpTime({1, 2}, term));
@@ -4678,12 +4658,12 @@ TEST_F(ReplCoordTest, UpdateLastCommittedOpTimeWhenTheLastCommittedOpTimeIsNewer
     replCoordSetMyLastAppliedOpTime(time);
 
     // higher OpTime, should change
-    getReplCoord()->advanceCommitPoint(time);
+    getReplCoord()->advanceCommitPoint(time, false);
     ASSERT_EQUALS(time, getReplCoord()->getLastCommittedOpTime());
     ASSERT_EQUALS(time, getReplCoord()->getCurrentCommittedSnapshotOpTime());
 
     // lower OpTime, should not change
-    getReplCoord()->advanceCommitPoint(oldTime);
+    getReplCoord()->advanceCommitPoint(oldTime, false);
     ASSERT_EQUALS(time, getReplCoord()->getLastCommittedOpTime());
     ASSERT_EQUALS(time, getReplCoord()->getCurrentCommittedSnapshotOpTime());
 }
@@ -4836,7 +4816,7 @@ TEST_F(ReplCoordTest,
     ASSERT_EQUALS(-1, getTopoCoord().getCurrentPrimaryIndex());
 }
 
-TEST_F(ReplCoordTest, LastCommittedOpTimeOnlyUpdatedWhenLastAppliedHasTheSameTerm) {
+TEST_F(ReplCoordTest, LastCommittedOpTimeOnlyUpdatedFromHeartbeatWhenLastAppliedHasTheSameTerm) {
     // Ensure that the metadata is processed if it is contained in a heartbeat response.
     assertStartSuccess(BSON("_id"
                             << "mySet"
@@ -4996,6 +4976,36 @@ TEST_F(ReplCoordTest, LastCommittedOpTimeOnlyUpdatedFromHeartbeatInFCV42) {
     }
 }
 
+TEST_F(ReplCoordTest, AdvanceCommitPointFromSyncSourceCanSetCommitPointToLastAppliedIgnoringTerm) {
+    assertStartSuccess(BSON("_id"
+                            << "mySet"
+                            << "version"
+                            << 2
+                            << "members"
+                            << BSON_ARRAY(BSON("host"
+                                               << "node1:12345"
+                                               << "_id"
+                                               << 0)
+                                          << BSON("host"
+                                                  << "node2:12345"
+                                                  << "_id"
+                                                  << 1))
+                            << "protocolVersion"
+                            << 1),
+                       HostAndPort("node1", 12345));
+    ASSERT_EQUALS(OpTime(), getReplCoord()->getLastCommittedOpTime());
+
+    auto lastApplied = OpTime({10, 1}, 1);
+    auto commitPoint = OpTime({15, 1}, 2);
+    replCoordSetMyLastAppliedOpTime(lastApplied);
+
+    const bool fromSyncSource = true;
+    getReplCoord()->advanceCommitPoint(commitPoint, fromSyncSource);
+
+    // The commit point can be set to lastApplied, even though lastApplied is in a lower term.
+    ASSERT_EQUALS(lastApplied, getReplCoord()->getLastCommittedOpTime());
+}
+
 TEST_F(ReplCoordTest, PrepareOplogQueryMetadata) {
     assertStartSuccess(BSON("_id"
                             << "mySet"
@@ -5023,7 +5033,7 @@ TEST_F(ReplCoordTest, PrepareOplogQueryMetadata) {
     OpTime optime2{Timestamp(11, 2), 5};
 
     replCoordSetMyLastAppliedOpTime(optime2);
-    getReplCoord()->advanceCommitPoint(optime1);
+    getReplCoord()->advanceCommitPoint(optime1, false);
 
     auto opCtx = makeOperationContext();
 
@@ -5794,7 +5804,7 @@ TEST_F(ReplCoordTest, UpdatePositionCmdHasMetadata) {
     // Set last committed optime via metadata.
     rpc::ReplSetMetadata syncSourceMetadata(optime.getTerm(), optime, optime, 1, OID(), -1, 1);
     getReplCoord()->processReplSetMetadata(syncSourceMetadata);
-    getReplCoord()->advanceCommitPoint(optime);
+    getReplCoord()->advanceCommitPoint(optime, true);
 
     BSONObj cmd = unittest::assertGet(getReplCoord()->prepareReplSetUpdatePositionCommand());
     auto metadata = unittest::assertGet(rpc::ReplSetMetadata::readFromMetadata(cmd));
