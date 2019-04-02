@@ -1725,7 +1725,7 @@ determineHorizon( const std::vector<MemberConfig>& members,
 }//namespace
 
 void
-TopologyCoordinator::fillIsMasterForReplSet( IsMasterResponse*const response, const int incomingPort, 
+TopologyCoordinator::fillIsMasterForReplSet( IsMasterResponse*const response,
         const ClientMetadataIsMasterState::SplitHorizonParameters &horizonParams) {
     const MemberState myState = getMemberState();
     if (!_rsConfig.isInitialized()) {
@@ -1733,6 +1733,7 @@ TopologyCoordinator::fillIsMasterForReplSet( IsMasterResponse*const response, co
         return;
     }
 
+    const int incomingPort= stdx::as_const( serverGlobalParams.port );
     const std::string horizon= determineHorizon( _rsConfig.members(), incomingPort,
             _rsConfig.members()[ _selfIndex], horizonParams );
 

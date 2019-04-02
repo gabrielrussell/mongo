@@ -67,16 +67,18 @@ using std::list;
 using std::string;
 using std::stringstream;
 
-namespace repl {
 
+namespace repl {
+namespace {
 void appendReplicationInfo(OperationContext* opCtx,
                            BSONObjBuilder& result,
-                           int level,
-                           const std::string& horizon = ReplicationCoordinator::defaultZone) {
+                           int level){
     ReplicationCoordinator* replCoord = ReplicationCoordinator::get(opCtx);
     if (replCoord->getSettings().usingReplSets()) {
+        const auto horizonParams=
+            ClientMetadataIsMasterState::get( opCtx->getClient() ).getSplitHorizonParameters();
         IsMasterResponse isMasterResponse;
-        replCoord->fillIsMasterForReplSet(&isMasterResponse, horizon);
+        replCoord->fillIsMasterForReplSet(&isMasterResponse, horizonParams);
         result.appendElements(isMasterResponse.toBSON());
         if (level) {
             replCoord->appendSlaveInfoData(&result);
@@ -150,8 +152,6 @@ void appendReplicationInfo(OperationContext* opCtx,
         replCoord->appendSlaveInfoData(&result);
     }
 }
-
-namespace {
 
 class ReplicationInfoServerStatus : public ServerStatusSection {
 public:
@@ -277,16 +277,16 @@ public:
 
             invariant(parsedClientMetadata);
 
-            auto zoneName = parsedClientMetadata->getZoneName();
-            if (!zoneName.empty()) {
-                horizon = parsedClientMetadata->getZoneName().toString();
-            }
-
             parsedClientMetadata->logClientMetadata(opCtx->getClient());
 
+            using namespace std::literals::string_literals;
+            clientMetadataIsMasterState.setHorizonParameters( opCtx->getClient(),
+                    parsedClientMetadata->getApplicationName().toString(),
+                    opCtx->getClient()->session()->getSniName(), // SNI Name from connection.
+                    ""s, // No Connection target support yet.
+                    ""s );// No Explicit horizon name support yet.
             clientMetadataIsMasterState.setClientMetadata(opCtx->getClient(),
                                                           std::move(parsedClientMetadata));
-            clientMetadataIsMasterState.setHorizonParameters(
         }
 
         // Parse the optional 'internalClient' field. This is provided by incoming connections from
@@ -359,8 +359,7 @@ public:
                 });
         }
 
-        appendReplicationInfo(opCtx, result, 0, clientMetadata ?
-clientMetadata->getApplicationName() : "" );
+        appendReplicationInfo(opCtx, result, 0);
 
         if (serverGlobalParams.clusterRole == ClusterRole::ConfigServer) {
             const int configServerModeNumber = 2;
