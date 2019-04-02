@@ -31,7 +31,6 @@
 
 #include <string>
 #include <vector>
-#include <boost/bimap.hpp>
 
 #include "mongo/base/status.h"
 #include "mongo/db/repl/repl_set_tag.h"
