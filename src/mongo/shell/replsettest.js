@@ -125,8 +125,10 @@ var ReplSetTest = function(opts) {
             try {
                 node.setSlaveOk();
                 var n = node.getDB('admin').runCommand({ismaster: 1});
+                print( "Ismaster result: " + tojson( n ) );
                 self._liveNodes.push(node);
                 if (n.ismaster == true) {
+                    print( "Found a master: " + tojson( n ) );
                     if (self._master) {
                         twoPrimaries = true;
                     } else {
@@ -141,6 +143,7 @@ var ReplSetTest = function(opts) {
             }
         });
         if (twoPrimaries) {
+            print( "Found two primaries!" );
             return false;
         }
 

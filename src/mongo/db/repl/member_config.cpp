@@ -219,15 +219,18 @@ MemberConfig::MemberConfig(const BSONObj& mcfg, ReplSetTagConfig* tagConfig) {
                                             << " field has non-object value of type "
                                             << typeName(horizon.type()));}
 
+                    std::cerr << "Adding forward mapping for horizon member " << horizonName
+                            << " to address " << HostAndPort( horizon.valueStringData() ) << std::endl;
                     return { horizonName, HostAndPort( horizon.valueStringData() ) };
                 } );
-        if( _horizonForward.size() < horizonCount ) 
-        uasserted( ErrorCodes::BadValue, "Duplicate horizon name found." );
+        if( _horizonForward.size() < horizonCount ) uasserted( ErrorCodes::BadValue, "Duplicate horizon name found." );
 
         std::transform( begin( _horizonForward ), end( _horizonForward ),
                 inserter( _horizonReverse, end(_horizonReverse ) ),
                 []( auto &&forwardHorizon ) -> decltype( _horizonReverse )::value_type
                 {
+                    std::cerr << "Adding reverse mapping for horizon member " << forwardHorizon.first
+                            << " to address " << forwardHorizon.second << std::endl;
                     return { forwardHorizon.second, forwardHorizon.first };
                 } );
 
@@ -337,7 +340,7 @@ BSONObj MemberConfig::toBSON(const ReplSetTagConfig& tagConfig) const {
     }
     tags.done();
 
-    if( !_horizonForward.empty() )
+    if( _horizonForward.size() > 1 )
     {
         BSONObjBuilder horizons( configBuilder.subobjStart( "horizons" ) );
         for( const auto &horizon: _horizonForward )

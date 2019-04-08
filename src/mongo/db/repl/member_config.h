@@ -92,6 +92,7 @@ public:
      */
     const HostAndPort& getHostAndPort( const std::string &zone= "__default" ) const {
 		assert( !this->_horizonForward.empty() );
+		assert( !zone.empty() );
 		auto found= this->_horizonForward.find( zone );
 		if( found == end( this->_horizonForward ) )
 		{

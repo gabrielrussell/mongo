@@ -149,7 +149,7 @@ Status ReplSetConfig::_initialize(const BSONObj& cfg, bool forInitiate, OID defa
         }
         catch( const DBException &ex ) { uassertStatusOK( 
             Status(ErrorCodes::InvalidReplicaSetConfig,
-                          str::stream() << status.toString() << " for member:" << memberBSON));}
+                          str::stream() << ex.toStatus().toString() << " for member:" << memberBSON));}
     }
 
     //

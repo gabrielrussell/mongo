@@ -177,7 +177,7 @@ public:
 
     virtual Status processReplSetGetStatus(BSONObjBuilder*, ReplSetGetStatusResponseStyle);
 
-    void fillIsMasterForReplSet(IsMasterResponse* result, const std::string &horizon ) override;
+    void fillIsMasterForReplSet(IsMasterResponse* result, const ClientMetadataIsMasterState::SplitHorizonParameters &horizon ) override;
 
     virtual void appendSlaveInfoData(BSONObjBuilder* result);
 

@@ -1688,41 +1688,42 @@ void TopologyCoordinator::fillMemberData(BSONObjBuilder* result) {
     }
 }
 
-namespace
-{
 std::string
-determineHorizon( const std::vector<MemberConfig>& members,
-        const int incomingPort,
-        const MemberConfig &self,
+TopologyCoordinator::determineHorizon( const int incomingPort,
+        const std::map<std::string,HostAndPort> &forwardMapping,
+        const std::map<HostAndPort,std::string> &reverseMapping,
         const ClientMetadataIsMasterState::SplitHorizonParameters &horizonParameters )
 {
-    const auto &forwardMapping= self.getHorizonMappings();
-    const auto &reverseMapping= self.getHorizonReverseMappings();
-
+#if 1
     if( horizonParameters.explicitHorizonName )
     {
         // Unlike `appName`, the explicit horizon request isn't checked for validity with a fallback -- failure to select a valid horizon name explicitly will lead to command failure.
+        log() << "Explicit Horizon Name case";
         return *horizonParameters.explicitHorizonName;
     }
     else if( horizonParameters.connectionTarget )
     {
+        log() << "Connection target case";
         const HostAndPort connectionTarget( *horizonParameters.connectionTarget );
         auto found= reverseMapping.find( connectionTarget );
         if( found != end( reverseMapping ) ) return found->second;
     }
     else if( horizonParameters.sniName )
     {
+        log() << "SNI Name match case";
         const HostAndPort connectionTarget( *horizonParameters.sniName, incomingPort );
         auto found= reverseMapping.find( connectionTarget );
         if( found != end( reverseMapping ) ) return found->second;
     }
     else if( forwardMapping.count( horizonParameters.appName ) )
     {
+        log() << "AppName case";
         return horizonParameters.appName;
     }
+#endif
+    log() << "Fallthrough case";
     return ReplicationCoordinator::defaultZone;
 }
-}//namespace
 
 void
 TopologyCoordinator::fillIsMasterForReplSet( IsMasterResponse*const response,
@@ -1733,11 +1734,18 @@ TopologyCoordinator::fillIsMasterForReplSet( IsMasterResponse*const response,
         return;
     }
 
-    const int incomingPort= stdx::as_const( serverGlobalParams.port );
-    const std::string horizon= determineHorizon( _rsConfig.members(), incomingPort,
-            _rsConfig.members()[ _selfIndex], horizonParams );
+    const auto &self= _rsConfig.members()[ _selfIndex ];
 
-    for (auto &member: _rsConfig.members()){
+    const auto &forwardMapping= self.getHorizonMappings();
+    const auto &reverseMapping= self.getHorizonReverseMappings();
+
+    const int incomingPort= stdx::as_const( serverGlobalParams.port );
+    const std::string horizon= determineHorizon( incomingPort, forwardMapping, reverseMapping,
+            horizonParams );
+
+    log() << "Determined to use \"" << horizon << "\" as the horizon name";
+
+    for (const auto &member: _rsConfig.members()){
         if (member.isHidden() || member.getSlaveDelay() > Seconds{0}) {
             continue;
         }
