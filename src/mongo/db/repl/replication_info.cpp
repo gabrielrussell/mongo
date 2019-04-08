@@ -283,8 +283,8 @@ public:
             clientMetadataIsMasterState.setHorizonParameters( opCtx->getClient(),
                     parsedClientMetadata->getApplicationName().toString(),
                     opCtx->getClient()->session()->getSniName(), // SNI Name from connection.
-                    ""s, // No Connection target support yet.
-                    ""s );// No Explicit horizon name support yet.
+                    boost::none, // No Connection target support yet.
+                    boost::none );// No Explicit horizon name support yet.
             clientMetadataIsMasterState.setClientMetadata(opCtx->getClient(),
                                                           std::move(parsedClientMetadata));
         }
