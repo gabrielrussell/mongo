@@ -66,6 +66,17 @@ Status bsonExtractTypedField(const BSONObj& object,
                              BSONElement* outElement);
 
 /**
+ * Finds an element named "fieldName" in "object".
+ *
+ * Returns the found element on success.  Throws an exception with code ErrorCodes::NoSuchKey if
+ * there are no matches for "fieldName", or with code ErrorCodes::TypeMismatch if the type of the
+ * matching element is not "type".
+ */
+BSONElement bsonExtractTypedField(const BSONObj& object,
+                                         const StringData fieldName,
+                                         const BSONType type) ;
+
+/**
  * Finds a bool-like element named "fieldName" in "object".
  *
  * Returns Status::OK() and sets *out to the found element's boolean value on success.  Returns

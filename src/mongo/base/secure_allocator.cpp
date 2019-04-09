@@ -252,7 +252,7 @@ void* systemAllocate(std::size_t bytes) {
             "Failed to mlock: Cannot allocate locked memory. For more details see: "
             "https://dochub.mongodb.org/core/cannot-allocate-locked-memory");
         severe() << str;
-        fassertFailed(28832);
+        //fassertFailed(28832);
     }
 
 #if defined(MADV_DONTDUMP)

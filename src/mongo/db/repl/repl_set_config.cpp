@@ -99,7 +99,7 @@ Status ReplSetConfig::initializeForInitiate(const BSONObj& cfg) {
     return _initialize(cfg, true, OID());
 }
 
-Status ReplSetConfig::_initialize(const BSONObj& cfg, bool forInitiate, OID defaultReplicaSetId) {
+Status ReplSetConfig::_initialize(const BSONObj& cfg, bool forInitiate, OID defaultReplicaSetId) try {
     _isInitialized = false;
     _members.clear();
 
@@ -142,12 +142,14 @@ Status ReplSetConfig::_initialize(const BSONObj& cfg, bool forInitiate, OID defa
                                         << " to be Object, but found "
                                         << typeName(memberElement.type()));
         }
-        _members.resize(_members.size() + 1);
         const auto& memberBSON = memberElement.Obj();
-        status = _members.back().initialize(memberBSON, &_tagConfig);
-        if (!status.isOK())
-            return Status(ErrorCodes::InvalidReplicaSetConfig,
-                          str::stream() << status.toString() << " for member:" << memberBSON);
+        try
+        {
+            _members.emplace_back(memberBSON, &_tagConfig);
+        }
+        catch( const DBException &ex ) { uassertStatusOK( 
+            Status(ErrorCodes::InvalidReplicaSetConfig,
+                          str::stream() << ex.toStatus().toString() << " for member:" << memberBSON));}
     }
 
     //
@@ -220,6 +222,7 @@ Status ReplSetConfig::_initialize(const BSONObj& cfg, bool forInitiate, OID defa
     _isInitialized = true;
     return Status::OK();
 }
+catch( const DBException &ex ) { return ex.toStatus(); }
 
 Status ReplSetConfig::_parseSettingsSubdocument(const BSONObj& settings) {
     //
@@ -444,6 +447,16 @@ Status ReplSetConfig::validate() const {
         Status status = memberI.validate();
         if (!status.isOK())
             return status;
+        if( !std::equal( begin( memberI.getHorizonMappings() ), end( memberI.getHorizonMappings() ),
+                begin( _members[ 0 ].getHorizonMappings() ), end( _members[ 0 ].getHorizonMappings() ),
+                []( auto &&left, auto &&right )
+                {
+                    return left.first == right.first;
+                } ) )
+        {
+            return Status( ErrorCodes::BadValue, str::stream()
+                    << "Saw a replica set member with a different horizon mapping than the others." );
+        }
         if (memberI.getHostAndPort().isLocalHost()) {
             ++localhostCount;
         }

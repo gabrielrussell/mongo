@@ -67,13 +67,18 @@ using std::list;
 using std::string;
 using std::stringstream;
 
-namespace repl {
 
-void appendReplicationInfo(OperationContext* opCtx, BSONObjBuilder& result, int level) {
+namespace repl {
+namespace {
+void appendReplicationInfo(OperationContext* opCtx,
+                           BSONObjBuilder& result,
+                           int level){
     ReplicationCoordinator* replCoord = ReplicationCoordinator::get(opCtx);
     if (replCoord->getSettings().usingReplSets()) {
+        const auto horizonParams=
+            ClientMetadataIsMasterState::get( opCtx->getClient() ).getSplitHorizonParameters();
         IsMasterResponse isMasterResponse;
-        replCoord->fillIsMasterForReplSet(&isMasterResponse);
+        replCoord->fillIsMasterForReplSet(&isMasterResponse, horizonParams);
         result.appendElements(isMasterResponse.toBSON());
         if (level) {
             replCoord->appendSlaveInfoData(&result);
@@ -148,8 +153,6 @@ void appendReplicationInfo(OperationContext* opCtx, BSONObjBuilder& result, int 
     }
 }
 
-namespace {
-
 class ReplicationInfoServerStatus : public ServerStatusSection {
 public:
     ReplicationInfoServerStatus() : ServerStatusSection("repl") {}
@@ -207,6 +210,8 @@ public:
     }
 } oplogInfoServerStatus;
 
+namespace {
+
 class CmdIsMaster final : public BasicCommand {
 public:
     CmdIsMaster() : BasicCommand("isMaster", "ismaster") {}
@@ -255,6 +260,8 @@ public:
 
         auto& clientMetadataIsMasterState = ClientMetadataIsMasterState::get(opCtx->getClient());
         bool seenIsMaster = clientMetadataIsMasterState.hasSeenIsMaster();
+
+        // TODO(ADAM): Add horizon information to `clientMetadataIsMasterState`.  Rrrrghhh!
         if (!seenIsMaster) {
             clientMetadataIsMasterState.setSeenIsMaster();
         }
@@ -266,16 +273,20 @@ public:
                           "The client metadata document may only be sent in the first isMaster");
             }
 
-            auto swParseClientMetadata = ClientMetadata::parse(element);
+            auto parsedClientMetadata = uassertStatusOK(ClientMetadata::parse(element));
 
-            uassertStatusOK(swParseClientMetadata.getStatus());
+            invariant(parsedClientMetadata);
 
-            invariant(swParseClientMetadata.getValue());
+            parsedClientMetadata->logClientMetadata(opCtx->getClient());
 
-            swParseClientMetadata.getValue().get().logClientMetadata(opCtx->getClient());
-
-            clientMetadataIsMasterState.setClientMetadata(
-                opCtx->getClient(), std::move(swParseClientMetadata.getValue()));
+            using namespace std::literals::string_literals;
+            clientMetadataIsMasterState.setHorizonParameters( opCtx->getClient(),
+                    parsedClientMetadata->getApplicationName().toString(),
+                    opCtx->getClient()->session()->getSniName(), // SNI Name from connection.
+                    boost::none, // No Connection target support yet.
+                    boost::none );// No Explicit horizon name support yet.
+            clientMetadataIsMasterState.setClientMetadata(opCtx->getClient(),
+                                                          std::move(parsedClientMetadata));
         }
 
         // Parse the optional 'internalClient' field. This is provided by incoming connections from
@@ -393,6 +404,7 @@ public:
         return true;
     }
 } cmdismaster;
+}  // namespace
 
 OpCounterServerStatusSection replOpCounterServerStatusSection("opcountersRepl", &replOpCounters);
 

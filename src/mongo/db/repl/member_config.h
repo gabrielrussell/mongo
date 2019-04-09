@@ -59,26 +59,20 @@ public:
     static const std::string kArbiterOnlyFieldName;
     static const std::string kBuildIndexesFieldName;
     static const std::string kTagsFieldName;
+    static const std::string kHorizonsFieldName;
     static const std::string kInternalVoterTagName;
     static const std::string kInternalElectableTagName;
     static const std::string kInternalAllTagName;
 
     /**
-     * Default constructor, produces a MemberConfig in an undefined state.
-     * Must successfully call initialze() before calling validate() or the
-     * accessors.
-     */
-    MemberConfig() : _slaveDelay(0) {}
-
-    /**
-     * Initializes this MemberConfig from the contents of "mcfg".
+     * Construct a MemberConfig from the contents of "mcfg".
      *
      * If "mcfg" describes any tags, builds ReplSetTags for this
      * configuration using "tagConfig" as the tag's namespace. This may
      * have the effect of altering "tagConfig" when "mcfg" describes a
      * tag not previously added to "tagConfig".
      */
-    Status initialize(const BSONObj& mcfg, ReplSetTagConfig* tagConfig);
+	MemberConfig(const BSONObj& mcfg, ReplSetTagConfig* tagConfig);
 
     /**
      * Performs basic consistency checks on the member configuration.
@@ -96,9 +90,28 @@ public:
      * Gets the canonical name of this member, by which other members and clients
      * will contact it.
      */
-    const HostAndPort& getHostAndPort() const {
-        return _host;
+    const HostAndPort& getHostAndPort( const std::string &zone= "__default" ) const {
+		assert( !this->_horizonForward.empty() );
+		assert( !zone.empty() );
+		auto found= this->_horizonForward.find( zone );
+		if( found == end( this->_horizonForward ) )
+		{
+			uasserted( ErrorCodes::NoSuchKey, str::stream() << "No horizon named " << zone );
+		}
+		return found->second;
     }
+
+	const auto &
+	getHorizonMappings() const
+	{
+		return this->_horizonForward;
+	}
+
+	const auto &
+	getHorizonReverseMappings() const
+	{
+		return this->_horizonReverse;
+	}
 
     /**
      * Gets this member's priority.  Higher means more likely to be elected
@@ -164,6 +177,11 @@ public:
      */
     bool hasTags(const ReplSetTagConfig& tagConfig) const;
 
+	bool hasHorizons() const
+	{
+		return !this->_horizonForward.empty();
+	}
+
     /**
      * Gets a begin iterator over the tags for this member.
      */
@@ -191,8 +209,9 @@ public:
     BSONObj toBSON(const ReplSetTagConfig& tagConfig) const;
 
 private:
+	const HostAndPort &_host() const { return this->_horizonForward.find( "__default" )->second; }
+
     int _id;
-    HostAndPort _host;
     double _priority;  // 0 means can never be primary
     int _votes;        // Can this member vote? Only 0 and 1 are valid.  Default 1.
     bool _arbiterOnly;
@@ -200,6 +219,9 @@ private:
     bool _hidden;                   // if set, don't advertise to drivers in isMaster.
     bool _buildIndexes;             // if false, do not create any non-_id indexes
     std::vector<ReplSetTag> _tags;  // tagging for data center, rack, etc.
+
+	std::map<std::string, HostAndPort> _horizonForward;
+	std::map<HostAndPort, std::string> _horizonReverse;
 };
 
 }  // namespace repl

@@ -144,10 +144,10 @@ public:
     virtual OpTimeAndWallTime getMyLastDurableOpTimeAndWallTime() const;
     virtual OpTime getMyLastDurableOpTime() const;
 
-    virtual Status waitUntilOpTimeForRead(OperationContext* opCtx,
+    Status waitUntilOpTimeForRead(OperationContext* opCtx,
                                           const ReadConcernArgs& settings) override;
 
-    virtual Status waitUntilOpTimeForReadUntil(OperationContext* opCtx,
+    Status waitUntilOpTimeForReadUntil(OperationContext* opCtx,
                                                const ReadConcernArgs& settings,
                                                boost::optional<Date_t> deadline) override;
     virtual Status awaitTimestampCommitted(OperationContext* opCtx, Timestamp ts);
@@ -167,17 +167,17 @@ public:
 
     virtual void signalDrainComplete(OperationContext*, long long);
 
-    virtual Status waitForDrainFinish(Milliseconds timeout) override;
+    Status waitForDrainFinish(Milliseconds timeout) override;
 
     virtual void signalUpstreamUpdater();
 
-    virtual Status resyncData(OperationContext* opCtx, bool waitUntilCompleted) override;
+    Status resyncData(OperationContext* opCtx, bool waitUntilCompleted) override;
 
-    virtual StatusWith<BSONObj> prepareReplSetUpdatePositionCommand() const override;
+    StatusWith<BSONObj> prepareReplSetUpdatePositionCommand() const override;
 
     virtual Status processReplSetGetStatus(BSONObjBuilder*, ReplSetGetStatusResponseStyle);
 
-    virtual void fillIsMasterForReplSet(IsMasterResponse* result);
+    void fillIsMasterForReplSet(IsMasterResponse* result, const ClientMetadataIsMasterState::SplitHorizonParameters &horizon ) override;
 
     virtual void appendSlaveInfoData(BSONObjBuilder* result);
 

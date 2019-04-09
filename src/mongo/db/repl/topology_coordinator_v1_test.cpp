@@ -6197,6 +6197,107 @@ TEST_F(HeartbeatResponseHighVerbosityTestV1,
     ASSERT_EQUALS(1, countLogLinesContaining("Could not find host5:27017 in current config"));
 }
 
+static const std::string defaultHost= "default.dns.name.example.com";
+TEST_F(TopoCoordTest, determineHorizon)
+{
+    using namespace std::literals::string_literals;
+
+    struct
+    {
+        struct Input
+        {
+            int port;
+            std::map< std::string, HostAndPort > forwardMapping; // Will get "__default" added to it.
+            std::map< HostAndPort, std::string > reverseMapping;
+            ClientMetadataIsMasterState::SplitHorizonParameters horizonParameters;
+
+            Input( const int p, const std::map< std::string, std::string > &mapping,
+                    ClientMetadataIsMasterState::SplitHorizonParameters params )
+                    : port( p ), horizonParameters( std::move( params ) )
+            {
+                forwardMapping.emplace( "__default", defaultHost + ":4242" );
+
+                std::transform( begin( mapping ), end( mapping ),
+                        inserter( forwardMapping, end( forwardMapping ) ),
+                        []( const auto &element ) -> decltype( forwardMapping )::value_type
+                        {
+                            return { element.first, HostAndPort( element.second ) };
+                        } );
+
+                std::transform( begin( stdx::as_const( forwardMapping ) ),
+                        end( stdx::as_const( forwardMapping ) ),
+                        inserter( reverseMapping, end( reverseMapping ) ),
+                        []( const auto &element ) -> decltype( reverseMapping )::value_type
+                        {
+                            return { element.second, element.first };
+                        } );
+            }
+        } input;
+
+        std::string expected;
+    }
+    tests[]=
+    {
+        { { 4242, {}, {} }, "__default" },
+        {
+            {
+                4242, {},
+                { "SomeApplication", boost::none, boost::none, boost::none }
+            },
+            "__default"
+        },
+        {
+            {
+                4242, {},
+                { "SomeApplication", defaultHost, boost::none, boost::none }
+            },
+            "__default"
+        },
+
+        // No SNI, no match
+        {
+            {
+                4242, { { "unusedHorizon", "badmatch:00001" } },
+                { "SomeApplication", boost::none, boost::none, boost::none }
+            },
+            "__default"
+        },
+
+        // Has SNI, no match
+        {
+            {
+                4242, { { "unusedHorizon", "badmatch:00001" } },
+                { "SomeApplication", defaultHost, boost::none, boost::none }
+            },
+            "__default"
+        },
+
+        {
+            {
+                4242, { { "matchingHorizon", "matchingTarget:4242" } },
+                { "SomeApplication", "matchingTarget"s, boost::none, boost::none }
+            },
+            "matchingHorizon"
+        },
+
+        {
+            {
+                4242, { { "matchingHorizon", "matchingTarget:4242" } },
+                { "matchingHorizon", boost::none, boost::none, boost::none }
+            },
+            "matchingHorizon"
+        },
+    };
+
+    for( const auto &test: tests )
+    {
+        const auto &expected= test.expected;
+        const auto &input= test.input;
+        const std::string witness= TopologyCoordinator::determineHorizon( input.port, input.forwardMapping, input.reverseMapping, input.horizonParameters );
+        ASSERT_EQUALS( witness, expected );
+    }
+}
+
 }  // namespace
 }  // namespace repl
 }  // namespace mongo
