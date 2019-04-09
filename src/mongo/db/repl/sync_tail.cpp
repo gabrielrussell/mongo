@@ -74,6 +74,7 @@
 #include "mongo/db/session_txn_record_gen.h"
 #include "mongo/db/stats/timer_stats.h"
 #include "mongo/db/transaction_participant.h"
+#include "mongo/db/transaction_participant_gen.h"
 #include "mongo/stdx/memory.h"
 #include "mongo/util/exit.h"
 #include "mongo/util/fail_point_service.h"
@@ -418,7 +419,9 @@ void scheduleWritesToOplog(OperationContext* opCtx,
         // The returned function will be run in a separate thread after this returns. Therefore all
         // captures other than 'ops' must be by value since they will not be available. The caller
         // guarantees that 'ops' will stay in scope until the spawned threads complete.
-        return [storageInterface, &ops, begin, end] {
+        return [storageInterface, &ops, begin, end](auto status) {
+            invariant(status);
+
             auto opCtx = cc().makeOperationContext();
             UnreplicatedWritesBlock uwb(opCtx.get());
             ShouldNotConflictWithSecondaryBatchApplicationBlock shouldNotConflictBlock(
@@ -453,7 +456,7 @@ void scheduleWritesToOplog(OperationContext* opCtx,
     if (!enoughToMultiThread ||
         !opCtx->getServiceContext()->getStorageEngine()->supportsDocLocking()) {
 
-        invariant(threadPool->schedule(makeOplogWriterForRange(0, ops.size())));
+        threadPool->schedule(makeOplogWriterForRange(0, ops.size()));
         return;
     }
 
@@ -463,7 +466,7 @@ void scheduleWritesToOplog(OperationContext* opCtx,
     for (size_t thread = 0; thread < numOplogThreads; thread++) {
         size_t begin = thread * numOpsPerThread;
         size_t end = (thread == numOplogThreads - 1) ? ops.size() : begin + numOpsPerThread;
-        invariant(threadPool->schedule(makeOplogWriterForRange(begin, end)));
+        threadPool->schedule(makeOplogWriterForRange(begin, end));
     }
 }
 
@@ -574,10 +577,14 @@ class SyncTail::OpQueueBatcher {
     OpQueueBatcher& operator=(const OpQueueBatcher&) = delete;
 
 public:
-    OpQueueBatcher(SyncTail* syncTail, StorageInterface* storageInterface, OplogBuffer* oplogBuffer)
+    OpQueueBatcher(SyncTail* syncTail,
+                   StorageInterface* storageInterface,
+                   OplogBuffer* oplogBuffer,
+                   OplogApplier::GetNextApplierBatchFn getNextApplierBatchFn)
         : _syncTail(syncTail),
           _storageInterface(storageInterface),
           _oplogBuffer(oplogBuffer),
+          _getNextApplierBatchFn(getNextApplierBatchFn),
           _ops(0),
           _thread([this] { run(); }) {}
     ~OpQueueBatcher() {
@@ -624,13 +631,14 @@ private:
             cc().makeOperationContext().get(), _storageInterface);
 
         while (true) {
+            MONGO_FAIL_POINT_PAUSE_WHILE_SET(rsSyncApplyStop);
+
             batchLimits.slaveDelayLatestTimestamp = _calculateSlaveDelayLatestTimestamp();
 
             // Check this once per batch since users can change it at runtime.
             batchLimits.ops = OplogApplier::getBatchLimitOperations();
 
             OpQueue ops(batchLimits.ops);
-            // tryPopAndWaitForMore adds to ops and returns true when we need to end a batch early.
             {
                 auto opCtx = cc().makeOperationContext();
 
@@ -642,8 +650,21 @@ private:
                 // handling.
                 UninterruptibleLockGuard noInterrupt(opCtx->lockState());
 
-                while (!_syncTail->tryPopAndWaitForMore(
-                    opCtx.get(), _oplogBuffer, &ops, batchLimits)) {
+                auto oplogEntries =
+                    fassertNoTrace(31004, _getNextApplierBatchFn(opCtx.get(), batchLimits));
+                for (const auto& oplogEntry : oplogEntries) {
+                    ops.emplace_back(oplogEntry.raw);
+                }
+
+                // If we don't have anything in the queue, wait a bit for something to appear.
+                if (oplogEntries.empty()) {
+                    if (_syncTail->inShutdown()) {
+                        ops.setMustShutdownFlag();
+                    } else {
+                        // Block up to 1 second. We still return true in this case because we want
+                        // this op to be the first in a new batch with a new start time.
+                        _oplogBuffer->waitForData(Seconds(1));
+                    }
                 }
             }
 
@@ -666,6 +687,7 @@ private:
     SyncTail* const _syncTail;
     StorageInterface* const _storageInterface;
     OplogBuffer* const _oplogBuffer;
+    OplogApplier::GetNextApplierBatchFn const _getNextApplierBatchFn;
 
     stdx::mutex _mutex;  // Guards _ops.
     stdx::condition_variable _cv;
@@ -678,18 +700,19 @@ private:
     stdx::thread _thread;  // Must be last so all other members are initialized before starting.
 };
 
-void SyncTail::oplogApplication(OplogBuffer* oplogBuffer, ReplicationCoordinator* replCoord) {
+void SyncTail::oplogApplication(OplogBuffer* oplogBuffer,
+                                OplogApplier::GetNextApplierBatchFn getNextApplierBatchFn,
+                                ReplicationCoordinator* replCoord) {
     // We don't start data replication for arbiters at all and it's not allowed to reconfig
     // arbiterOnly field for any member.
     invariant(!replCoord->getMemberState().arbiter());
 
-    OpQueueBatcher batcher(this, _storageInterface, oplogBuffer);
+    OpQueueBatcher batcher(this, _storageInterface, oplogBuffer, getNextApplierBatchFn);
 
-    _oplogApplication(oplogBuffer, replCoord, &batcher);
+    _oplogApplication(replCoord, &batcher);
 }
 
-void SyncTail::_oplogApplication(OplogBuffer* oplogBuffer,
-                                 ReplicationCoordinator* replCoord,
+void SyncTail::_oplogApplication(ReplicationCoordinator* replCoord,
                                  OpQueueBatcher* batcher) noexcept {
     std::unique_ptr<ApplyBatchFinalizer> finalizer{
         getGlobalServiceContext()->getStorageEngine()->isDurable()
@@ -823,119 +846,6 @@ inline bool isUnpreparedCommit(const OplogEntry& entry) {
 // as opposed to part of a prepared transaction.
 inline bool isUnpreparedApplyOps(const OplogEntry& entry) {
     return entry.getCommandType() == OplogEntry::CommandType::kApplyOps && !entry.shouldPrepare();
-}
-
-// Copies ops out of the bgsync queue into the deque passed in as a parameter.
-// Returns true if the batch should be ended early.
-// Batch should end early if we encounter a command, or if
-// there are no further ops in the bgsync queue to read.
-// This function also blocks 1 second waiting for new ops to appear in the bgsync
-// queue.  We don't block forever so that we can periodically check for things like shutdown or
-// reconfigs.
-bool SyncTail::tryPopAndWaitForMore(OperationContext* opCtx,
-                                    OplogBuffer* oplogBuffer,
-                                    SyncTail::OpQueue* ops,
-                                    const BatchLimits& limits) {
-    {
-        BSONObj op;
-        // Check to see if there are ops waiting in the bgsync queue
-        bool peek_success = oplogBuffer->peek(opCtx, &op);
-        if (!peek_success) {
-            // If we don't have anything in the queue, wait a bit for something to appear.
-            if (ops->empty()) {
-                if (inShutdown()) {
-                    ops->setMustShutdownFlag();
-                } else {
-                    // Block up to 1 second. We still return true in this case because we want this
-                    // op to be the first in a new batch with a new start time.
-                    oplogBuffer->waitForData(Seconds(1));
-                }
-            }
-
-            return true;
-        }
-
-        // If this op would put us over the byte limit don't include it unless the batch is empty.
-        // We allow single-op batches to exceed the byte limit so that large ops are able to be
-        // processed.
-        if (!ops->empty() && (ops->getBytes() + size_t(op.objsize())) > limits.bytes) {
-            return true;  // Return before wasting time parsing the op.
-        }
-
-        // Don't consume the op if we are told to stop.
-        if (MONGO_FAIL_POINT(rsSyncApplyStop)) {
-            sleepmillis(10);
-            return true;
-        }
-
-        ops->emplace_back(std::move(op));  // Parses the op in-place.
-    }
-
-    auto& entry = ops->back();
-
-    // check for oplog version change
-    int curVersion = entry.getVersion();
-    if (curVersion != OplogEntry::kOplogVersion) {
-        severe() << "expected oplog version " << OplogEntry::kOplogVersion << " but found version "
-                 << curVersion << " in oplog entry: " << redact(entry.toBSON());
-        fassertFailedNoTrace(18820);
-    }
-
-    auto entryTime = Date_t::fromDurationSinceEpoch(Seconds(entry.getTimestamp().getSecs()));
-    if (limits.slaveDelayLatestTimestamp && entryTime > *limits.slaveDelayLatestTimestamp) {
-
-        ops->pop_back();  // Don't do this op yet.
-        if (ops->empty()) {
-            // Sleep if we've got nothing to do. Only sleep for 1 second at a time to allow
-            // reconfigs and shutdown to occur.
-            sleepsecs(1);
-        }
-        return true;
-    }
-
-    // Commands must be processed one at a time. The exceptions to this are unprepared applyOps,
-    // because applyOps oplog entries are effectively containers for CRUD operations, and unprepared
-    // commitTransaction, because that also expands to CRUD operations. Therefore, it is safe to
-    // batch applyOps commands with CRUD operations when reading from the oplog buffer.
-    //
-    // Oplog entries on 'system.views' should also be processed one at a time. View catalog
-    // immediately reflects changes for each oplog entry so we can see inconsistent view catalog if
-    // multiple oplog entries on 'system.views' are being applied out of the original order.
-    //
-    // Process updates to 'admin.system.version' individually as well so the secondary's FCV when
-    // processing each operation matches the primary's when committing that operation.
-    if ((entry.isCommand() && (!isUnpreparedCommit(entry) && !isUnpreparedApplyOps(entry))) ||
-        entry.getNss().isSystemDotViews() || entry.getNss().isServerConfigurationCollection()) {
-        if (ops->getCount() == 1) {
-            // apply commands one-at-a-time
-            _consume(opCtx, oplogBuffer);
-        } else {
-            // This op must be processed alone, but we already had ops in the queue so we can't
-            // include it in this batch. Since we didn't call consume(), we'll see this again next
-            // time and process it alone.
-            ops->pop_back();
-        }
-
-        // Apply what we have so far.
-        return true;
-    }
-
-    // We are going to apply this Op.
-    _consume(opCtx, oplogBuffer);
-
-    // Go back for more ops, unless we've hit the limit.
-    return ops->getCount() >= limits.ops;
-}
-
-void SyncTail::_consume(OperationContext* opCtx, OplogBuffer* oplogBuffer) {
-    // This is just to get the op off the queue; it's been peeked at and queued for application
-    // already.
-    // If we failed to get an op off the queue, this means that shutdown() was called between the
-    // consumer's calls to peek() and consume(). shutdown() cleared the buffer so there is nothing
-    // for us to consume here. Since our postcondition is already met, it is safe to return
-    // successfully.
-    BSONObj op;
-    invariant(oplogBuffer->tryPop(opCtx, &op) || inShutdown());
 }
 
 void SyncTail::shutdown() {
@@ -1191,7 +1101,6 @@ Status multiSyncApply(OperationContext* opCtx,
     return Status::OK();
 }
 
-
 /**
  * ops - This only modifies the isForCappedCollection field on each op. It does not alter the ops
  *      vector in any other way.
@@ -1231,7 +1140,7 @@ void SyncTail::_fillWriterVectors(OperationContext* opCtx,
         // We need to track all types of ops, including type 'n' (these are generated from chunk
         // migrations).
         if (sessionUpdateTracker) {
-            if (auto newOplogWrites = sessionUpdateTracker->updateOrFlush(op)) {
+            if (auto newOplogWrites = sessionUpdateTracker->updateSession(op)) {
                 derivedOps->emplace_back(std::move(*newOplogWrites));
                 _fillWriterVectors(opCtx, &derivedOps->back(), writerVectors, derivedOps, nullptr);
             }
@@ -1356,16 +1265,18 @@ void SyncTail::_applyOps(std::vector<MultiApplier::OperationPtrs>& writerVectors
         if (writerVectors[i].empty())
             continue;
 
-        invariant(_writerPool->schedule([
+        _writerPool->schedule([
             this,
             &writer = writerVectors.at(i),
             &status = statusVector->at(i),
             &workerMultikeyPathInfo = workerMultikeyPathInfo->at(i)
-        ] {
+        ](auto scheduleStatus) {
+            invariant(scheduleStatus);
+
             auto opCtx = cc().makeOperationContext();
             status = opCtx->runWithoutInterruptionExceptAtGlobalShutdown(
                 [&] { return _applyFunc(opCtx.get(), &writer, this, &workerMultikeyPathInfo); });
-        }));
+        });
     }
 }
 

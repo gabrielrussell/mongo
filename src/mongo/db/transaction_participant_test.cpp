@@ -60,7 +60,6 @@ namespace mongo {
 namespace {
 
 const NamespaceString kNss("TestDB", "TestColl");
-const OptionalCollectionUUID kUUID;
 
 /**
  * Creates an OplogEntry with given parameters and preset defaults for this test suite.
@@ -88,7 +87,8 @@ repl::OplogEntry makeOplogEntry(repl::OpTime opTime,
         stmtId,                        // statement id
         prevWriteOpTimeInTransaction,  // optime of previous write within same transaction
         boost::none,                   // pre-image optime
-        boost::none);                  // post-image optime
+        boost::none,                   // post-image optime
+        boost::none);                  // prepare
 }
 
 class OpObserverMock : public OpObserverNoop {
@@ -236,6 +236,20 @@ protected:
         _opObserver = mockObserver.get();
         opObserverRegistry->addObserver(std::move(mockObserver));
 
+        {
+            // Set up a collection so that TransactionParticipant::prepareTransaction() can safely
+            // access it.
+            AutoGetOrCreateDb autoDb(opCtx(), kNss.db(), MODE_X);
+            auto db = autoDb.getDb();
+            ASSERT_TRUE(db);
+
+            WriteUnitOfWork wuow(opCtx());
+            CollectionOptions options;
+            options.uuid = _uuid;
+            db->createCollection(opCtx(), kNss.ns(), options);
+            wuow.commit();
+        }
+
         opCtx()->setLogicalSessionId(_sessionId);
         opCtx()->setTxnNumber(_txnNumber);
     }
@@ -272,6 +286,7 @@ protected:
 
     const LogicalSessionId _sessionId{makeLogicalSessionIdForTest()};
     const TxnNumber _txnNumber{20};
+    const OptionalCollectionUUID _uuid = UUID::gen();
 
     OpObserverMock* _opObserver = nullptr;
 };
@@ -430,7 +445,7 @@ TEST_F(TxnParticipantTest, SameTransactionPreservesStoredStatements) {
 
     // We must have stashed transaction resources to re-open the transaction.
     txnParticipant.unstashTransactionResources(opCtx(), "insert");
-    auto operation = repl::OplogEntry::makeInsertOperation(kNss, kUUID, BSON("TestValue" << 0));
+    auto operation = repl::OplogEntry::makeInsertOperation(kNss, _uuid, BSON("TestValue" << 0));
     txnParticipant.addTransactionOperation(opCtx(), operation);
     ASSERT_BSONOBJ_EQ(operation.toBSON(),
                       txnParticipant.getTransactionOperationsForTest()[0].toBSON());
@@ -452,7 +467,7 @@ TEST_F(TxnParticipantTest, AbortClearsStoredStatements) {
     auto sessionCheckout = checkOutSession();
     auto txnParticipant = TransactionParticipant::get(opCtx());
     txnParticipant.unstashTransactionResources(opCtx(), "insert");
-    auto operation = repl::OplogEntry::makeInsertOperation(kNss, kUUID, BSON("TestValue" << 0));
+    auto operation = repl::OplogEntry::makeInsertOperation(kNss, _uuid, BSON("TestValue" << 0));
     txnParticipant.addTransactionOperation(opCtx(), operation);
     ASSERT_BSONOBJ_EQ(operation.toBSON(),
                       txnParticipant.getTransactionOperationsForTest()[0].toBSON());
@@ -513,6 +528,39 @@ TEST_F(TxnParticipantTest, PrepareSucceedsWithNestedLocks) {
     txnParticipant.stashTransactionResources(opCtx());
 
     ASSERT_TRUE(txnParticipant.transactionIsCommitted());
+}
+
+TEST_F(TxnParticipantTest, PrepareFailsOnTemporaryCollection) {
+    NamespaceString tempCollNss(kNss.db(), "tempCollection");
+    UUID tempCollUUID = UUID::gen();
+
+    // Create a temporary collection so that we can write to it.
+    {
+        AutoGetOrCreateDb autoDb(opCtx(), kNss.db(), MODE_X);
+        auto db = autoDb.getDb();
+        ASSERT_TRUE(db);
+
+        WriteUnitOfWork wuow(opCtx());
+        CollectionOptions options;
+        options.uuid = tempCollUUID;
+        options.temp = true;
+        db->createCollection(opCtx(), tempCollNss.ns(), options);
+        wuow.commit();
+    }
+
+    // Set up a transaction on the temp collection
+    auto outerScopedSession = checkOutSession();
+    auto txnParticipant = TransactionParticipant::get(opCtx());
+
+    txnParticipant.unstashTransactionResources(opCtx(), "insert");
+
+    auto operation =
+        repl::OplogEntry::makeInsertOperation(tempCollNss, tempCollUUID, BSON("TestValue" << 0));
+    txnParticipant.addTransactionOperation(opCtx(), operation);
+
+    ASSERT_THROWS_CODE(txnParticipant.prepareTransaction(opCtx(), {}),
+                       AssertionException,
+                       ErrorCodes::OperationNotSupportedInTransaction);
 }
 
 TEST_F(TxnParticipantTest, CommitTransactionSetsCommitTimestampOnPreparedTransaction) {
@@ -681,9 +729,7 @@ TEST_F(TxnParticipantTest, KillSessionsDuringPrepareDoesNotAbortTransaction) {
     // Check that prepareTimestamp gets set.
     auto prepareTimestamp = txnParticipant.prepareTransaction(opCtx(), {});
     ASSERT_EQ(ruPrepareTimestamp, prepareTimestamp);
-    // Check that the oldest prepareTimestamp is the one we just set.
-    auto prepareOpTime = ServerTransactionsMetrics::get(opCtx())->getOldestActiveOpTime();
-    ASSERT_EQ(prepareOpTime->getTimestamp(), prepareTimestamp);
+
     ASSERT(_opObserver->transactionPrepared);
     ASSERT_FALSE(txnParticipant.transactionIsAborted());
 }
@@ -833,9 +879,7 @@ TEST_F(TxnParticipantTest, KillSessionsDoesNotAbortPreparedTransactions) {
     // Check that prepareTimestamp gets set.
     auto prepareTimestamp = txnParticipant.prepareTransaction(opCtx(), {});
     ASSERT_EQ(ruPrepareTimestamp, prepareTimestamp);
-    // Check that the oldest prepareTimestamp is the one we just set.
-    auto prepareOpTime = ServerTransactionsMetrics::get(opCtx())->getOldestActiveOpTime();
-    ASSERT_EQ(prepareOpTime->getTimestamp(), prepareTimestamp);
+
     txnParticipant.stashTransactionResources(opCtx());
 
     txnParticipant.abortTransactionIfNotPrepared(opCtx());
@@ -860,9 +904,7 @@ TEST_F(TxnParticipantTest, CannotAbortArbitraryPreparedTransactions) {
     // Check that prepareTimestamp gets set.
     auto prepareTimestamp = txnParticipant.prepareTransaction(opCtx(), {});
     ASSERT_EQ(ruPrepareTimestamp, prepareTimestamp);
-    // Check that the oldest prepareTimestamp is the one we just set.
-    auto prepareOpTime = ServerTransactionsMetrics::get(opCtx())->getOldestActiveOpTime();
-    ASSERT_EQ(prepareOpTime->getTimestamp(), prepareTimestamp);
+
     txnParticipant.stashTransactionResources(opCtx());
 
     txnParticipant.abortTransactionIfNotPrepared(opCtx());
@@ -934,10 +976,6 @@ TEST_F(TxnParticipantTest, CannotStartNewTransactionWhilePreparedTransactionInPr
     auto prepareTimestamp = txnParticipant.prepareTransaction(opCtx(), {});
     ASSERT_EQ(ruPrepareTimestamp, prepareTimestamp);
 
-    // Check that the oldest prepareTimestamp is the one we just set.
-    auto prepareOpTime = ServerTransactionsMetrics::get(opCtx())->getOldestActiveOpTime();
-    ASSERT_EQ(prepareOpTime->getTimestamp(), prepareTimestamp);
-
     txnParticipant.stashTransactionResources(opCtx());
     OperationContextSession::checkIn(opCtx());
     {
@@ -969,7 +1007,7 @@ TEST_F(TxnParticipantTest, CannotInsertInPreparedTransaction) {
     auto txnParticipant = TransactionParticipant::get(opCtx());
 
     txnParticipant.unstashTransactionResources(opCtx(), "insert");
-    auto operation = repl::OplogEntry::makeInsertOperation(kNss, kUUID, BSON("TestValue" << 0));
+    auto operation = repl::OplogEntry::makeInsertOperation(kNss, _uuid, BSON("TestValue" << 0));
     txnParticipant.addTransactionOperation(opCtx(), operation);
 
     txnParticipant.prepareTransaction(opCtx(), {});
@@ -987,7 +1025,7 @@ TEST_F(TxnParticipantTest, ImplictAbortDoesNotAbortPreparedTransaction) {
     auto txnParticipant = TransactionParticipant::get(opCtx());
 
     txnParticipant.unstashTransactionResources(opCtx(), "insert");
-    auto operation = repl::OplogEntry::makeInsertOperation(kNss, kUUID, BSON("TestValue" << 0));
+    auto operation = repl::OplogEntry::makeInsertOperation(kNss, _uuid, BSON("TestValue" << 0));
     txnParticipant.addTransactionOperation(opCtx(), operation);
 
     txnParticipant.prepareTransaction(opCtx(), {});
@@ -1006,14 +1044,10 @@ DEATH_TEST_F(TxnParticipantTest,
     auto txnParticipant = TransactionParticipant::get(opCtx());
 
     txnParticipant.unstashTransactionResources(opCtx(), "insert");
-    auto operation = repl::OplogEntry::makeInsertOperation(kNss, kUUID, BSON("TestValue" << 0));
+    auto operation = repl::OplogEntry::makeInsertOperation(kNss, _uuid, BSON("TestValue" << 0));
 
     txnParticipant.addTransactionOperation(opCtx(), operation);
     auto prepareTimestamp = txnParticipant.prepareTransaction(opCtx(), {});
-
-    // Check that the oldest prepareTimestamp is the one we just set.
-    auto prepareOpTime = ServerTransactionsMetrics::get(opCtx())->getOldestActiveOpTime();
-    ASSERT_EQ(prepareOpTime->getTimestamp(), prepareTimestamp);
 
     _opObserver->onPreparedTransactionCommitFn =
         [&](OplogSlot commitOplogEntryOpTime,
@@ -1025,9 +1059,6 @@ DEATH_TEST_F(TxnParticipantTest,
         };
 
     txnParticipant.commitPreparedTransaction(opCtx(), prepareTimestamp, {});
-    // Check that we removed the prepareTimestamp from the set.
-    auto oldestActiveTS = ServerTransactionsMetrics::get(opCtx())->getOldestActiveOpTime();
-    ASSERT_FALSE(oldestActiveTS);
 }
 
 TEST_F(TxnParticipantTest, CannotContinueNonExistentTransaction) {
@@ -1051,7 +1082,7 @@ TEST_F(TxnParticipantTest, TransactionTooLargeWhileBuilding) {
     std::unique_ptr<uint8_t[]> bigData(new uint8_t[kBigDataSize]());
     auto operation = repl::OplogEntry::makeInsertOperation(
         kNss,
-        kUUID,
+        _uuid,
         BSON("_id" << 0 << "data" << BSONBinData(bigData.get(), kBigDataSize, BinDataGeneral)));
     txnParticipant.addTransactionOperation(opCtx(), operation);
     txnParticipant.addTransactionOperation(opCtx(), operation);
@@ -1161,7 +1192,7 @@ protected:
         ASSERT(txnParticipant.inMultiDocumentTransaction());
 
         txnParticipant.unstashTransactionResources(opCtx(), "insert");
-        auto operation = repl::OplogEntry::makeInsertOperation(kNss, kUUID, BSON("TestValue" << 0));
+        auto operation = repl::OplogEntry::makeInsertOperation(kNss, _uuid, BSON("TestValue" << 0));
         txnParticipant.addTransactionOperation(opCtx(), operation);
         txnParticipant.prepareTransaction(opCtx(), {});
 
@@ -3104,7 +3135,7 @@ TEST_F(TransactionsMetricsTest, LogTransactionInfoAfterSlowCommit) {
     setupAdditiveMetrics(metricValue, opCtx());
 
     txnParticipant.unstashTransactionResources(opCtx(), "commitTransaction");
-    auto operation = repl::OplogEntry::makeInsertOperation(kNss, kUUID, BSON("TestValue" << 0));
+    auto operation = repl::OplogEntry::makeInsertOperation(kNss, _uuid, BSON("TestValue" << 0));
     txnParticipant.addTransactionOperation(opCtx(), operation);
 
     serverGlobalParams.slowMS = 10;
@@ -3335,136 +3366,6 @@ TEST_F(TransactionsMetricsTest, LogTransactionInfoAfterSlowStashedAbort) {
     ASSERT_EQUALS(1, countLogLinesContaining(expectedTransactionInfo));
 }
 
-TEST_F(TxnParticipantTest, WhenOldestTSRemovedNextOldestBecomesNewOldest) {
-    auto sessionCheckout = checkOutSession();
-    auto txnParticipant = TransactionParticipant::get(opCtx());
-
-    // Check that there are no Timestamps in the set.
-    ASSERT_EQ(ServerTransactionsMetrics::get(opCtx())->getTotalActiveOpTimes(), 0U);
-
-    txnParticipant.unstashTransactionResources(opCtx(), "prepareTransaction");
-    auto firstPrepareTimestamp = txnParticipant.prepareTransaction(opCtx(), {});
-    // Check that we added a Timestamp to the set.
-    ASSERT_EQ(ServerTransactionsMetrics::get(opCtx())->getTotalActiveOpTimes(), 1U);
-    // Check that the oldest prepareTimestamp is equal to firstPrepareTimestamp because there is
-    // only one prepared transaction on this Service.
-    auto prepareOpTime = ServerTransactionsMetrics::get(opCtx())->getOldestActiveOpTime();
-    ASSERT_EQ(prepareOpTime->getTimestamp(), firstPrepareTimestamp);
-    ASSERT_FALSE(txnParticipant.transactionIsAborted());
-
-    txnParticipant.stashTransactionResources(opCtx());
-    auto originalClient = Client::releaseCurrent();
-
-    /**
-     * Make a new Session, Client, OperationContext and transaction.
-     */
-    auto service = opCtx()->getServiceContext();
-    auto newClientOwned = service->makeClient("newClient");
-    auto newClient = newClientOwned.get();
-    Client::setCurrent(std::move(newClientOwned));
-
-    const TxnNumber newTxnNum = 10;
-    const auto newSessionId = makeLogicalSessionIdForTest();
-    auto secondPrepareTimestamp = Timestamp();
-
-    {
-        auto newOpCtx = newClient->makeOperationContext();
-        newOpCtx.get()->setLogicalSessionId(newSessionId);
-        newOpCtx.get()->setTxnNumber(newTxnNum);
-
-        MongoDOperationContextSession newOpCtxSession(newOpCtx.get());
-        auto newTxnParticipant = TransactionParticipant::get(newOpCtx.get());
-        newTxnParticipant.beginOrContinue(newOpCtx.get(), newTxnNum, false, true);
-        newTxnParticipant.unstashTransactionResources(newOpCtx.get(), "prepareTransaction");
-
-        // secondPrepareTimestamp should be greater than firstPreparedTimestamp because this
-        // transaction was prepared after.
-        secondPrepareTimestamp = newTxnParticipant.prepareTransaction(newOpCtx.get(), {});
-        ASSERT_GT(secondPrepareTimestamp, firstPrepareTimestamp);
-        // Check that we added a Timestamp to the set.
-        ASSERT_EQ(ServerTransactionsMetrics::get(opCtx())->getTotalActiveOpTimes(), 2U);
-        // The oldest prepareTimestamp should still be firstPrepareTimestamp.
-        prepareOpTime = ServerTransactionsMetrics::get(opCtx())->getOldestActiveOpTime();
-        ASSERT_EQ(prepareOpTime->getTimestamp(), firstPrepareTimestamp);
-        ASSERT_FALSE(txnParticipant.transactionIsAborted());
-    }
-
-    Client::releaseCurrent();
-    Client::setCurrent(std::move(originalClient));
-
-    // Switch clients and abort the first transaction. This should cause the oldestActiveTS to be
-    // equal to the secondPrepareTimestamp.
-    txnParticipant.unstashTransactionResources(opCtx(), "prepareTransaction");
-    txnParticipant.abortActiveTransaction(opCtx());
-    ASSERT(txnParticipant.transactionIsAborted());
-    ASSERT_EQ(ServerTransactionsMetrics::get(opCtx())->getTotalActiveOpTimes(), 1U);
-    prepareOpTime = ServerTransactionsMetrics::get(opCtx())->getOldestActiveOpTime();
-    ASSERT_EQ(prepareOpTime->getTimestamp(), secondPrepareTimestamp);
-}
-
-TEST_F(TxnParticipantTest, ReturnNullTimestampIfNoOldestActiveTimestamp) {
-    auto sessionCheckout = checkOutSession();
-    auto txnParticipant = TransactionParticipant::get(opCtx());
-
-    // Check that there are no Timestamps in the set.
-    ASSERT_EQ(ServerTransactionsMetrics::get(opCtx())->getTotalActiveOpTimes(), 0U);
-
-    txnParticipant.unstashTransactionResources(opCtx(), "prepareTransaction");
-    txnParticipant.prepareTransaction(opCtx(), {});
-    // Check that we added a Timestamp to the set.
-    ASSERT_EQ(ServerTransactionsMetrics::get(opCtx())->getTotalActiveOpTimes(), 1U);
-    ASSERT_FALSE(txnParticipant.transactionIsAborted());
-
-    txnParticipant.stashTransactionResources(opCtx());
-    auto originalClient = Client::releaseCurrent();
-
-    /**
-    * Make a new Session, Client, OperationContext and transaction.
-    */
-    auto service = opCtx()->getServiceContext();
-    auto newClientOwned = service->makeClient("newClient");
-    auto newClient = newClientOwned.get();
-    Client::setCurrent(std::move(newClientOwned));
-
-    const TxnNumber newTxnNum = 10;
-    const auto newSessionId = makeLogicalSessionIdForTest();
-
-    {
-        auto newOpCtx = newClient->makeOperationContext();
-        newOpCtx.get()->setLogicalSessionId(newSessionId);
-        newOpCtx.get()->setTxnNumber(newTxnNum);
-
-        MongoDOperationContextSession newOpCtxSession(newOpCtx.get());
-        auto newTxnParticipant = TransactionParticipant::get(newOpCtx.get());
-        newTxnParticipant.beginOrContinue(newOpCtx.get(), newTxnNum, false, true);
-        newTxnParticipant.unstashTransactionResources(newOpCtx.get(), "prepareTransaction");
-
-        // secondPrepareTimestamp should be greater than firstPreparedTimestamp because this
-        // transaction was prepared after.
-        newTxnParticipant.prepareTransaction(newOpCtx.get(), {});
-        // Check that we added a Timestamp to the set.
-        ASSERT_EQ(ServerTransactionsMetrics::get(opCtx())->getTotalActiveOpTimes(), 2U);
-        // The oldest prepareTimestamp should still be firstPrepareTimestamp.
-        ASSERT_FALSE(txnParticipant.transactionIsAborted());
-
-        // Abort this transaction and check that we have decremented the total active timestamps
-        // count.
-        newTxnParticipant.abortActiveTransaction(newOpCtx.get());
-        ASSERT_EQ(ServerTransactionsMetrics::get(opCtx())->getTotalActiveOpTimes(), 1U);
-    }
-
-    Client::releaseCurrent();
-    Client::setCurrent(std::move(originalClient));
-
-    // Switch clients and abort the first transaction. This means we no longer have an oldest active
-    // timestamp.
-    txnParticipant.unstashTransactionResources(opCtx(), "prepareTransaction");
-    txnParticipant.abortActiveTransaction(opCtx());
-    ASSERT(txnParticipant.transactionIsAborted());
-    ASSERT_EQ(ServerTransactionsMetrics::get(opCtx())->getTotalActiveOpTimes(), 0U);
-    ASSERT_FALSE(ServerTransactionsMetrics::get(opCtx())->getOldestActiveOpTime());
-}
-
 TEST_F(TxnParticipantTest, RollbackResetsInMemoryStateOfPreparedTransaction) {
     auto sessionCheckout = checkOutSession();
 
@@ -3478,26 +3379,15 @@ TEST_F(TxnParticipantTest, RollbackResetsInMemoryStateOfPreparedTransaction) {
 
     auto txnParticipant = TransactionParticipant::get(opCtx());
 
-    // Check that our metrics are initialized to their default values.
-    ASSERT_FALSE(ServerTransactionsMetrics::get(opCtx())->getOldestActiveOpTime());
-    ASSERT_EQ(ServerTransactionsMetrics::get(opCtx())->getTotalActiveOpTimes(), 0U);
-
     // Perform an insert as a part of a transaction so that we have a transaction operation.
     txnParticipant.unstashTransactionResources(opCtx(), "insert");
-    auto operation = repl::OplogEntry::makeInsertOperation(kNss, kUUID, BSON("TestValue" << 0));
+    auto operation = repl::OplogEntry::makeInsertOperation(kNss, _uuid, BSON("TestValue" << 0));
     txnParticipant.addTransactionOperation(opCtx(), operation);
     ASSERT_BSONOBJ_EQ(operation.toBSON(),
                       txnParticipant.getTransactionOperationsForTest()[0].toBSON());
 
     auto prepareTimestamp = txnParticipant.prepareTransaction(opCtx(), {});
 
-    // Check that we added a Timestamp to oldestActiveOplogEntryOpTimes.
-    ASSERT_EQ(ServerTransactionsMetrics::get(opCtx())->getTotalActiveOpTimes(), 1U);
-
-    // Check that the oldest active timestamp is equal to the prepareTimestamp because there is
-    // only one prepared transaction.
-    auto prepareOpTime = ServerTransactionsMetrics::get(opCtx())->getOldestActiveOpTime();
-    ASSERT_EQ(prepareOpTime->getTimestamp(), prepareTimestamp);
     ASSERT_FALSE(txnParticipant.transactionIsAborted());
 
     // Make sure the state of txnParticipant is populated correctly after a prepared transaction.
@@ -3507,7 +3397,6 @@ TEST_F(TxnParticipantTest, RollbackResetsInMemoryStateOfPreparedTransaction) {
     ASSERT_NE(txnParticipant.getActiveTxnNumber(), kUninitializedTxnNumber);
 
     txnParticipant.abortPreparedTransactionForRollback(opCtx());
-    ServerTransactionsMetrics::get(opCtx())->clearOpTimes();
 
     // After calling abortPreparedTransactionForRollback, the state of txnParticipant should be
     // invalidated.
@@ -3515,10 +3404,6 @@ TEST_F(TxnParticipantTest, RollbackResetsInMemoryStateOfPreparedTransaction) {
     ASSERT_EQ(txnParticipant.getTransactionOperationsForTest().size(), 0U);
     ASSERT_EQ(txnParticipant.getPrepareOpTime().getTimestamp(), Timestamp());
     ASSERT_EQ(txnParticipant.getActiveTxnNumber(), kUninitializedTxnNumber);
-
-    // After calling clearOpTimes, we should no longer have an oldestActiveOpTime.
-    ASSERT_FALSE(ServerTransactionsMetrics::get(opCtx())->getOldestActiveOpTime());
-    ASSERT_EQ(ServerTransactionsMetrics::get(opCtx())->getTotalActiveOpTimes(), 0U);
 }
 
 TEST_F(TxnParticipantTest, PrepareTransactionAsSecondarySetsThePrepareOpTime) {
@@ -3678,7 +3563,7 @@ TEST_F(TxnParticipantTest,
     ASSERT_TRUE(txnParticipant.getResponseMetadata().getReadOnly());
 
     // Simulate an insert.
-    auto operation = repl::OplogEntry::makeInsertOperation(kNss, kUUID, BSON("TestValue" << 0));
+    auto operation = repl::OplogEntry::makeInsertOperation(kNss, _uuid, BSON("TestValue" << 0));
     txnParticipant.addTransactionOperation(opCtx(), operation);
     ASSERT_FALSE(txnParticipant.getResponseMetadata().getReadOnly());
 }

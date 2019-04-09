@@ -906,18 +906,18 @@ intrusive_ptr<Expression> ExpressionCond::parse(
     if (expr.type() != Object) {
         return Base::parse(expCtx, expr, vps);
     }
-    verify(str::equals(expr.fieldName(), "$cond"));
+    verify(expr.fieldNameStringData() == "$cond");
 
     intrusive_ptr<ExpressionCond> ret = new ExpressionCond(expCtx);
     ret->vpOperand.resize(3);
 
     const BSONObj args = expr.embeddedObject();
     BSONForEach(arg, args) {
-        if (str::equals(arg.fieldName(), "if")) {
+        if (arg.fieldNameStringData() == "if") {
             ret->vpOperand[0] = parseOperand(expCtx, arg, vps);
-        } else if (str::equals(arg.fieldName(), "then")) {
+        } else if (arg.fieldNameStringData() == "then") {
             ret->vpOperand[1] = parseOperand(expCtx, arg, vps);
-        } else if (str::equals(arg.fieldName(), "else")) {
+        } else if (arg.fieldNameStringData() == "else") {
             ret->vpOperand[2] = parseOperand(expCtx, arg, vps);
         } else {
             uasserted(17083,
@@ -1640,7 +1640,7 @@ intrusive_ptr<Expression> ExpressionDateToString::parse(
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     BSONElement expr,
     const VariablesParseState& vps) {
-    verify(str::equals(expr.fieldName(), "$dateToString"));
+    verify(expr.fieldNameStringData() == "$dateToString");
 
     uassert(18629,
             "$dateToString only supports an object as its argument",
@@ -1946,7 +1946,22 @@ intrusive_ptr<ExpressionFieldPath> ExpressionFieldPath::parse(
         const StringData fieldPath = rawSD.substr(2);  // strip off $$
         const StringData varName = fieldPath.substr(0, fieldPath.find('.'));
         Variables::uassertValidNameForUserRead(varName);
-        return new ExpressionFieldPath(expCtx, fieldPath.toString(), vps.getVariable(varName));
+        auto varId = vps.getVariable(varName);
+        // $$NOW and $$CLUSTER_TIME are available only in 4.2 and up.
+        // The check should be removed when 4.2 becomes the last stable version.
+        if (varId == Variables::kNowId || varId == Variables::kClusterTimeId) {
+            uassert(ErrorCodes::QueryFeatureNotAllowed,
+                    str::stream()
+                        << "'$$"
+                        << varName
+                        << "' is not allowed in the current feature compatibility version. See "
+                        << feature_compatibility_version_documentation::kCompatibilityLink
+                        << " for more information.",
+                    !expCtx->maxFeatureCompatibilityVersion ||
+                        (ServerGlobalParams::FeatureCompatibility::Version::kFullyUpgradedTo42 <=
+                         *expCtx->maxFeatureCompatibilityVersion));
+        }
+        return new ExpressionFieldPath(expCtx, fieldPath.toString(), varId);
     } else {
         return new ExpressionFieldPath(expCtx,
                                        "CURRENT." + raw.substr(1),  // strip the "$" prefix
@@ -2095,7 +2110,7 @@ intrusive_ptr<Expression> ExpressionFilter::parse(
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     BSONElement expr,
     const VariablesParseState& vpsIn) {
-    verify(str::equals(expr.fieldName(), "$filter"));
+    verify(expr.fieldNameStringData() == "$filter");
 
     uassert(28646, "$filter only supports an object as its argument", expr.type() == Object);
 
@@ -2104,11 +2119,11 @@ intrusive_ptr<Expression> ExpressionFilter::parse(
     BSONElement asElem;
     BSONElement condElem;
     for (auto elem : expr.Obj()) {
-        if (str::equals(elem.fieldName(), "input")) {
+        if (elem.fieldNameStringData() == "input") {
             inputElem = elem;
-        } else if (str::equals(elem.fieldName(), "as")) {
+        } else if (elem.fieldNameStringData() == "as") {
             asElem = elem;
-        } else if (str::equals(elem.fieldName(), "cond")) {
+        } else if (elem.fieldNameStringData() == "cond") {
             condElem = elem;
         } else {
             uasserted(28647,
@@ -2224,7 +2239,7 @@ intrusive_ptr<Expression> ExpressionLet::parse(
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     BSONElement expr,
     const VariablesParseState& vpsIn) {
-    verify(str::equals(expr.fieldName(), "$let"));
+    verify(expr.fieldNameStringData() == "$let");
 
     uassert(16874, "$let only supports an object as its argument", expr.type() == Object);
     const BSONObj args = expr.embeddedObject();
@@ -2233,9 +2248,9 @@ intrusive_ptr<Expression> ExpressionLet::parse(
     BSONElement varsElem;
     BSONElement inElem;
     BSONForEach(arg, args) {
-        if (str::equals(arg.fieldName(), "vars")) {
+        if (arg.fieldNameStringData() == "vars") {
             varsElem = arg;
-        } else if (str::equals(arg.fieldName(), "in")) {
+        } else if (arg.fieldNameStringData() == "in") {
             inElem = arg;
         } else {
             uasserted(16875,
@@ -2323,7 +2338,7 @@ intrusive_ptr<Expression> ExpressionMap::parse(
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     BSONElement expr,
     const VariablesParseState& vpsIn) {
-    verify(str::equals(expr.fieldName(), "$map"));
+    verify(expr.fieldNameStringData() == "$map");
 
     uassert(16878, "$map only supports an object as its argument", expr.type() == Object);
 
@@ -2333,11 +2348,11 @@ intrusive_ptr<Expression> ExpressionMap::parse(
     BSONElement inElem;
     const BSONObj args = expr.embeddedObject();
     BSONForEach(arg, args) {
-        if (str::equals(arg.fieldName(), "input")) {
+        if (arg.fieldNameStringData() == "input") {
             inputElem = arg;
-        } else if (str::equals(arg.fieldName(), "as")) {
+        } else if (arg.fieldNameStringData() == "as") {
             asElem = arg;
-        } else if (str::equals(arg.fieldName(), "in")) {
+        } else if (arg.fieldNameStringData() == "in") {
             inElem = arg;
         } else {
             uasserted(16879,
@@ -3098,7 +3113,7 @@ intrusive_ptr<Expression> ExpressionNary::optimize() {
             // is also associative, replace the expression for the operands it has.
             // E.g: sum(a, b, sum(c, d), e) => sum(a, b, c, d, e)
             ExpressionNary* nary = dynamic_cast<ExpressionNary*>(operand.get());
-            if (nary && str::equals(nary->getOpName(), getOpName()) && nary->isAssociative()) {
+            if (nary && !strcmp(nary->getOpName(), getOpName()) && nary->isAssociative()) {
                 invariant(!nary->vpOperand.empty());
                 vpOperand[i] = std::move(nary->vpOperand[0]);
                 vpOperand.insert(

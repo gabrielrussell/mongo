@@ -242,6 +242,11 @@ CollectionImpl::~CollectionImpl() {
         }
         LOG(2) << "destructed collection " << ns() << " with UUID " << uuid()->toString();
     }
+
+    if (ns().isOplog()) {
+        repl::clearLocalOplogPtr();
+    }
+
     _magic = 0;
 }
 
@@ -729,6 +734,10 @@ StatusWith<RecordData> CollectionImpl::updateDocumentWithDamages(
         getGlobalServiceContext()->getOpObserver()->onUpdate(opCtx, entryArgs);
     }
     return newRecStatus;
+}
+
+bool CollectionImpl::isTemporary(OperationContext* opCtx) const {
+    return _details->getCollectionOptions(opCtx).temp;
 }
 
 bool CollectionImpl::isCapped() const {
