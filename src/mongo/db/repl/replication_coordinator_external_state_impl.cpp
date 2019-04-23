@@ -706,14 +706,8 @@ void ReplicationCoordinatorExternalStateImpl::shardingOnStepDownHook() {
     }
 
     if (auto validator = LogicalTimeValidator::get(_service)) {
-        auto opCtx = cc().getOperationContext();
-
-        if (opCtx != nullptr) {
-            validator->enableKeyGenerator(opCtx, false);
-        } else {
-            auto opCtxPtr = cc().makeOperationContext();
-            validator->enableKeyGenerator(opCtxPtr.get(), false);
-        }
+        maybeUniqueOperationContext mUOpCtx(cc());
+        validator->enableKeyGenerator(mUOpCtx.get(), false);
     }
 }
 

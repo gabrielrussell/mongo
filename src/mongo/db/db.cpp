@@ -871,15 +871,9 @@ void shutdownTask(const ShutdownTaskArgs& shutdownArgs) {
     if (auto replCoord = repl::ReplicationCoordinator::get(serviceContext);
         replCoord && !shutdownArgs.isUserInitiated) {
         replCoord->enterTerminalShutdown();
-        ServiceContext::UniqueOperationContext uniqueOpCtx;
-        OperationContext* opCtx = client->getOperationContext();
-        if (!opCtx) {
-            uniqueOpCtx = client->makeOperationContext();
-            opCtx = uniqueOpCtx.get();
-        }
-
+        maybeUniqueOperationContext mUOpCtx(client);
         try {
-            replCoord->stepDown(opCtx, false /* force */, Seconds(10), Seconds(120));
+            replCoord->stepDown(mUOpCtx.get(), false /* force */, Seconds(10), Seconds(120));
         } catch (const ExceptionFor<ErrorCodes::NotMaster>&) {
             // ignore not master errors
         } catch (const DBException& e) {
@@ -909,12 +903,9 @@ void shutdownTask(const ShutdownTaskArgs& shutdownArgs) {
     }
 
     if (serviceContext->getStorageEngine()) {
-        ServiceContext::UniqueOperationContext uniqueOpCtx;
-        OperationContext* opCtx = client->getOperationContext();
-        if (!opCtx) {
-            uniqueOpCtx = client->makeOperationContext();
-            opCtx = uniqueOpCtx.get();
-        }
+        maybeUniqueOperationContext mUOpCtx(client);
+        auto opCtx = mUOpCtx.get();
+
         opCtx->setIsExecutingShutdown();
 
         // This can wait a long time while we drain the secondary's apply queue, especially if

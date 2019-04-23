@@ -213,15 +213,8 @@ Status LogicalSessionCacheImpl::_reap(Client* client) {
     int numReaped = 0;
 
     try {
-        boost::optional<ServiceContext::UniqueOperationContext> uniqueCtx;
-        auto* const opCtx = [&client, &uniqueCtx] {
-            if (client->getOperationContext()) {
-                return client->getOperationContext();
-            }
-
-            uniqueCtx.emplace(client->makeOperationContext());
-            return uniqueCtx->get();
-        }();
+        maybeUniqueOperationContext mUOpCtx(client);
+        auto opCtx = mUOpCtx.get();
 
         ON_BLOCK_EXIT([&opCtx] { clearShardingOperationFailedStatus(opCtx); });
 
@@ -286,15 +279,8 @@ void LogicalSessionCacheImpl::_refresh(Client* client) {
     });
 
     // get or make an opCtx
-    boost::optional<ServiceContext::UniqueOperationContext> uniqueCtx;
-    auto* const opCtx = [&client, &uniqueCtx] {
-        if (client->getOperationContext()) {
-            return client->getOperationContext();
-        }
-
-        uniqueCtx.emplace(client->makeOperationContext());
-        return uniqueCtx->get();
-    }();
+    maybeUniqueOperationContext mUOpCtx(client);
+    auto opCtx = mUOpCtx(client);
 
     ON_BLOCK_EXIT([&opCtx] { clearShardingOperationFailedStatus(opCtx); });
 

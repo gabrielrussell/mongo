@@ -287,6 +287,30 @@ private:
     ServiceContext::UniqueClient* const _alternateClient;
 };
 
+class maybeUniqueOperationContext {
+public:
+    explicit maybeUniqueOperationContext(Client *client) {
+        _opCtx = client->getOperationContext();
+        if (!_opCtx) {
+            _uOpCtx = client->makeOperationContext();
+            _opCtx = _uOpCtx.get();
+            assert(_opCtx);
+        }
+    }
+    bool hasUniqueOperationContext() {
+        return _uOpCtx.get() != nullptr;
+    }
+    ServiceContext::UniqueOperationContext takeUniqueOperationContext() {
+        return std::move(_uOpCtx);
+    }
+    OperationContext* get() {
+        return _opCtx;
+    }
+private:
+    ServiceContext::UniqueOperationContext _uOpCtx;
+    OperationContext* _opCtx;
+};
+
 
 /** get the Client object for this thread. */
 Client& cc();

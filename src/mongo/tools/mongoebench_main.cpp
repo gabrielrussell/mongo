@@ -65,6 +65,7 @@ class DBDirectClientWithOwnOpCtx : public DBDirectClient {
 public:
     DBDirectClientWithOwnOpCtx()
         : DBDirectClient(nullptr), _threadClient(getGlobalServiceContext()) {
+            // goofy
         _opCtx = cc().makeOperationContext();
         setOpCtx(_opCtx.get());
     }

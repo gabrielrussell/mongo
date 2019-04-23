@@ -192,12 +192,8 @@ void cleanupTask(ServiceContext* serviceContext) {
             tl->shutdown();
         }
 
-        ServiceContext::UniqueOperationContext uniqueTxn;
-        OperationContext* opCtx = client.getOperationContext();
-        if (!opCtx) {
-            uniqueTxn = client.makeOperationContext();
-            opCtx = uniqueTxn.get();
-        }
+        maybeUniqueOperationContext maybeUniqueOpCtx(client);
+        OperationContext* opCtx = maybeUniqueOpCtx.get();
 
         opCtx->setIsExecutingShutdown();
 
