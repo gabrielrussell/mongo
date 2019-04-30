@@ -16,6 +16,7 @@ import SCons
 
 import os
 import re
+import requests
 import subprocess
 
 from pkg_resources import parse_version
@@ -49,15 +50,42 @@ def generate(env):
     env['CXX'] = env.WhereIs('$CXX')
 
     if 'ICECC_VERSION' in env:
-        # TODO:
-        #
-        # If ICECC_VERSION is a file, we are done. If it is a file
-        # URL, resolve it to a filesystem path. If it is a remote UTL,
-        # then fetch it to somewhere under $BUILD_ROOT/scons/icecc
-        # with its "correct" name (i.e. the md5 hash), and symlink it
-        # to some other deterministic name to use as icecc_version.
-
-        pass
+        url_match = re.match(r"([a-z]+)://(.+)",env['ICECC_VERSION'])
+        if url_match:
+            scheme = url_match.group(1)
+            urn = url_match.group(2)
+            if scheme == "file":
+                file_url_match = re.match(r"(?:localhost)?(/.*)", urn)
+                if file_url_match:
+                    env['ICECC_VERSION'] = file_url_match.group(1)
+                else:
+                    raise Exception("bad file:// url")
+            elif scheme in [ "http", "https" ]:
+                try:
+                    os.mkdir("build/icecream")
+                except FileExistsError:
+                    pass
+                response = requests.head(env['ICECC_VERSION'],allow_redirects=True)
+                if not response.ok:
+                    raise Exception("error fetching url "+str(response))
+                file_size = int(response.headers['Content-length'])
+                url = response.url
+                filename = url.split("/")[-1]
+                local_file = "build/icecream/"+filename
+                env['ICECC_VERSION']=local_file
+                if os.path.isfile(local_file) and os.path.getsize(local_file) == file_size:
+                    print("Using already downloaded " + local_file)
+                else:
+                    print("Downloading " + url)
+                    response = requests.get(url)
+                    if not response.ok:
+                        raise Exception("error fetching url "+str(response))
+                    open(local_file,"wb").write(response.content)
+            else:
+                raise Exception("url scheme "+ scheme +" is not handled the scons icecream support")
+        else:
+            if not os.path.isfile(env['ICECC_VERSION']):
+                raise Exception(env['ICECC_VERSION'] + " : File not found")
     else:
         # Make a predictable name for the toolchain
         icecc_version_target_filename = env.subst('$CC$CXX').replace('/', '_')
@@ -152,11 +180,13 @@ def generate(env):
         return str()
     env['ICECC_VERSION_ARCH_GEN'] = icecc_version_arch_gen
 
+    env['ICECC_VERSION_ENV'] = 'ICECC_VERSION=${ICECC_VERSION_ARCH_GEN}${ICECC_VERSION_GEN}'
+
     # Make compile jobs flow through icecc
-    env['CCCOM'] = '$( ICECC_VERSION=${ICECC_VERSION_ARCH_GEN}${ICECC_VERSION_GEN} $ICECC $) ' + env['CCCOM']
-    env['CXXCOM'] = '$( ICECC_VERSION=${ICECC_VERSION_ARCH_GEN}${ICECC_VERSION_GEN} $ICECC $) ' + env['CXXCOM']
-    env['SHCCCOM'] = '$( ICECC_VERSION=${ICECC_VERSION_ARCH_GEN}${ICECC_VERSION_GEN} $ICECC $) ' + env['SHCCCOM']
-    env['SHCXXCOM'] = '$( ICECC_VERSION=${ICECC_VERSION_ARCH_GEN}${ICECC_VERSION_GEN} $ICECC $) ' + env['SHCXXCOM']
+    env['CCCOM']    = '$ICECC_VERSION_ENV $ICECC ' + env['CCCOM']
+    env['CXXCOM']   = '$ICECC_VERSION_ENV $ICECC ' + env['CXXCOM']
+    env['SHCCCOM']  = '$ICECC_VERSION_ENV $ICECC ' + env['SHCCCOM']
+    env['SHCXXCOM'] = '$ICECC_VERSION_ENV $ICECC ' + env['SHCXXCOM']
 
     # Make link like jobs flow through icerun so we don't kill the
     # local machine.
@@ -164,9 +194,9 @@ def generate(env):
     # TODO: Should we somehow flow SPAWN or other universal shell launch through
     # ICERUN to avoid saturating the local machine, and build something like
     # ninja pools?
-    env['ARCOM'] = '$( $ICERUN $) ' + env['ARCOM']
-    env['LINKCOM'] = '$( $ICERUN $) ' + env['LINKCOM']
-    env['SHLINKCOM'] = '$( $ICERUN $) ' + env['SHLINKCOM']
+    env['ARCOM'] = '$ICERUN ' + env['ARCOM']
+    env['LINKCOM'] = '$ICERUN ' + env['LINKCOM']
+    env['SHLINKCOM'] = '$ICERUN ' + env['SHLINKCOM']
 
     # Uncomment these to debug your icecc integration
     # env['ENV']['ICECC_DEBUG'] = 'debug'
