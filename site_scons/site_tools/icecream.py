@@ -185,10 +185,10 @@ def generate(env):
     env['ICECC_VERSION_ENV'] = 'ICECC_VERSION=${ICECC_VERSION_ARCH_GEN}${ICECC_VERSION_GEN}'
 
     # Make compile jobs flow through icecc
-    env['CCCOM']    = '$ICECC_VERSION_ENV $ICECC ' + env['CCCOM']
-    env['CXXCOM']   = '$ICECC_VERSION_ENV $ICECC ' + env['CXXCOM']
-    env['SHCCCOM']  = '$ICECC_VERSION_ENV $ICECC ' + env['SHCCCOM']
-    env['SHCXXCOM'] = '$ICECC_VERSION_ENV $ICECC ' + env['SHCXXCOM']
+    env['CCCOM']    = '$( $ICECC_VERSION_ENV $ICECC $) ' + env['CCCOM']
+    env['CXXCOM']   = '$( $ICECC_VERSION_ENV $ICECC $) ' + env['CXXCOM']
+    env['SHCCCOM']  = '$( $ICECC_VERSION_ENV $ICECC $) ' + env['SHCCCOM']
+    env['SHCXXCOM'] = '$( $ICECC_VERSION_ENV $ICECC $) ' + env['SHCXXCOM']
 
     # Make link like jobs flow through icerun so we don't kill the
     # local machine.
@@ -196,9 +196,9 @@ def generate(env):
     # TODO: Should we somehow flow SPAWN or other universal shell launch through
     # ICERUN to avoid saturating the local machine, and build something like
     # ninja pools?
-    env['ARCOM'] = '$ICERUN ' + env['ARCOM']
-    env['LINKCOM'] = '$ICERUN ' + env['LINKCOM']
-    env['SHLINKCOM'] = '$ICERUN ' + env['SHLINKCOM']
+    env['ARCOM'] = '$( $ICERUN $) ' + env['ARCOM']
+    env['LINKCOM'] = '$( $ICERUN $) ' + env['LINKCOM']
+    env['SHLINKCOM'] = '$( $ICERUN $) ' + env['SHLINKCOM']
 
     # Uncomment these to debug your icecc integration
     # env['ENV']['ICECC_DEBUG'] = 'debug'
