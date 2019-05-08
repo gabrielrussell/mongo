@@ -17,6 +17,7 @@ import SCons
 import os
 import re
 import requests
+import urllib.parse
 import subprocess
 
 from pkg_resources import parse_version
@@ -50,42 +51,43 @@ def generate(env):
     env['CXX'] = env.WhereIs('$CXX')
 
     if 'ICECC_VERSION' in env:
-        url_match = re.match(r"([a-z]+)://(.+)",env['ICECC_VERSION'])
-        if url_match:
-            scheme = url_match.group(1)
-            urn = url_match.group(2)
-            if scheme == "file":
-                file_url_match = re.match(r"(?:localhost)?(/.*)", urn)
-                if file_url_match:
-                    env['ICECC_VERSION'] = file_url_match.group(1)
+        parsed_url = urllib.parse.urlparse(env['ICECC_VERSION'])
+        if parsed_url.scheme:
+            if parsed_url.scheme == "file":
+                if not parsed_url.netloc or parsed_url.netloc == 'localhost':
+                    env['ICECC_VERSION'] = parsed_url.path
                 else:
-                    raise Exception("bad file:// url")
-            elif scheme in [ "http", "https" ]:
-                try:
-                    os.mkdir("build/icecream")
-                except FileExistsError:
-                    pass
+                    env.FatalError("bad file:// url")
+            elif parsed_url.scheme in [ "http", "https" ]:
                 response = requests.head(env['ICECC_VERSION'],allow_redirects=True)
                 if not response.ok:
-                    raise Exception("error fetching url "+str(response))
+                    env.FatalError("error fetching url "+str(response))
                 file_size = int(response.headers['Content-length'])
                 url = response.url
                 filename = url.split("/")[-1]
-                local_file = "build/icecream/"+filename
-                env['ICECC_VERSION']=local_file
-                if os.path.isfile(local_file) and os.path.getsize(local_file) == file_size:
-                    print("Using already downloaded " + local_file)
+                icecc_version_dir = env.Dir("$BUILD_ROOT/scons/icecc")
+                icecc_version = icecc_version_dir.File(filename)
+
+                env['ICECC_VERSION']=icecc_version.path
+
+                try:
+                    os.mkdir(icecc_version_dir.path)
+                except FileExistsError:
+                    pass
+
+                if os.path.isfile(icecc_version.path) and os.path.getsize(icecc_version.path) == file_size:
+                    print("Using already downloaded " + icecc_version.path)
                 else:
                     print("Downloading " + url)
                     response = requests.get(url)
                     if not response.ok:
                         raise Exception("error fetching url "+str(response))
-                    open(local_file,"wb").write(response.content)
+                    open(icecc_version.path,"wb").write(response.content)
             else:
-                raise Exception("url scheme "+ scheme +" is not handled the scons icecream support")
+                env.FatalError("url scheme "+ parsed_url.scheme +" is not handled the scons icecream support")
         else:
             if not os.path.isfile(env['ICECC_VERSION']):
-                raise Exception(env['ICECC_VERSION'] + " : File not found")
+                env.FatalError(env['ICECC_VERSION'] + " : File not found")
     else:
         # Make a predictable name for the toolchain
         icecc_version_target_filename = env.subst('$CC$CXX').replace('/', '_')
