@@ -19,6 +19,7 @@ import re
 import requests
 import urllib.parse
 import subprocess
+import traceback
 
 from pkg_resources import parse_version
 
@@ -50,110 +51,119 @@ def generate(env):
     env['CC'] = env.WhereIs('$CC')
     env['CXX'] = env.WhereIs('$CXX')
 
+    action=None
+    icecc_version_source=None
+    # Make an isolated environment so that our setting of ICECC_VERSION in the environment
+    # doesn't appear when executing icecc_create_env
+    toolchain_env = env.Clone()
+    # Make a predictable name for the toolchain
+    icecc_version = env.Dir('$BUILD_ROOT/scons/icecc').File("icecc_version_file.tar.gz")
+
+    def fetch_icecream_toolchain_url(target = None, source = None, env = None, url = None):
+        try:
+            print("URL: {}".format(url))
+            response = requests.head(url,allow_redirects=True)
+            if not response.ok:
+                env.FatalError("error fetching url "+str(response))
+            f = open(target[0].path,"w")
+            f.write(response.url)
+            f.close()
+            return 0
+            #file_size = int(response.headers['Content-length'])
+        except:
+            traceback.print_exec()
+            return 1
+
+    def download_icecream_toolchain(target = None, source = None, env = None):
+        try:
+            print("SOURCE {}".format(source[3]))
+            url = open(source[3].path,"r").readline().rstrip()
+            print("URL {}".format(url))
+            response = requests.get(url)
+            if not response.ok:
+                raise Exception("error fetching url "+str(response))
+            open(target[0].path,"wb").write(response.content)
+            return 0
+        except:
+            traceback.print_exec()
+            return 1
+
     if 'ICECC_VERSION' in env:
         parsed_url = urllib.parse.urlparse(env['ICECC_VERSION'])
         if parsed_url.scheme:
             if parsed_url.scheme == "file":
                 if not parsed_url.netloc or parsed_url.netloc == 'localhost':
-                    env['ICECC_VERSION'] = parsed_url.path
+                    icecc_version_source=env.File(parsed_url.path)
+                    action = SCons.Defaults.Copy('$TARGET','${SOURCES[3].abspath}')
                 else:
                     env.FatalError("bad file:// url")
             elif parsed_url.scheme in [ "http", "https" ]:
-                response = requests.head(env['ICECC_VERSION'],allow_redirects=True)
-                if not response.ok:
-                    env.FatalError("error fetching url "+str(response))
-                file_size = int(response.headers['Content-length'])
-                url = response.url
-                filename = url.split("/")[-1]
-                icecc_version_dir = env.Dir("$BUILD_ROOT/scons/icecc")
-                icecc_version = icecc_version_dir.File(filename)
-
-                env['ICECC_VERSION']=icecc_version.path
-
-                try:
-                    os.mkdir(icecc_version_dir.path)
-                except FileExistsError:
-                    pass
-
-                if os.path.isfile(icecc_version.path) and os.path.getsize(icecc_version.path) == file_size:
-                    print("Using already downloaded " + icecc_version.path)
-                else:
-                    print("Downloading " + url)
-                    response = requests.get(url)
-                    if not response.ok:
-                        raise Exception("error fetching url "+str(response))
-                    open(icecc_version.path,"wb").write(response.content)
+                icecc_version_url = env.Dir('$BUILD_ROOT/scons/icecc').File("icecc_version_url")
+                url = env['ICECC_VERSION']
+                urlCommand = env.Command(
+                    target = icecc_version_url,
+                    source=[ ],
+                    # use a lambda so that we can pass the url to the action
+                    action = [ env.Action( lambda target, source, env : fetch_icecream_toolchain_url(target,source,env,url) ) ],
+                )
+                env.AlwaysBuild(icecc_version_url)
+                icecc_version_source=icecc_version_url
+                action = env.Action(download_icecream_toolchain)
+                print("ALL SETUP")
             else:
                 env.FatalError("url scheme "+ parsed_url.scheme +" is not handled the scons icecream support")
         else:
-            if not os.path.isfile(env['ICECC_VERSION']):
-                env.FatalError(env['ICECC_VERSION'] + " : File not found")
+            icecc_version_source=env.File(env['ICECC_VERSION'])
+            action = SCons.Defaults.Copy('$TARGET','${SOURCES[3].abspath}')
+    elif toolchain_env.ToolchainIs('clang'):
+        action = "${SOURCES[0]} --clang ${SOURCES[1].abspath} /bin/true $TARGET",
     else:
-        # Make a predictable name for the toolchain
-        icecc_version_target_filename = env.subst('$CC$CXX').replace('/', '_')
-        icecc_version = env.Dir('$BUILD_ROOT/scons/icecc').File(icecc_version_target_filename)
+        action = "${SOURCES[0]} --gcc ${SOURCES[1].abspath} ${SOURCES[2].abspath} $TARGET",
 
-        # Make an isolated environment so that our setting of ICECC_VERSION in the environment
-        # doesn't appear when executing icecc_create_env
-        toolchain_env = env.Clone()
-        if toolchain_env.ToolchainIs('clang'):
-            toolchain = env.Command(
-                target=icecc_version,
-                source=[
-                    '$ICECC_CREATE_ENV',
-                    '$CC',
-                    '$CXX'
-                ],
-                action=[
-                    "${SOURCES[0]} --clang ${SOURCES[1].abspath} /bin/true $TARGET",
-                ],
-            )
-        else:
-            toolchain = toolchain_env.Command(
-                target=icecc_version,
-                source=[
-                    '$ICECC_CREATE_ENV',
-                    '$CC',
-                    '$CXX'
-                ],
-                action=[
-                    "${SOURCES[0]} --gcc ${SOURCES[1].abspath} ${SOURCES[2].abspath} $TARGET",
-                ],
-            )
+    toolchain = env.Command(
+        target=icecc_version,
+        source=[
+            '$ICECC_CREATE_ENV',
+            '$CC',
+            '$CXX',
+            icecc_version_source,
+        ],
+        action=[ action ],
+    )
 
-        # Create an emitter that makes all of the targets depend on the
-        # icecc_version_target (ensuring that we have read the link), which in turn
-        # depends on the toolchain (ensuring that we have packaged it).
-        def icecc_toolchain_dependency_emitter(target, source, env):
-            env.Requires(target, toolchain)
-            return target, source
+    # Create an emitter that makes all of the targets depend on the
+    # icecc_version_target (ensuring that we have read the link), which in turn
+    # depends on the toolchain (ensuring that we have packaged it).
+    def icecc_toolchain_dependency_emitter(target, source, env):
+        env.Depends(target, toolchain)
+        return target, source
 
-        # Cribbed from Tool/cc.py and Tool/c++.py. It would be better if
-        # we could obtain this from SCons.
-        _CSuffixes = ['.c']
-        if not SCons.Util.case_sensitive_suffixes('.c', '.C'):
-            _CSuffixes.append('.C')
+    # Cribbed from Tool/cc.py and Tool/c++.py. It would be better if
+    # we could obtain this from SCons.
+    _CSuffixes = ['.c']
+    if not SCons.Util.case_sensitive_suffixes('.c', '.C'):
+        _CSuffixes.append('.C')
 
-        _CXXSuffixes = ['.cpp', '.cc', '.cxx', '.c++', '.C++']
-        if SCons.Util.case_sensitive_suffixes('.c', '.C'):
-            _CXXSuffixes.append('.C')
+    _CXXSuffixes = ['.cpp', '.cc', '.cxx', '.c++', '.C++']
+    if SCons.Util.case_sensitive_suffixes('.c', '.C'):
+        _CXXSuffixes.append('.C')
 
-        suffixes = _CSuffixes + _CXXSuffixes
-        for object_builder in SCons.Tool.createObjBuilders(env):
-            emitterdict = object_builder.builder.emitter
-            for suffix in emitterdict.keys():
-                if not suffix in suffixes:
-                    continue
-                base = emitterdict[suffix]
-                emitterdict[suffix] = SCons.Builder.ListEmitter([
-                    base,
-                    icecc_toolchain_dependency_emitter
-                ])
+    suffixes = _CSuffixes + _CXXSuffixes
+    for object_builder in SCons.Tool.createObjBuilders(env):
+        emitterdict = object_builder.builder.emitter
+        for suffix in emitterdict.keys():
+            if not suffix in suffixes:
+                continue
+            base = emitterdict[suffix]
+            emitterdict[suffix] = SCons.Builder.ListEmitter([
+                base,
+                icecc_toolchain_dependency_emitter
+            ])
 
-        # Add ICECC_VERSION to the environment, pointed at the generated
-        # file so that we can expand it in the realpath expressions for
-        # CXXCOM and friends below.
-        env['ICECC_VERSION'] = icecc_version
+    # Add ICECC_VERSION to the environment, pointed at the generated
+    # file so that we can expand it in the realpath expressions for
+    # CXXCOM and friends below.
+    env['ICECC_VERSION'] = icecc_version
 
     if env.ToolchainIs('clang'):
         env['ENV']['ICECC_CLANG_REMOTE_CPP'] = 1
@@ -174,6 +184,7 @@ def generate(env):
         if not f.islink():
             return f
         return env.File(os.path.realpath(f.abspath))
+
     env['ICECC_VERSION_GEN'] = icecc_version_gen
 
     def icecc_version_arch_gen(target, source, env, for_signature):
