@@ -123,7 +123,7 @@ def generate(env):
     # depends on the toolchain (ensuring that we have packaged it).
     def icecc_toolchain_dependency_emitter(target, source, env):
         if source and source[0] and not str(source[0]).split('/')[-1].startswith("conftest_"):
-            env.Depends(target, toolchain)
+            env.Depends(target, icecc_version)
         return target, source
 
     # Cribbed from Tool/cc.py and Tool/c++.py. It would be better if
