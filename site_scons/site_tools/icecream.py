@@ -60,33 +60,21 @@ def generate(env):
     icecc_version = env.Dir('$BUILD_ROOT/scons/icecc').File("icecc_version_file.tar.gz")
 
     def fetch_icecream_toolchain_url(target = None, source = None, env = None, url = None):
-        try:
-            print("URL: {}".format(url))
-            response = requests.head(url,allow_redirects=True)
-            if not response.ok:
-                env.FatalError("error fetching url "+str(response))
-            f = open(target[0].path,"w")
-            f.write(response.url)
-            f.close()
-            return 0
-            #file_size = int(response.headers['Content-length'])
-        except:
-            traceback.print_exec()
-            return 1
+        response = requests.head(url,allow_redirects=True)
+        if not response.ok:
+            env.FatalError("error fetching url "+str(response))
+        f = open(target[0].path,"w")
+        f.write(response.url + "\n" + response.headers['Content-length'] + "\n" )
+        f.close()
+        return 0
 
     def download_icecream_toolchain(target = None, source = None, env = None):
-        try:
-            print("SOURCE {}".format(source[3]))
-            url = open(source[3].path,"r").readline().rstrip()
-            print("URL {}".format(url))
-            response = requests.get(url)
-            if not response.ok:
-                raise Exception("error fetching url "+str(response))
-            open(target[0].path,"wb").write(response.content)
-            return 0
-        except:
-            traceback.print_exec()
-            return 1
+        url = open(source[3].path,"r").readline().rstrip()
+        response = requests.get(url)
+        if not response.ok:
+            raise Exception("error fetching url "+str(response))
+        open(target[0].path,"wb").write(response.content)
+        return 0
 
     if 'ICECC_VERSION' in env:
         parsed_url = urllib.parse.urlparse(env['ICECC_VERSION'])
@@ -109,7 +97,6 @@ def generate(env):
                 env.AlwaysBuild(icecc_version_url)
                 icecc_version_source=icecc_version_url
                 action = env.Action(download_icecream_toolchain)
-                print("HTTP SETUP")
             else:
                 env.FatalError("url scheme "+ parsed_url.scheme +" is not handled the scons icecream support")
         else:
@@ -135,7 +122,8 @@ def generate(env):
     # icecc_version_target (ensuring that we have read the link), which in turn
     # depends on the toolchain (ensuring that we have packaged it).
     def icecc_toolchain_dependency_emitter(target, source, env):
-        env.Depends(target, toolchain)
+        if source and source[0] and not str(source[0]).split('/')[-1].startswith("conftest_"):
+            env.Depends(target, toolchain)
         return target, source
 
     # Cribbed from Tool/cc.py and Tool/c++.py. It would be better if
