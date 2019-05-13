@@ -100,7 +100,7 @@ def generate(env):
             elif parsed_url.scheme in [ "http", "https" ]:
                 icecc_version_url = env.Dir('$BUILD_ROOT/scons/icecc').File("icecc_version_url")
                 url = env['ICECC_VERSION']
-                urlCommand = env.Command(
+                env.Command(
                     target = icecc_version_url,
                     source=[ ],
                     # use a lambda so that we can pass the url to the action
@@ -109,7 +109,7 @@ def generate(env):
                 env.AlwaysBuild(icecc_version_url)
                 icecc_version_source=icecc_version_url
                 action = env.Action(download_icecream_toolchain)
-                print("ALL SETUP")
+                print("HTTP SETUP")
             else:
                 env.FatalError("url scheme "+ parsed_url.scheme +" is not handled the scons icecream support")
         else:
