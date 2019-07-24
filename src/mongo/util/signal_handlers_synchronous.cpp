@@ -42,6 +42,10 @@
 #include <streambuf>
 #include <typeinfo>
 
+#include <unistd.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
+
 #include "mongo/base/string_data.h"
 #include "mongo/logger/log_domain.h"
 #include "mongo/logger/logger.h"
@@ -78,6 +82,16 @@ void endProcessWithSignal(int signalNum) {
 
 #else
 
+void fmtint(int num, char * fmtstr, int size) {
+  bool pad = false;
+  for (int i=0; i<size; i++) {
+      fmtstr[ size -1 - i ] = pad ? ' ' : '0' + (num % 10);
+      num = num / 10;
+      pad = num == 0;
+  }
+}
+
+
 void endProcessWithSignal(int signalNum) {
     // This works by restoring the system-default handler for the given signal and re-raising it, in
     // order to get the system default termination behavior (i.e., dumping core, or just exiting).
@@ -86,7 +100,38 @@ void endProcessWithSignal(int signalNum) {
     defaultedSignals.sa_handler = SIG_DFL;
     sigemptyset(&defaultedSignals.sa_mask);
     invariant(sigaction(signalNum, &defaultedSignals, nullptr) == 0);
-    raise(signalNum);
+    clearSignalMask();
+    int r = raise(signalNum);
+    while(1){
+        
+        //auto self = syscall(SYS_gettid);
+        //int r = syscall(SYS_tgkill, pid, self, signalNum);
+        
+        auto self = pthread_self();
+        auto pid = getpid();
+
+        int r = raise(signalNum);
+        //auto r = kill(pid,signalNum);
+        
+        //int r = pthread_kill(self, signalNum);
+
+        char rstr[10];
+        int w=0;
+        w += write(2, "existence is pain (", 19);
+        fmtint(r,rstr,10);
+        w += write(2, rstr, 10);
+        w += write(2, ",",1);
+        fmtint(errno, rstr,10);
+        w += write(2, rstr, 10);
+        w += write(2, ",",1);
+        fmtint(pid, rstr,10);
+        w += write(2, rstr, 10);
+        w += write(2, ",",1);
+        fmtint(self, rstr,10);
+        w += write(2, rstr, 10);
+        w += write(2, ")\n", 2);
+        sleep(1);
+    }
 }
 
 #endif

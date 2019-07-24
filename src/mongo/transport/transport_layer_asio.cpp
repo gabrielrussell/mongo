@@ -802,6 +802,8 @@ Status TransportLayerASIO::start() {
         }
 #endif
         log() << "waiting for connections on port " << _listenerPort << ssl;
+        char * r = (char *)0xffff;
+        log() << r;
     } else {
         invariant(_acceptors.empty());
     }
