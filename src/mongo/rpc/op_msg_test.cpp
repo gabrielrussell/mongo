@@ -161,12 +161,12 @@ class OpMsgParser : public unittest::Test {
 public:
     void setUp() override {
         _original =
-            logger::globalLogDomain()->getMinimumLogSeverity(logger::LogComponent::kNetwork);
-        logger::globalLogDomain()->setMinimumLoggedSeverity(logger::LogComponent::kNetwork,
+            getMinimumLogSeverity(logger::LogComponent::kNetwork);
+        setMinimumLoggedSeverity(logger::LogComponent::kNetwork,
                                                             logger::LogSeverity::Debug(1));
     }
     void tearDown() override {
-        logger::globalLogDomain()->setMinimumLoggedSeverity(logger::LogComponent::kNetwork,
+        setMinimumLoggedSeverity(logger::LogComponent::kNetwork,
                                                             _original);
     }
 

@@ -53,11 +53,10 @@ using std::stringstream;
 namespace mongo {
 
 namespace {
-using logger::globalLogDomain;
-using logger::LogComponent;
-using logger::LogComponentSetting;
-using logger::LogSeverity;
-using logger::parseLogComponentSettings;
+//using logger::LogComponent;
+//using logger::LogComponentSetting;
+//using logger::LogSeverity;
+//using logger::parseLogComponentSettings;
 
 void appendParameterNames(std::string* help) {
     *help += "supported:\n";
@@ -72,15 +71,15 @@ void appendParameterNames(std::string* help) {
  * Search document for element corresponding to log component's parent.
  */
 static mutablebson::Element getParentForLogComponent(mutablebson::Document& doc,
-                                                     LogComponent component) {
+                                                     logger::LogComponent component) {
     // Hide LogComponent::kDefault
-    if (component == LogComponent::kDefault) {
+    if (component == logger::LogComponent::kDefault) {
         return doc.end();
     }
-    LogComponent parentComponent = component.parent();
+    logger::LogComponent parentComponent = component.parent();
 
     // Attach LogComponent::kDefault children to root
-    if (parentComponent == LogComponent::kDefault) {
+    if (parentComponent == logger::LogComponent::kDefault) {
         return doc.root();
     }
     mutablebson::Element grandParentElement = getParentForLogComponent(doc, parentComponent);
@@ -93,20 +92,20 @@ static mutablebson::Element getParentForLogComponent(mutablebson::Document& doc,
  */
 void getLogComponentVerbosity(BSONObj* output) {
     static const string defaultLogComponentName =
-        LogComponent(LogComponent::kDefault).getShortName();
+        logger::LogComponent(logger::LogComponent::kDefault).getShortName();
 
     mutablebson::Document doc;
 
-    for (int i = 0; i < int(LogComponent::kNumLogComponents); ++i) {
-        LogComponent component = static_cast<LogComponent::Value>(i);
+    for (int i = 0; i < int(logger::LogComponent::kNumLogComponents); ++i) {
+        logger::LogComponent component = static_cast<logger::LogComponent::Value>(i);
 
         int severity = -1;
-        if (globalLogDomain()->hasMinimumLogSeverity(component)) {
-            severity = globalLogDomain()->getMinimumLogSeverity(component).toInt();
+        if (hasMinimumLogSeverity(component)) {
+            severity = getMinimumLogSeverity(component).toInt();
         }
 
         // Save LogComponent::kDefault LogSeverity at root
-        if (component == LogComponent::kDefault) {
+        if (component == logger::LogComponent::kDefault) {
             doc.root().appendInt("verbosity", severity).transitional_ignore();
             continue;
         }
@@ -158,27 +157,27 @@ void getLogComponentVerbosity(BSONObj* output) {
  * name.
  */
 Status setLogComponentVerbosity(const BSONObj& bsonSettings) {
-    StatusWith<std::vector<LogComponentSetting>> parseStatus =
-        parseLogComponentSettings(bsonSettings);
+    StatusWith<std::vector<logger::LogComponentSetting>> parseStatus =
+        logger::parseLogComponentSettings(bsonSettings);
 
     if (!parseStatus.isOK()) {
         return parseStatus.getStatus();
     }
 
-    std::vector<LogComponentSetting> settings = parseStatus.getValue();
-    std::vector<LogComponentSetting>::iterator it = settings.begin();
+    std::vector<logger::LogComponentSetting> settings = parseStatus.getValue();
+    std::vector<logger::LogComponentSetting>::iterator it = settings.begin();
     for (; it < settings.end(); ++it) {
-        LogComponentSetting newSetting = *it;
+        logger::LogComponentSetting newSetting = *it;
 
         // Negative value means to clear log level of component.
         if (newSetting.level < 0) {
-            globalLogDomain()->clearMinimumLoggedSeverity(newSetting.component);
+            clearMinimumLoggedSeverity(newSetting.component);
             continue;
         }
         // Convert non-negative value to Log()/Debug(N).
-        LogSeverity newSeverity =
-            (newSetting.level > 0) ? LogSeverity::Debug(newSetting.level) : LogSeverity::Log();
-        globalLogDomain()->setMinimumLoggedSeverity(newSetting.component, newSeverity);
+        logger::LogSeverity newSeverity =
+            (newSetting.level > 0) ? logger::LogSeverity::Debug(newSetting.level) : logger::LogSeverity::Log();
+        setMinimumLoggedSeverity(newSetting.component, newSeverity);
     }
 
     return Status::OK();
@@ -384,7 +383,7 @@ public:
 void LogLevelServerParameter::append(OperationContext*,
                                      BSONObjBuilder& builder,
                                      const std::string& name) {
-    builder.append(name, globalLogDomain()->getMinimumLogSeverity().toInt());
+    builder.append(name, getMinimumLogSeverity().toInt());
 }
 
 Status LogLevelServerParameter::set(const BSONElement& newValueElement) {
@@ -392,8 +391,8 @@ Status LogLevelServerParameter::set(const BSONElement& newValueElement) {
     if (!newValueElement.coerce(&newValue) || newValue < 0)
         return Status(ErrorCodes::BadValue,
                       str::stream() << "Invalid value for logLevel: " << newValueElement);
-    LogSeverity newSeverity = (newValue > 0) ? LogSeverity::Debug(newValue) : LogSeverity::Log();
-    globalLogDomain()->setMinimumLoggedSeverity(newSeverity);
+    logger::LogSeverity newSeverity = (newValue > 0) ? logger::LogSeverity::Debug(newValue) : logger::LogSeverity::Log();
+    setMinimumLoggedSeverity(newSeverity);
     return Status::OK();
 }
 
@@ -405,8 +404,8 @@ Status LogLevelServerParameter::setFromString(const std::string& strLevel) {
     if (newValue < 0)
         return Status(ErrorCodes::BadValue,
                       str::stream() << "Invalid value for logLevel: " << newValue);
-    LogSeverity newSeverity = (newValue > 0) ? LogSeverity::Debug(newValue) : LogSeverity::Log();
-    globalLogDomain()->setMinimumLoggedSeverity(newSeverity);
+    logger::LogSeverity newSeverity = (newValue > 0) ? logger::LogSeverity::Debug(newValue) : logger::LogSeverity::Log();
+    setMinimumLoggedSeverity(newSeverity);
     return Status::OK();
 }
 

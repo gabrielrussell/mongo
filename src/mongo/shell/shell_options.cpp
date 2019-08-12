@@ -108,7 +108,7 @@ Status storeMongoShellOptions(const moe::Environment& params,
     }
 
     if (params.count("verbose")) {
-        logger::globalLogDomain()->setMinimumLoggedSeverity(logger::LogSeverity::Debug(1));
+        setMinimumLoggedSeverity(logger::LogSeverity::Debug(1));
     }
 
     // `objcheck` option is part of `serverGlobalParams` to avoid making common parts depend upon

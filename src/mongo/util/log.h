@@ -171,6 +171,30 @@ inline bool shouldLog(logger::LogSeverity severity) {
     return shouldLog(::MongoLogDefaultComponent_component, severity);
 }
 
+inline bool hasMinimumLogSeverity(logger::LogComponent component) {
+    return logger::globalLogDomain()->hasMinimumLogSeverity(component);
+}
+
+inline logger::LogSeverity getMinimumLogSeverity(logger::LogComponent component) {
+    return logger::globalLogDomain()->getMinimumLogSeverity(component);
+}
+
+inline logger::LogSeverity getMinimumLogSeverity() {
+    return logger::globalLogDomain()->getMinimumLogSeverity();
+}
+
+inline void setMinimumLoggedSeverity(logger::LogComponent component, logger::LogSeverity severity) {
+    logger::globalLogDomain()->setMinimumLoggedSeverity(component, severity);
+}
+
+inline void setMinimumLoggedSeverity(logger::LogSeverity severity) {
+    logger::globalLogDomain()->setMinimumLoggedSeverity(severity);
+}
+
+inline void clearMinimumLoggedSeverity(logger::LogComponent component) {
+    logger::globalLogDomain()->clearMinimumLoggedSeverity(component);
+}
+
 }  // namespace
 
 // MONGO_LOG uses log component from MongoLogDefaultComponent from current or global namespace.

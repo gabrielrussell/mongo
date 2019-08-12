@@ -82,7 +82,7 @@ Status storeMongoBridgeOptions(const moe::Environment& params,
             return {ErrorCodes::BadValue,
                     "The string for the --verbose option cannot contain characters other than 'v'"};
         }
-        logger::globalLogDomain()->setMinimumLoggedSeverity(
+        setMinimumLoggedSeverity(
             logger::LogSeverity::Debug(verbosity.length()));
     }
 

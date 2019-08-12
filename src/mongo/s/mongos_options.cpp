@@ -68,7 +68,7 @@ bool handlePreValidationMongosOptions(const moe::Environment& params,
         return false;
     }
     if (params.count("test") && params["test"].as<bool>() == true) {
-        ::mongo::logger::globalLogDomain()->setMinimumLoggedSeverity(
+        setMinimumLoggedSeverity(
             ::mongo::logger::LogSeverity::Debug(5));
         return false;
     }
