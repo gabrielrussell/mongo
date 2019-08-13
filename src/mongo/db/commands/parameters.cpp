@@ -53,10 +53,6 @@ using std::stringstream;
 namespace mongo {
 
 namespace {
-//using logger::LogComponent;
-//using logger::LogComponentSetting;
-//using logger::LogSeverity;
-//using logger::parseLogComponentSettings;
 
 void appendParameterNames(std::string* help) {
     *help += "supported:\n";

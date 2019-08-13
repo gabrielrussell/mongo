@@ -108,8 +108,7 @@ struct mongo_embedded_v1_lib {
         invariant(this->databaseCount.load() == 0);
 
         if (this->logCallbackHandle) {
-            using mongo::logger::globalLogDomain;
-            globalLogDomain()->detachAppender(this->logCallbackHandle);
+            logger::globalLogDomain()->detachAppender(this->logCallbackHandle);
             this->logCallbackHandle.reset();
         }
     }
@@ -204,13 +203,12 @@ std::unique_ptr<mongo_embedded_v1_lib> library;
 void registerLogCallback(mongo_embedded_v1_lib* const lib,
                          const mongo_embedded_v1_log_callback logCallback,
                          void* const logUserData) {
-    using logger::globalLogDomain;
-    using logger::MessageEventEphemeral;
-    using logger::MessageEventUnadornedEncoder;
 
-    lib->logCallbackHandle = globalLogDomain()->attachAppender(
-        std::make_unique<embedded::EmbeddedLogAppender<MessageEventEphemeral>>(
-            logCallback, logUserData, std::make_unique<MessageEventUnadornedEncoder>()));
+    lib->logCallbackHandle = logger::globalLogDomain()->attachAppender(
+        // move this into a fuction util/log.h
+        std::make_unique<embedded::EmbeddedLogAppender<logger::MessageEventEphemeral>>(
+            logCallback, logUserData, std::make_unique<logger::MessageEventUnadornedEncoder>())
+        );
 }
 
 mongo_embedded_v1_lib* capi_lib_init(mongo_embedded_v1_init_params const* params) try {
@@ -224,15 +222,14 @@ mongo_embedded_v1_lib* capi_lib_init(mongo_embedded_v1_init_params const* params
 
     // TODO(adam.martin): Fold all of this log initialization into the ctor of lib.
     if (params) {
-        using logger::globalLogManager;
         // The standard console log appender may or may not be installed here, depending if this is
         // the first time we initialize the library or not. Make sure we handle both cases.
         if (params->log_flags & MONGO_EMBEDDED_V1_LOG_STDOUT) {
-            if (!globalLogManager()->isDefaultConsoleAppenderAttached())
-                globalLogManager()->reattachDefaultConsoleAppender();
+            if (!logger::globalLogManager()->isDefaultConsoleAppenderAttached())
+                logger::globalLogManager()->reattachDefaultConsoleAppender();
         } else {
-            if (globalLogManager()->isDefaultConsoleAppenderAttached())
-                globalLogManager()->detachDefaultConsoleAppender();
+            if (logger::globalLogManager()->isDefaultConsoleAppenderAttached())
+                logger::globalLogManager()->detachDefaultConsoleAppender();
         }
 
         if ((params->log_flags & MONGO_EMBEDDED_V1_LOG_CALLBACK) && params->log_callback) {
@@ -247,9 +244,8 @@ mongo_embedded_v1_lib* capi_lib_init(mongo_embedded_v1_init_params const* params
     // Make sure that no actual logger is attached if library cannot be initialized.  Also prevent
     // exception leaking failures here.
     []() noexcept {
-        using logger::globalLogManager;
-        if (globalLogManager()->isDefaultConsoleAppenderAttached())
-            globalLogManager()->detachDefaultConsoleAppender();
+        if (logger::globalLogManager()->isDefaultConsoleAppenderAttached())
+            logger::globalLogManager()->detachDefaultConsoleAppender();
     }
     ();
     throw;

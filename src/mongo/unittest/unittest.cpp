@@ -81,6 +81,7 @@ logger::LogstreamBuilder warning() {
 
 void setupTestLogger() {
     unittestOutput->attachAppender(
+        // move this into util/log.h
         std::make_unique<logger::ConsoleAppender<logger::MessageLogDomain::Event>>(
             std::make_unique<logger::MessageEventDetailsEncoder>()));
 }

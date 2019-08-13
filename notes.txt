@@ -1,0 +1,26 @@
+globalLogDomain() abstract base class, implementing:
+    attachApppender()
+    detachAppender()
+    setMinimumLoggedSeverity()
+    hasMinimumLogSeverity()
+    getMinimumLogSeverity()
+    clearMinimumLoggedSeverity()
+
+globalLogManager() abstract base class, implementing:
+    reattachDefaultConsoleAppender
+    isDefaultConsoleAppenderAttached
+    detachDefaultConsoleAppender
+    getNamedDomain
+
+
+logger::Appender type which can be either:
+        std::unique_ptr<EventAppender>
+    or
+        boost::log::sinks::synchronous_sink<boost::log::sinks::text_ostream_backend>
+
+ShellConsoleAppender, StringVectorAppender, EmbeddedLogAppender, anything that subclasses EventAppender:
+    needs solution. Maybe just move to util/log.h and provide two implementations
+
+
+db/initialize_server_global_state.cpp:
+    move all of the initialization code into util/log.h

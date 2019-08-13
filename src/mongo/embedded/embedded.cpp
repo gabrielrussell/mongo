@@ -144,7 +144,6 @@ GlobalInitializerRegisterer filterAllowedIndexFieldNamesEmbeddedInitializer(
     {"FilterAllowedIndexFieldNames"});
 }  // namespace
 
-using logger::LogComponent;
 using std::endl;
 
 void shutdown(ServiceContext* srvContext) {
@@ -181,7 +180,7 @@ void shutdown(ServiceContext* srvContext) {
     }
     setGlobalServiceContext(nullptr);
 
-    log(LogComponent::kControl) << "now exiting";
+    log(logger::LogComponent::kControl) << "now exiting";
 }
 
 
@@ -216,7 +215,7 @@ ServiceContext* initialize(const char* yaml_config) {
 
     {
         ProcessId pid = ProcessId::getCurrent();
-        LogstreamBuilder l = log(LogComponent::kControl);
+        LogstreamBuilder l = log(logger::LogComponent::kControl);
         l << "MongoDB starting : pid=" << pid << " port=" << serverGlobalParams.port
           << " dbpath=" << storageGlobalParams.dbpath;
 
@@ -224,7 +223,7 @@ ServiceContext* initialize(const char* yaml_config) {
         l << (is32bit ? " 32" : " 64") << "-bit" << endl;
     }
 
-    DEV log(LogComponent::kControl) << "DEBUG build (which is slower)" << endl;
+    DEV log(logger::LogComponent::kControl) << "DEBUG build (which is slower)" << endl;
 
     // The periodic runner is required by the storage engine to be running beforehand.
     auto periodicRunner = std::make_unique<PeriodicRunnerEmbedded>(
@@ -282,7 +281,7 @@ ServiceContext* initialize(const char* yaml_config) {
     try {
         repairDatabasesAndCheckVersion(startupOpCtx.get());
     } catch (const ExceptionFor<ErrorCodes::MustDowngrade>& error) {
-        severe(LogComponent::kControl) << "** IMPORTANT: " << error.toStatus().reason();
+        severe(logger::LogComponent::kControl) << "** IMPORTANT: " << error.toStatus().reason();
         quickExit(EXIT_NEED_DOWNGRADE);
     }
 

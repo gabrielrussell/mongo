@@ -674,8 +674,10 @@ int _main(int argc, char* argv[], char** envp) {
 
     logger::globalLogManager()->getGlobalDomain()->clearAppenders();
     logger::globalLogManager()->getGlobalDomain()->attachAppender(
+        //move this into a function in util/log/h
         std::make_unique<ShellConsoleAppender>(
-            std::make_unique<logger::MessageEventDetailsEncoder>()));
+            std::make_unique<logger::MessageEventDetailsEncoder>()
+            ));
     mongo::shell_utils::RecordMyLocation(argv[0]);
 
     mongo::runGlobalInitializersOrDie(argc, argv, envp);
@@ -702,8 +704,11 @@ int _main(int argc, char* argv[], char** envp) {
 
     logger::globalLogManager()
         ->getNamedDomain("javascriptOutput")
-        ->attachAppender(std::make_unique<ShellConsoleAppender>(
-            std::make_unique<logger::MessageEventUnadornedEncoder>()));
+        ->attachAppender(
+                //util/log.h
+                std::make_unique<ShellConsoleAppender>(
+            std::make_unique<logger::MessageEventUnadornedEncoder>())
+                );
 
     // Get the URL passed to the shell
     std::string& cmdlineURI = shellGlobalParams.url;
