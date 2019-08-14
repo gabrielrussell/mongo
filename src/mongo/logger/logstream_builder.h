@@ -38,9 +38,11 @@
 #include "mongo/bson/bsontypes.h"
 #include "mongo/logger/log_component.h"
 #include "mongo/logger/log_severity.h"
-#include "mongo/logger/message_log_domain.h"
+#include "mongo/logger/message_log_domain-v2.h"
 #include "mongo/stdx/chrono.h"
 #include "mongo/util/exit_code.h"
+
+#include "mongo/util/duration.h"
 
 namespace mongo {
 namespace logger {

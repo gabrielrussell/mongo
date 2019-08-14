@@ -37,7 +37,7 @@
 #include "mongo/logger/appender.h"
 #include "mongo/logger/log_severity.h"
 #include "mongo/logger/logger.h"
-#include "mongo/logger/message_log_domain.h"
+#include "mongo/logger/message_log_domain-v2.h"
 #include "mongo/unittest/unittest.h"
 
 namespace mongo {

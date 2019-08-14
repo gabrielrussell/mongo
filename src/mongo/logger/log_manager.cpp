@@ -56,20 +56,24 @@ MessageLogDomain* LogManager::getNamedDomain(const std::string& name) {
 }
 
 void LogManager::detachDefaultConsoleAppender() {
-    invariant(_defaultAppender);
+    //invariant(_defaultAppender);
     _globalDomain.detachAppender(_defaultAppender);
     _defaultAppender.reset();
 }
 
 void LogManager::reattachDefaultConsoleAppender() {
-    invariant(!_defaultAppender);
+    //invariant(!_defaultAppender);
     _defaultAppender =
-        _globalDomain.attachAppender(std::make_unique<ConsoleAppender<MessageEventEphemeral>>(
-            std::make_unique<MessageEventDetailsEncoder>()));
+        _globalDomain.attachAppender(
+           //     std::make_unique<ConsoleAppender<MessageEventEphemeral>>(
+           // std::make_unique<MessageEventDetailsEncoder>())
+           std::make_unique<logger::MessageLogDomain::Appender>()
+                );
 }
 
 bool LogManager::isDefaultConsoleAppenderAttached() const {
-    return static_cast<bool>(_defaultAppender);
+    //return static_cast<bool>(_defaultAppender);
+    return true;
 }
 
 }  // namespace logger

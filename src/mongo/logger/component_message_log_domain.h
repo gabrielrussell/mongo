@@ -30,7 +30,7 @@
 #pragma once
 
 #include "mongo/logger/log_component_settings.h"
-#include "mongo/logger/message_log_domain.h"
+#include "mongo/logger/message_log_domain-v2.h"
 
 namespace mongo {
 namespace logger {

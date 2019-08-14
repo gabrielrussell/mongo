@@ -45,6 +45,7 @@
 #include "mongo/base/string_data.h"
 #include "mongo/logger/log_domain.h"
 #include "mongo/logger/logger.h"
+#include "mongo/logger/message_event.h"
 #include "mongo/platform/compiler.h"
 #include "mongo/stdx/thread.h"
 #include "mongo/util/concurrency/thread_name.h"
@@ -167,13 +168,13 @@ thread_local int MallocFreeOStreamGuard::terminateDepth = 0;
 // must hold MallocFreeOStreamGuard to call
 void writeMallocFreeStreamToLog() {
     // Just make this a function in util/log.h
-    logger::globalLogDomain()
-        ->append(logger::MessageEventEphemeral(Date_t::now(),
-                                               logger::LogSeverity::Severe(),
-                                               getThreadName(),
-                                               mallocFreeOStream.str())
-                     .setIsTruncatable(false))
-        .transitional_ignore();
+    //logger::globalLogDomain()
+    //    ->append(logger::MessageEventEphemeral(Date_t::now(),
+    //                                           logger::LogSeverity::Severe(),
+    //                                           getThreadName(),
+    //                                           mallocFreeOStream.str())
+    //                 .setIsTruncatable(false))
+    //    .transitional_ignore();
     mallocFreeOStream.rewind();
 }
 

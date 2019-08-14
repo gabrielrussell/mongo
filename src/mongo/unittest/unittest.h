@@ -46,7 +46,7 @@
 
 #include "mongo/base/status_with.h"
 #include "mongo/logger/logstream_builder.h"
-#include "mongo/logger/message_log_domain.h"
+#include "mongo/logger/message_log_domain-v2.h"
 #include "mongo/unittest/bson_test_util.h"
 #include "mongo/unittest/unittest_helpers.h"
 #include "mongo/util/assert_util.h"

@@ -1,4 +1,4 @@
-globalLogDomain() abstract base class, implementing:
+globalLogDomain() logger::ComponentMessageLogDomain abstract base class, implementing:
     attachApppender()
     detachAppender()
     setMinimumLoggedSeverity()
@@ -6,7 +6,7 @@ globalLogDomain() abstract base class, implementing:
     getMinimumLogSeverity()
     clearMinimumLoggedSeverity()
 
-globalLogManager() abstract base class, implementing:
+globalLogManager() abstract base class, implementing:  /// log_manager has already been replaced
     reattachDefaultConsoleAppender
     isDefaultConsoleAppenderAttached
     detachDefaultConsoleAppender

@@ -42,7 +42,7 @@
 #include "mongo/logger/log_component.h"
 #include "mongo/logger/log_component_settings.h"
 #include "mongo/logger/message_event_utf8_encoder.h"
-#include "mongo/logger/message_log_domain.h"
+#include "mongo/logger/message_log_domain-v2.h"
 #include "mongo/logger/rotatable_file_appender.h"
 #include "mongo/logger/rotatable_file_writer.h"
 #include "mongo/platform/compiler.h"
