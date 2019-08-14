@@ -30,7 +30,11 @@
 #pragma once
 
 #include "mongo/logger/log_component_settings.h"
+#ifdef USE_LOGV2
 #include "mongo/logger/message_log_domain-v2.h"
+#else
+#include "mongo/logger/message_log_domain.h"
+#endif
 
 namespace mongo {
 namespace logger {

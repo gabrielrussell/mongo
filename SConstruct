@@ -533,6 +533,15 @@ add_option('use-libunwind',
     type='choice',
 )
 
+add_option('use-logv2',
+    choices=["on", "off"],
+    const="on",
+    default="off",
+    help="Enable building with the new logv2 logger (experimental)",
+    nargs="?",
+    type='choice',
+)
+
 add_option('jlink',
         help="Limit link concurrency. Takes either an integer to limit to or a"
         " float between 0 and 1.0 whereby jobs will be multiplied to get the final"
@@ -3969,6 +3978,10 @@ if get_option('legacy-tarball') == 'true':
 
 module_sconscripts = moduleconfig.get_module_sconscripts(mongo_modules)
 
+use_logv2 = get_option("use-logv2") == "on"
+if use_logv2:
+    env.Append( CPPDEFINES=[ 'USE_LOGV2' ] )
+
 # The following symbols are exported for use in subordinate SConscript files.
 # Ideally, the SConscript files would be purely declarative.  They would only
 # import build environment objects, and would contain few or no conditional
@@ -3991,6 +4004,7 @@ Export([
     'serverJs',
     'ssl_provider',
     'use_libunwind',
+    'use_logv2',
     'use_system_libunwind',
     'use_system_version_of_library',
     'use_vendored_libunwind',

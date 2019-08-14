@@ -38,7 +38,11 @@
 #include "mongo/bson/bsontypes.h"
 #include "mongo/logger/log_component.h"
 #include "mongo/logger/log_severity.h"
+#ifdef USE_LOGV2
 #include "mongo/logger/message_log_domain-v2.h"
+#else
+#include "mongo/logger/message_log_domain.h"
+#endif
 #include "mongo/stdx/chrono.h"
 #include "mongo/util/exit_code.h"
 

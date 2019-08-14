@@ -35,6 +35,7 @@
 
 #include "mongo/logger/appender.h"
 #include "mongo/logger/log_severity.h"
+#include "mongo/logger/message_event.h"
 
 namespace mongo {
 namespace logger {
@@ -45,14 +46,17 @@ class MessageLogDomain {
 
 public:
 
+    class Appender { // can this be made from Appender<MessageEventEphemeral> ?
+        public:
+            // TODO The implementation needs to call logv2::doLog with the guts of the event
+            Status append(const MessageEventEphemeral& event);
+        private:
+    };
+
     /**
      * Opaque handle returned by attachAppender(), which can be subsequently passed to
      * detachAppender() to detach an appender from an instance of MessageLogDomain.
      */
-    class Appender {
-        private:
-            std::unique_ptr<std::string> foo;
-    };
     class AppenderHandle {
         public:
             void reset();
@@ -70,7 +74,7 @@ public:
      * *If abortOnFailure is set, ::abort() is immediately called.
      * *If abortOnFailure is not set, the error is returned and no further appenders are called.
      */
-    Status append(std::string event);
+    Status append(const MessageEventEphemeral& event);
 
     /**
      * Gets the state of the abortOnFailure flag.

@@ -62,12 +62,11 @@ Status logger::registerExtraLogContextFn(logger::ExtraLogContextFn contextFn) {
 }
 
 bool rotateLogs(bool renameFiles) {
-    using logger::RotatableFileManager;
-    RotatableFileManager* manager = logger::globalRotatableFileManager();
+    logger::RotatableFileManager* manager = logger::globalRotatableFileManager();
     log() << "Log rotation initiated";
-    RotatableFileManager::FileNameStatusPairVector result(
+    logger::RotatableFileManager::FileNameStatusPairVector result(
         manager->rotateAll(renameFiles, "." + terseCurrentTime(false)));
-    for (RotatableFileManager::FileNameStatusPairVector::iterator it = result.begin();
+    for (logger::RotatableFileManager::FileNameStatusPairVector::iterator it = result.begin();
          it != result.end();
          it++) {
         warning() << "Rotating log file " << it->first << " failed: " << it->second.toString();
@@ -87,13 +86,16 @@ void logContext(const char* errmsg) {
 void setPlainConsoleLogger() {
     logger::globalLogManager()->getGlobalDomain()->clearAppenders();
     logger::globalLogManager()->getGlobalDomain()->attachAppender(
+#ifdef USE_LOGV2
         std::make_unique<logger::MessageLogDomain::Appender>()
-        //std::make_unique<logger::ConsoleAppender<logger::MessageEventEphemeral>>(
-        //    std::make_unique<logger::MessageEventUnadornedEncoder>())
+#else
+        std::make_unique<logger::ConsoleAppender<logger::MessageEventEphemeral>>(
+            std::make_unique<logger::MessageEventUnadornedEncoder>())
+#endif
         );
 }
 
-Tee* const warnings = RamLog::get("warnings");  // Things put here go in serverStatus
-Tee* const startupWarningsLog = RamLog::get("startupWarnings");  // intentionally leaked
+logger::Tee* const warnings = RamLog::get("warnings");  // Things put here go in serverStatus
+logger::Tee* const startupWarningsLog = RamLog::get("startupWarnings");  // intentionally leaked
 
 }  // namespace mongo

@@ -91,20 +91,20 @@ LogstreamBuilder::~LogstreamBuilder() {
         if (!_baseMessage.empty())
             _baseMessage.push_back(' ');
         _baseMessage += _os->str();
-        //MessageEventEphemeral message(
-        //    Date_t::now(), _severity, _component, _contextName, _baseMessage);
-        //message.setIsTruncatable(_isTruncatable);
-        //_domain->append(message).transitional_ignore();
-        //if (_tee) {
-        //    _os->str("");
-        //    logger::MessageEventDetailsEncoder teeEncoder;
-        //    teeEncoder.encode(message, *_os);
-        //    _tee->write(_os->str());
-        //}
-        //_os->str("");
-        //if (_shouldCache && isThreadOstreamCacheInitialized && !threadOstreamCache) {
-        //    threadOstreamCache = std::move(_os);
-        //}
+        MessageEventEphemeral message(
+            Date_t::now(), _severity, _component, _contextName, _baseMessage);
+        message.setIsTruncatable(_isTruncatable);
+        _domain->append(message).transitional_ignore();
+        if (_tee) {
+            _os->str("");
+            logger::MessageEventDetailsEncoder teeEncoder;
+            teeEncoder.encode(message, *_os);
+            _tee->write(_os->str());
+        }
+        _os->str("");
+        if (_shouldCache && isThreadOstreamCacheInitialized && !threadOstreamCache) {
+            threadOstreamCache = std::move(_os);
+        }
     }
 }
 

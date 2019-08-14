@@ -56,24 +56,40 @@ MessageLogDomain* LogManager::getNamedDomain(const std::string& name) {
 }
 
 void LogManager::detachDefaultConsoleAppender() {
-    //invariant(_defaultAppender);
+#ifndef USE_LOGV2
+    invariant(_defaultAppender);
+#endif
     _globalDomain.detachAppender(_defaultAppender);
     _defaultAppender.reset();
 }
 
 void LogManager::reattachDefaultConsoleAppender() {
-    //invariant(!_defaultAppender);
+    // TODO
+    // Call the function with the same name as this one from logv2
+    // and get the sink out
+#ifndef USE_LOGV2
+    invariant(!_defaultAppender);
+#endif
     _defaultAppender =
         _globalDomain.attachAppender(
-           //     std::make_unique<ConsoleAppender<MessageEventEphemeral>>(
-           // std::make_unique<MessageEventDetailsEncoder>())
+#ifdef USE_LOGV2
+           // TODO
+           // MessageLogDomain::Appender is currently an empty type
+           // it will need to be constructed with the logv2 sink from above
            std::make_unique<logger::MessageLogDomain::Appender>()
+#else
+               std::make_unique<ConsoleAppender<MessageEventEphemeral>>(
+           std::make_unique<MessageEventDetailsEncoder>())
+#endif
                 );
 }
 
 bool LogManager::isDefaultConsoleAppenderAttached() const {
-    //return static_cast<bool>(_defaultAppender);
+#ifdef USE_LOGV2
     return true;
+#else
+    return static_cast<bool>(_defaultAppender);
+#endif
 }
 
 }  // namespace logger

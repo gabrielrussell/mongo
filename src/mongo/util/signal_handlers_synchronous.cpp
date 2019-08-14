@@ -167,15 +167,18 @@ thread_local int MallocFreeOStreamGuard::terminateDepth = 0;
 
 // must hold MallocFreeOStreamGuard to call
 void writeMallocFreeStreamToLog() {
-    // Just make this a function in util/log.h
-    //logger::globalLogDomain()
-    //    ->append(logger::MessageEventEphemeral(Date_t::now(),
-    //                                           logger::LogSeverity::Severe(),
-    //                                           getThreadName(),
-    //                                           mallocFreeOStream.str())
-    //                 .setIsTruncatable(false))
-    //    .transitional_ignore();
+#ifdef USE_LOGV2
+
+#else
+    logger::globalLogDomain()
+        ->append(logger::MessageEventEphemeral(Date_t::now(),
+                                               logger::LogSeverity::Severe(),
+                                               getThreadName(),
+                                               mallocFreeOStream.str())
+                     .setIsTruncatable(false))
+        .transitional_ignore();
     mallocFreeOStream.rewind();
+#endif
 }
 
 // must hold MallocFreeOStreamGuard to call

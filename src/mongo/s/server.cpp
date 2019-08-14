@@ -119,8 +119,6 @@
 
 namespace mongo {
 
-using logger::LogComponent;
-
 #if !defined(__has_feature)
 #define __has_feature(x) 0
 #endif
@@ -257,7 +255,7 @@ void cleanupTask(ServiceContext* serviceContext) {
 
         // Shutdown the TransportLayer so that new connections aren't accepted
         if (auto tl = serviceContext->getTransportLayer()) {
-            log(LogComponent::kNetwork) << "shutdown: going to close all sockets...";
+            log(logger::LogComponent::kNetwork) << "shutdown: going to close all sockets...";
 
             tl->shutdown();
         }
@@ -320,7 +318,7 @@ void cleanupTask(ServiceContext* serviceContext) {
         // Shutdown the Service Entry Point and its sessions and give it a grace period to complete.
         if (auto sep = serviceContext->getServiceEntryPoint()) {
             if (!sep->shutdown(Seconds(10))) {
-                log(LogComponent::kNetwork)
+                log(logger::LogComponent::kNetwork)
                     << "Service entry point failed to shutdown within timelimit.";
             }
         }
@@ -329,7 +327,7 @@ void cleanupTask(ServiceContext* serviceContext) {
         if (auto svcExec = serviceContext->getServiceExecutor()) {
             Status status = svcExec->shutdown(Seconds(5));
             if (!status.isOK()) {
-                log(LogComponent::kNetwork)
+                log(logger::LogComponent::kNetwork)
                     << "Service executor failed to shutdown within timelimit: " << status.reason();
             }
         }
@@ -651,7 +649,7 @@ ExitCode main(ServiceContext* serviceContext) {
         }
 
         if (configAddr.isLocalHost() != shardingContext->allowLocalHost()) {
-            log(LogComponent::kDefault) << "cannot mix localhost and ip addresses in configdbs";
+            log(logger::LogComponent::kDefault) << "cannot mix localhost and ip addresses in configdbs";
             return EXIT_BADOPTIONS;
         }
     }
@@ -707,7 +705,7 @@ ExitCode mongoSMain(int argc, char* argv[], char** envp) {
 
     Status status = runGlobalInitializers(argc, argv, envp);
     if (!status.isOK()) {
-        severe(LogComponent::kDefault) << "Failed global initialization: " << status;
+        severe(logger::LogComponent::kDefault) << "Failed global initialization: " << status;
         return EXIT_ABRUPT;
     }
 
@@ -715,7 +713,7 @@ ExitCode mongoSMain(int argc, char* argv[], char** envp) {
         setGlobalServiceContext(ServiceContext::make());
     } catch (...) {
         auto cause = exceptionToStatus();
-        severe(LogComponent::kDefault) << "Failed to create service context: " << redact(cause);
+        severe(logger::LogComponent::kDefault) << "Failed to create service context: " << redact(cause);
         return EXIT_ABRUPT;
     }
 
