@@ -358,12 +358,13 @@ void ValueWriter::_writeObject(BSONObjBuilder* b,
                 uassert(ErrorCodes::BadValue, "Cannot call getter on BinData prototype", str);
 
                 auto binData = base64::decode(*str);
+                auto type = static_cast<mongo::BinDataType>(static_cast<int>(o.getNumber(InternedString::type)));
 
-                b->appendBinData(sd,
-                                 binData.size(),
-                                 static_cast<mongo::BinDataType>(
-                                     static_cast<int>(o.getNumber(InternedString::type))),
-                                 binData.c_str());
+                if (type == 2) {
+                    b->appendBinData(sd, binData.size(), type, binData.c_str());
+                } else {
+                    b->appendBinDataArrayDeprecated(sd, binData.c_str(), binData.size());
+                }
 
                 return;
             }
