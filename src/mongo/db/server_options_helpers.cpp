@@ -53,6 +53,7 @@
 #include "mongo/util/cmdline_utils/censor_cmdline.h"
 #include "mongo/util/fail_point.h"
 #include "mongo/util/log.h"
+#include "mongo/util/log_global_settings.h"
 #include "mongo/util/map_util.h"
 #include "mongo/util/net/sock.h"
 #include "mongo/util/net/socket_utils.h"
@@ -263,6 +264,11 @@ Status storeBaseOptions(const moe::Environment& params) {
         return ret;
     }
 
+    if (params.count("logv2")) {
+        serverGlobalParams.logV2 = true;
+    }
+    logV2Set(serverGlobalParams.logV2);
+
     if (params.count("systemLog.verbosity")) {
         int verbosity = params["systemLog.verbosity"].as<int>();
         if (verbosity < 0) {
@@ -270,7 +276,7 @@ Status storeBaseOptions(const moe::Environment& params) {
             return Status(ErrorCodes::BadValue,
                           "systemLog.verbosity YAML Config cannot be negative");
         }
-        logger::globalLogDomain()->setMinimumLoggedSeverity(logger::LogSeverity::Debug(verbosity));
+        setMinimumLoggedSeverity(logger::LogSeverity::Debug(verbosity));
     }
 
     // log component hierarchy verbosity levels
@@ -284,10 +290,9 @@ Status storeBaseOptions(const moe::Environment& params) {
             int verbosity = params[dottedName].as<int>();
             // Clear existing log level if log level is negative.
             if (verbosity < 0) {
-                logger::globalLogDomain()->clearMinimumLoggedSeverity(component);
+                clearMinimumLoggedSeverity(component);
             } else {
-                logger::globalLogDomain()->setMinimumLoggedSeverity(
-                    component, logger::LogSeverity::Debug(verbosity));
+                setMinimumLoggedSeverity(component, logger::LogSeverity::Debug(verbosity));
             }
         }
     }
@@ -321,9 +326,7 @@ Status storeBaseOptions(const moe::Environment& params) {
             return Status(ErrorCodes::BadValue, sb.str());
         }
     }
-    if (params.count("logv2")) {
-        serverGlobalParams.logV2 = true;
-    }
+
     if (params.count("systemLog.destination")) {
         std::string systemLogDestination = params["systemLog.destination"].as<std::string>();
         if (systemLogDestination == "file") {
