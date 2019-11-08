@@ -305,6 +305,7 @@ config_header_substs = (
     ('@mongo_config_usdt_enabled@', 'MONGO_CONFIG_USDT_ENABLED'),
     ('@mongo_config_usdt_provider@', 'MONGO_CONFIG_USDT_PROVIDER'),
     ('@mongo_config_wiredtiger_enabled@', 'MONGO_CONFIG_WIREDTIGER_ENABLED'),
+    ('@mongo_config_logv2_build@', 'MONGO_CONFIG_LOGV2_BUILD'),
 )
 
 def makeConfigHeaderDefine(self, key):

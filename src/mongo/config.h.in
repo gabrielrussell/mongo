@@ -91,3 +91,6 @@
 
 // Defined if WiredTiger storage engine is enabled
 @mongo_config_wiredtiger_enabled@
+
+// Defined if logv2 should be used by default
+@mongo_config_logv2_build@
