@@ -29,6 +29,7 @@
 
 #pragma once
 
+#include "mongo/config.h"
 #include "mongo/db/jsobj.h"
 #include "mongo/logv2/log_format.h"
 #include "mongo/platform/atomic_word.h"

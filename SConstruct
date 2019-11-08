@@ -337,6 +337,11 @@ add_option('use-sasl-client',
     nargs=0,
 )
 
+add_option('use-logv2',
+    help='Build with logv2 on by default',
+    nargs=0,
+)
+
 # Most of the "use-system-*" options follow a simple form.
 for pack in [
     ('abseil-cpp',),
@@ -1510,6 +1515,9 @@ if link_model.startswith("dynamic"):
 
 if optBuild:
     env.SetConfigHeaderDefine("MONGO_CONFIG_OPTIMIZED_BUILD")
+
+if bool(has_option("use-logv2")):
+    env.SetConfigHeaderDefine("MONGO_CONFIG_LOGV2_BUILD")
 
 # Enable the fast decider if explicitly requested or if in 'auto' mode
 # and not in conflict with other options like the ninja option which
