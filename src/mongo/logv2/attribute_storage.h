@@ -88,14 +88,14 @@ public:
     template <typename T,
               typename = std::enable_if_t<!std::is_integral_v<T> && !std::is_floating_point_v<T>>>
     NamedAttribute(StringData n, const T& val) : name(n) {
-        static_assert(HasToString<T>::value, "custom type needs toString() implementation");
+        //static_assert(HasToString<T>::value, "custom type needs toString() implementation");
 
         CustomAttributeValue custom;
         if constexpr (HasToBSON<T>::value) {
-            custom.toBSON = std::bind(&T::toBSON, val);
+            //custom.toBSON = std::bind(&T::toBSON, val);
         }
         if constexpr (HasToString<T>::value) {
-            custom.toString = std::bind(&T::toString, val);
+            //custom.toString = std::bind(&T::toString, val);
         }
 
         value = std::move(custom);
