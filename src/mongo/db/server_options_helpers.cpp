@@ -265,9 +265,8 @@ Status storeBaseOptions(const moe::Environment& params) {
     }
 
     if (params.count("logv2")) {
-        serverGlobalParams.logV2 = true;
+        logV2Set(true);
     }
-    logV2Set(serverGlobalParams.logV2);
 
     if (params.count("systemLog.verbosity")) {
         int verbosity = params["systemLog.verbosity"].as<int>();
@@ -383,7 +382,7 @@ Status storeBaseOptions(const moe::Environment& params) {
 
     if (params.count("systemLog.logFormat")) {
         std::string formatStr = params["systemLog.logFormat"].as<string>();
-        if (!serverGlobalParams.logV2 && formatStr != "default")
+        if (!logV2Enabled() && formatStr != "default")
             return Status(ErrorCodes::BadValue,
                           "Can only use systemLog.logFormat if logv2 is enabled.");
         if (formatStr == "default") {
