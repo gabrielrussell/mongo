@@ -65,11 +65,11 @@ RotatableFileWriter* RotatableFileManager::getFile(const std::string& name) {
 }
 
 RotatableFileManager::FileNameStatusPairVector RotatableFileManager::rotateAll(
-    bool renameFiles, const std::string& renameTargetSuffix) {
+    bool renameFiles, const std::string& renameTargetSuffix, bool append) {
     FileNameStatusPairVector badStatuses;
     for (WriterByNameMap::const_iterator iter = _writers.begin(); iter != _writers.end(); ++iter) {
         Status status = RotatableFileWriter::Use(iter->second)
-                            .rotate(renameFiles, iter->first + renameTargetSuffix);
+                            .rotate(renameFiles, iter->first + renameTargetSuffix, append);
         if (!status.isOK()) {
             badStatuses.push_back(std::make_pair(iter->first, status));
         }

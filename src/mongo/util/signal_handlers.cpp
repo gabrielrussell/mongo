@@ -215,7 +215,10 @@ void handleOneSignal(const SignalWaitResult& waited, LogRotationState* rotation)
                 return;
             rotation->previous = now;
         }
-        fassert(16782, rotateLogs(serverGlobalParams.logRenameOnRotate, logV2Enabled()));
+        fassert(16782,
+                rotateLogs(serverGlobalParams.logRenameOnRotate,
+                           logV2Enabled(),
+                           serverGlobalParams.logAppend));
         if (rotation->logFileStatus == LogFileStatus::kNeedToRotateLogFile) {
             logProcessDetailsForLogRotate(getGlobalServiceContext());
         }

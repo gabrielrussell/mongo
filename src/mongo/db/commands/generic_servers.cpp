@@ -196,7 +196,8 @@ public:
                      const std::string& ns,
                      const BSONObj& cmdObj,
                      BSONObjBuilder& result) {
-        bool didRotate = rotateLogs(serverGlobalParams.logRenameOnRotate, logV2Enabled());
+        bool didRotate = rotateLogs(
+            serverGlobalParams.logRenameOnRotate, logV2Enabled(), serverGlobalParams.logAppend);
         if (didRotate)
             logProcessDetailsForLogRotate(opCtx->getServiceContext());
         return didRotate;

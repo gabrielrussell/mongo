@@ -82,7 +82,7 @@ Status logger::registerExtraLogContextFn(logger::ExtraLogContextFn contextFn) {
     return Status::OK();
 }
 
-bool rotateLogs(bool renameFiles, bool useLogV2) {
+bool rotateLogs(bool renameFiles, bool useLogV2, bool append) {
     if (useLogV2) {
         log() << "Logv2 rotation initiated";
         return logv2::LogManager::global().getGlobalDomainInternal().rotate().isOK();
@@ -91,7 +91,7 @@ bool rotateLogs(bool renameFiles, bool useLogV2) {
     RotatableFileManager* manager = logger::globalRotatableFileManager();
     log() << "Log rotation initiated";
     RotatableFileManager::FileNameStatusPairVector result(
-        manager->rotateAll(renameFiles, "." + terseCurrentTime(false)));
+        manager->rotateAll(renameFiles, "." + terseCurrentTime(false), append));
     for (RotatableFileManager::FileNameStatusPairVector::iterator it = result.begin();
          it != result.end();
          it++) {
