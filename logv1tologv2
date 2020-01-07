@@ -19,7 +19,7 @@ sub convert {
     }
 
     # just toss out a terminal endl
-    if ($parts[-1] =~ /\bendl$/) {
+    if (@parts && $parts[-1] =~ /\bendl$/) {
         pop(@parts);
     }
 
@@ -44,21 +44,17 @@ sub convert {
     }
     my $output = "LOGV2";
 
-    if ($severity) {
-        $output .= "_DEBUG";
-    }
-    if ($options) {
-        $output .= "_OPTIONS";
-    }
     my @params;
     if ($severity) {
-        if ($severity =~ /\D/) {
-            push(@params, "::mongo::logger::LogSeverity($severity).toInt()");
-        } else {
+        if ($severity =~ /component/i) {
             push(@params, $severity);
+        } else {
+            push(@params, "::mongo::logger::LogSeverity($severity).toInt()");
+            $output .= "_DEBUG";
         }
     }
     if ($options) {
+        $output .= "_OPTIONS";
         push(@params, $options);
     }
     push(@params,"\"$message\"");
