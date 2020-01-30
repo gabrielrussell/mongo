@@ -73,3 +73,5 @@ src/mongo/util/net/ocsp	security	spencer.jackson@10gen.com
 src/mongo/util/net/ssl	security	spencer.jackson@10gen.com
 src/mongo/util/options_parser	security	spencer.jackson@10gen.com
 src/mongo/watchdog	security	spencer.jackson@10gen.com
+src/mongo/embedded	dev-tools	henrik.edin@10gen.com
+src/mongo/client	dev-tools	gabriel.russell@10gen.com

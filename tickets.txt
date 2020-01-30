@@ -1,0 +1,11 @@
+SERVER-45868	billy.donahue@mongodb.com/dev-tools
+SERVER-45869	gabriel.russell@10gen.com/dev-tools
+SERVER-45870	geert.bosch@10gen.com/execution
+SERVER-45871	jason.carey@10gen.com/servarch
+SERVER-45872	jason.carey@10gen.com/sharding
+SERVER-45873	mark.benvenuto@10gen.com/security
+SERVER-45874	pawel.terlecki@mongodb.com/query
+SERVER-45875	spencer.jackson@10gen.com/execution
+SERVER-45876	spencer.jackson@10gen.com/query
+SERVER-45877	spencer.jackson@10gen.com/security
+SERVER-45878	tess.avitabile@10gen.com/repl
