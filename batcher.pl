@@ -15,12 +15,10 @@ while (<$tickets_file>) {
     $tickets->{$fields[1]}=$fields[0];
 }
 
-open(my $batches_file, $ARGV[0]) or die $!;
-while (<$batches_file>) {
+while (<STDIN>) {
     next if /^#/;
     s/\r?\n//;
     my @fields = split(/\t/);
-    #$fields[0],"\n";
     $batch_reviewers->{$fields[0]}="$fields[2]/$fields[1]";
 }
 
@@ -60,7 +58,7 @@ while (<$files_file>) {
 sub run {
     my @cmd = @_;
     print( join(" ",map { / /?"\"$_\"":$_ } @cmd),"\n" );
-    #exec(@cmd);
+    #system(@cmd);
 }
 
 foreach my $reviewer (sort keys %$tickets) {
@@ -76,13 +74,14 @@ foreach my $reviewer (sort keys %$tickets) {
         print("BATCH $batch $batch_reviewers->{$batch} $tickets->{$batch_reviewers->{$batch}} @{$found_batches->{$batch}}\n");
         push(@files, @{$found_batches->{$batch}});
     }
+    next unless @files;
     print (join(", ",@files)."\n\n");
-    #    run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
+    run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
     #    run(qw(git commit -m xxx));
-    #    run(qw(git cifa));
-    #    run("./logv1tologv2",@files); 
-    #    run(qw(buildscripts/clang_format.py format));
-    #    run(qw(evergreen patch -p mongodb-mongo-master  --yes -a required -f), "-d", "structured logging auto-conversion of $batch");
+    run(qw(git cifa));
+    run("./logv1tologv2",@files); 
+    run(qw(buildscripts/clang_format.py format));
+    run(qw(evergreen patch -p mongodb-mongo-master  --yes -a required -f), "-d", "structured logging auto-conversion of $reviewer");
 }
 
 #for my $batch (sort keys %$found_batches) {
