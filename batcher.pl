@@ -61,37 +61,48 @@ sub run {
     #system(@cmd);
 }
 
-foreach my $reviewer (sort keys %$tickets) {
-    print("REVIEWER $reviewer\n");
-    my @files;
-    foreach my $batch (sort keys %$batch_reviewers) {
-        if ($batch_reviewers->{$batch} ne $reviewer) {
-            next;
+sub patch {
+    my $filter = shift;
+    foreach my $reviewer (sort keys %$tickets) {
+        next unless $reviewer =~ m/$filter/;
+        print("REVIEWER $reviewer\n");
+        my @files;
+        foreach my $batch (sort keys %$batch_reviewers) {
+            if ($batch_reviewers->{$batch} ne $reviewer) {
+                next;
+            }
+            if (! defined $found_batches->{$batch}) {
+                next;
+            }
+            print("BATCH $batch $batch_reviewers->{$batch} $tickets->{$batch_reviewers->{$batch}} @{$found_batches->{$batch}}\n");
+            push(@files, @{$found_batches->{$batch}});
         }
-        if (! defined $found_batches->{$batch}) {
-            next;
-        }
-        print("BATCH $batch $batch_reviewers->{$batch} $tickets->{$batch_reviewers->{$batch}} @{$found_batches->{$batch}}\n");
-        push(@files, @{$found_batches->{$batch}});
+        next unless @files;
+        print (join(", ",@files)."\n\n");
+        run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
+        #    run(qw(git commit -m xxx));
+        run(qw(git cifa));
+        run("./logv1tologv2",@files); 
+        run(qw(buildscripts/clang_format.py format));
+        run(qw(evergreen patch -p mongodb-mongo-master  --yes -a required -f), "-d", "structured logging auto-conversion of $reviewer");
     }
-    next unless @files;
-    print (join(", ",@files)."\n\n");
-    run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
-    #    run(qw(git commit -m xxx));
-    run(qw(git cifa));
-    run("./logv1tologv2",@files); 
-    run(qw(buildscripts/clang_format.py format));
-    run(qw(evergreen patch -p mongodb-mongo-master  --yes -a required -f), "-d", "structured logging auto-conversion of $reviewer");
 }
 
-#for my $batch (sort keys %$found_batches) {
-#    my @files = @{$found_batches->{$batch}};
-#    print ("BATCH $batch $batch_reviewers->{$batch}\n");
-#    run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
-#    run(qw(git commit -m xxx));
-#    run(qw(git cifa));
-#    run("./logv1tologv2",@files); 
-#    run(qw(buildscripts/clang_format.py format));
-#    run(qw(evergreen patch -p mongodb-mongo-master  --yes -a required -f), "-d", "structured logging auto-conversion of $batch");
-#    run(qw(python ~/git/kernel-tools/codereview/upload.py --git_no_find_copies -y),"-r", $batch_reviewers->{$batch}, "--send_mail", "-m", "structured logging auto-conversion of ".$batch, "HEAD");
-#}
+sub upload {
+    my $filter = shift;
+    for my $batch (sort keys %$found_batches) {
+        next unless $batch_reviewers->{$batch} =~ m/$filter/;
+        my @files = @{$found_batches->{$batch}};
+        print ("BATCH $batch $batch_reviewers->{$batch}\n");
+        run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
+        run(qw(git commit -m xxx));
+        run(qw(git cifa));
+        run("./logv1tologv2",@files); 
+        run(qw(buildscripts/clang_format.py format));
+        run(qw(evergreen patch -p mongodb-mongo-master  --yes -a required -f), "-d", "structured logging auto-conversion of $batch");
+        run(qw(python ~/git/kernel-tools/codereview/upload.py --git_no_find_copies -y),"-r", $batch_reviewers->{$batch}, "--send_mail", "-m", "structured logging auto-conversion of ".$batch, "HEAD");
+    }
+}
+
+my $filter = shift;
+upload($filter);
