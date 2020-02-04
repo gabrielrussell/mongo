@@ -2,6 +2,7 @@
 
 use strict;
 use Text::Glob qw(match_glob);
+use File::pushd;
 
 my $batch_reviewers = {};
 my $found_batches = {};
@@ -55,12 +56,18 @@ while (<$files_file>) {
     }
 }
 
-sub run {
+sub try_run {
+    my $dir = shift;
+    my $push_dir = pushd($dir);
     my @cmd = @_;
-    print( join(" ",map { / /?"\"$_\"":$_ } @cmd),"\n" );
+    print( "pushd $dir; ". join(" ",map { / /?"\"$_\"":$_ } @cmd)."; popd\n" );
     if ($ENV{DO_IT}) {
-        system(@cmd) and die $!;
+        return system(@cmd);
     }
+    return 0;
+}
+sub run {
+    try_run(@_) and die $!;
 }
 
 sub patch {
@@ -83,11 +90,11 @@ sub patch {
         print (join(", ",@files)."\n\n");
         #run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
         #run(qw(git commit -m xxx));
-        run(qw(git  --git-dir src/mongo/db/modules/enterprise/.git --work-tree src/mongo/db/modules/enterprise/ cifa));
-        run(qw(git cifa));
-        run("./logv1tologv2",@files); 
-        run(qw(buildscripts/clang_format.py format));
-        run(qw(evergreen patch -p mongodb-mongo-master  --yes -a required -f), "-d", "structured logging auto-conversion of $reviewer");
+        run(".",qw(git  --git-dir src/mongo/db/modules/enterprise/.git --work-tree src/mongo/db/modules/enterprise/ cifa));
+        run(".",qw(git cifa));
+        run(".","./logv1tologv2",@files); 
+        run(".",qw(buildscripts/clang_format.py format));
+        run(".",qw(evergreen patch -p mongodb-mongo-master  --yes -a required -f), "-d", "structured logging auto-conversion of $reviewer");
     }
 }
 
@@ -100,11 +107,12 @@ sub upload {
         my ($reviewer) = ($batch_reviewers->{$batch} =~ m/(.*)\//);
         #run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
         #run(qw(git commit -m xxx));
-        run(qw(git  --git-dir src/mongo/db/modules/enterprise/.git --work-tree src/mongo/db/modules/enterprise/ cifa));
-        run(qw(git cifa));
-        run("./logv1tologv2",@files); 
-        run(qw(buildscripts/clang_format.py format));
-        run(qw(/home/gabriel/git/kernel-tools/codereview/upload.py --git_no_find_copies -y),"-r", $reviewer, "--send_mail", "-m", "structured logging auto-conversion of ".$batch, "HEAD");
+        run("src/mongo/db/modules/enterprise",qw(git cifa));
+        run(".",qw(git cifa));
+        run(".","./logv1tologv2",@files); 
+        run(".",qw(buildscripts/clang_format.py format));
+        try_run(".",qw(/home/gabriel/git/kernel-tools/codereview/upload.py --git_no_find_copies -y),"-r", $reviewer, "--send_mail", "-m", "structured logging auto-conversion of ".$batch, "HEAD");
+        try_run("src/mongo/db/modules/enterprise",qw(/home/gabriel/git/kernel-tools/codereview/upload.py --git_no_find_copies -y),"-r", $reviewer, "--send_mail", "-m", "structured logging auto-conversion of ".$batch."(enterprise)", "HEAD");
     }
 }
 
