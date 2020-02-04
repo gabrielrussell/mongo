@@ -79,8 +79,8 @@ sub patch {
         }
         next unless @files;
         print (join(", ",@files)."\n\n");
-        run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
-        #    run(qw(git commit -m xxx));
+        #run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
+        #run(qw(git commit -m xxx));
         run(qw(git cifa));
         run("./logv1tologv2",@files); 
         run(qw(buildscripts/clang_format.py format));
@@ -94,12 +94,11 @@ sub upload {
         next unless $batch_reviewers->{$batch} =~ m/$filter/;
         my @files = @{$found_batches->{$batch}};
         print ("BATCH $batch $batch_reviewers->{$batch}\n");
-        run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
-        run(qw(git commit -m xxx));
+        #run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
+        #run(qw(git commit -m xxx));
         run(qw(git cifa));
         run("./logv1tologv2",@files); 
         run(qw(buildscripts/clang_format.py format));
-        run(qw(evergreen patch -p mongodb-mongo-master  --yes -a required -f), "-d", "structured logging auto-conversion of $batch");
         run(qw(python ~/git/kernel-tools/codereview/upload.py --git_no_find_copies -y),"-r", $batch_reviewers->{$batch}, "--send_mail", "-m", "structured logging auto-conversion of ".$batch, "HEAD");
     }
 }
