@@ -58,7 +58,7 @@ while (<$files_file>) {
 sub run {
     my @cmd = @_;
     print( join(" ",map { / /?"\"$_\"":$_ } @cmd),"\n" );
-    #system(@cmd);
+    system(@cmd) if $ENV{DO_IT};
 }
 
 sub patch {
