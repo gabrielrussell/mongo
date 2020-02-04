@@ -58,7 +58,9 @@ while (<$files_file>) {
 sub run {
     my @cmd = @_;
     print( join(" ",map { / /?"\"$_\"":$_ } @cmd),"\n" );
-    system(@cmd) if $ENV{DO_IT};
+    if ($ENV{DO_IT}) {
+        system(@cmd) and die $!;
+    }
 }
 
 sub patch {
@@ -100,7 +102,7 @@ sub upload {
         run(qw(git cifa));
         run("./logv1tologv2",@files); 
         run(qw(buildscripts/clang_format.py format));
-        run(qw(~/git/kernel-tools/codereview/upload.py --git_no_find_copies -y),"-r", $reviewer, "--send_mail", "-m", "structured logging auto-conversion of ".$batch, "HEAD");
+        run(qw(/home/gabriel/git/kernel-tools/codereview/upload.py --git_no_find_copies -y),"-r", $reviewer, "--send_mail", "-m", "structured logging auto-conversion of ".$batch, "HEAD");
     }
 }
 
