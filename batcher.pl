@@ -76,7 +76,7 @@ sub patch {
             if (! defined $found_batches->{$batch}) {
                 next;
             }
-            print("BATCH $batch $batch_reviewers->{$batch} $tickets->{$batch_reviewers->{$batch}} @{$found_batches->{$batch}}\n");
+            print("#BATCH $batch $batch_reviewers->{$batch} $tickets->{$batch_reviewers->{$batch}} @{$found_batches->{$batch}}\n");
             push(@files, @{$found_batches->{$batch}});
         }
         next unless @files;
@@ -96,7 +96,7 @@ sub upload {
     for my $batch (sort keys %$found_batches) {
         next unless $batch_reviewers->{$batch} =~ m/$filter/;
         my @files = @{$found_batches->{$batch}};
-        print ("BATCH $batch $batch_reviewers->{$batch}\n");
+        print ("#BATCH $batch $batch_reviewers->{$batch}\n");
         my ($reviewer) = ($batch_reviewers->{$batch} =~ m/(.*)\//);
         #run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
         #run(qw(git commit -m xxx));
