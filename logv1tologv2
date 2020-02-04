@@ -12,6 +12,7 @@ sub convert {
     my $macro = shift(@_);
     $severities->{$macro}++;
     return "$expression;" if ($expression =~ /str::stream\(\)/);
+    return "$expression;" if ($expression =~ /\[.?\]\(\)/);
 
     $any_conversions = 1;
 
