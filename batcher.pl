@@ -99,7 +99,7 @@ sub upload {
         run(qw(git cifa));
         run("./logv1tologv2",@files); 
         run(qw(buildscripts/clang_format.py format));
-        run(qw(python ~/git/kernel-tools/codereview/upload.py --git_no_find_copies -y),"-r", $batch_reviewers->{$batch}, "--send_mail", "-m", "structured logging auto-conversion of ".$batch, "HEAD");
+        run(qw(~/git/kernel-tools/codereview/upload.py --git_no_find_copies -y),"-r", $batch_reviewers->{$batch}, "--send_mail", "-m", "structured logging auto-conversion of ".$batch, "HEAD");
     }
 }
 
