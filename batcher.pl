@@ -58,7 +58,7 @@ while (<$files_file>) {
 sub run {
     my @cmd = @_;
     print( join(" ",map { / /?"\"$_\"":$_ } @cmd),"\n" );
-    system(@cmd);
+    #system(@cmd);
 }
 
 sub patch {
@@ -94,12 +94,13 @@ sub upload {
         next unless $batch_reviewers->{$batch} =~ m/$filter/;
         my @files = @{$found_batches->{$batch}};
         print ("BATCH $batch $batch_reviewers->{$batch}\n");
+        my ($reviewer) = ($batch_reviewers->{$batch} =~ m/(.*)\//);
         #run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
         #run(qw(git commit -m xxx));
         run(qw(git cifa));
         run("./logv1tologv2",@files); 
         run(qw(buildscripts/clang_format.py format));
-        run(qw(~/git/kernel-tools/codereview/upload.py --git_no_find_copies -y),"-r", $batch_reviewers->{$batch}, "--send_mail", "-m", "structured logging auto-conversion of ".$batch, "HEAD");
+        run(qw(~/git/kernel-tools/codereview/upload.py --git_no_find_copies -y),"-r", $reviewer, "--send_mail", "-m", "structured logging auto-conversion of ".$batch, "HEAD");
     }
 }
 
