@@ -498,6 +498,3 @@ src/mongo/db/modules/enterprise/src/fle/cryptd/cryptd_options.cpp
 src/mongo/db/modules/enterprise/src/fle/cryptd/cryptd_main.cpp
 src/mongo/db/modules/enterprise/src/fle/cryptd/cryptd_service_entry_point.cpp
 src/mongo/db/modules/enterprise/src/fle/cryptd/cryptd_watchdog.cpp
-src/mongo/db/modules/enterprise/src/audit/audit_command.cpp
-src/mongo/db/modules/enterprise/src/audit/audit_private.cpp
-src/mongo/db/modules/enterprise/src/audit/audit_log_domain.cpp
