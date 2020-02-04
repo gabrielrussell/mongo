@@ -83,6 +83,7 @@ sub patch {
         print (join(", ",@files)."\n\n");
         #run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
         #run(qw(git commit -m xxx));
+        run(qw(git  --git-dir src/mongo/db/modules/enterprise/.git --work-tree src/mongo/db/modules/enterprise/ cifa));
         run(qw(git cifa));
         run("./logv1tologv2",@files); 
         run(qw(buildscripts/clang_format.py format));
@@ -99,6 +100,7 @@ sub upload {
         my ($reviewer) = ($batch_reviewers->{$batch} =~ m/(.*)\//);
         #run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
         #run(qw(git commit -m xxx));
+        run(qw(git  --git-dir src/mongo/db/modules/enterprise/.git --work-tree src/mongo/db/modules/enterprise/ cifa));
         run(qw(git cifa));
         run("./logv1tologv2",@files); 
         run(qw(buildscripts/clang_format.py format));
