@@ -1,7 +1,6 @@
 src/mongo/bson/bsonelement.cpp
 src/mongo/bson/bsonobjbuilder.cpp
 src/mongo/bson/bson_validate_test.cpp
-src/mongo/bson/json.cpp
 src/mongo/client/authenticate.cpp
 src/mongo/client/connection_string_connect.cpp
 src/mongo/client/connpool.cpp
