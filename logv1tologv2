@@ -5,6 +5,7 @@ my $log_id = 20100;
 my $any_conversions = 0;
 my $all_log_lines = 0;
 my $severities = {};
+my $unit_test;
 sub convert {
     my $ramlogs = { 'startupWarningsLog' => 'kStartupWarnings', 'rsLog' => 'kRS', 'warnings' => 'kWarnings'};
     my $expression = shift(@_);
@@ -12,6 +13,7 @@ sub convert {
     my $macro = shift(@_);
     $severities->{$macro}++;
     return "$expression;" if ($expression =~ /str::stream\(\)/);
+    return "$expression;" if ($expression =~ /std::hex/);
     return "$expression;" if ($expression =~ /\[.?\]\(\)/);
 
     $any_conversions = 1;
@@ -123,7 +125,6 @@ sub convert {
     }
     push(@params,"\"$message\"");
     $attribute_name_counts = {};
-    $attribute_name_numbers = {};
     foreach (@$attributes) {
         my ($attr_name, $part) = @$_;
         push(@params, "\"$attr_name\"_attr = $part");
@@ -134,7 +135,9 @@ sub convert {
 
 sub insert_include {
     my $includes = shift(@_);
+    my $is_unit_test = shift(@_);
     my $inc = "#include \"mongo/logv2/log.h\"";
+    my $component = "#define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kDefault";
     my $log_h_inc = "#include \"mongo/util/log.h\"";
 
     if (index($includes, $inc) != -1) {
@@ -144,26 +147,33 @@ sub insert_include {
         $includes =~ s[($log_h_inc)][$log_h_inc\n$inc];
         return $includes;
     }
+    my @inc;
+    my @def;
+    push(@def,$component,"") if $is_unit_test;
+    push(@inc,$inc);
+    push(@inc,$log_h_inc) if $is_unit_test;
     my @out_includes;
     my @includes = split("\n",$includes);
     my $i = scalar(@includes) -1;
     while ($i > 0 && $includes[$i] gt $inc) { $i -- }
     if ($includes[$i] eq $inc) { return join("\n",@includes) }
-    return join("\n",@includes[0..$i],$inc,@includes[$i+1..$#includes])."\n";
+    return join("\n",@def,@includes[0..$i],@inc,@includes[$i+1..$#includes])."\n";
 }
 
 foreach my $fn (@ARGV) {
     $any_conversions = 0;
+    $unit_test = 0;
     next if $fn =~ /^#/; # skip commented out file names
     warn $fn;
     open($f, "<", $fn);
     my $data = join('',<$f>);
-    $data =~ s[((?<!unitte.t::)\blog\(([^\)]*)\)\s+<<[^;]*);$][convert($1,$2,'')]smige;
-    $data =~ s[(\bwarning\(([^\)]*)\)\s+<<[^;]*);$][convert($1,$2,'WARNING')]smige;
-    $data =~ s[(\berror\(([^\)]*)\)\s+<<[^;]*);$][convert($1,$2,'ERROR')]smige;
-    $data =~ s[(\bsevere\(([^\)]*)\)\s+<<[^;]*);$][convert($1,$2,'FATAL',$3)]smige;
+    $data =~ s[(((?:unitte.t::|::mongo::|mongo::|mongo::unittest::|::mongo::unittest::)?)\blog\(([^\)]*)\)\s+<<.*?);(?:\s+//[^\n]+)?$][convert($1,$3,'')]smige;
+    $unit_test = 1 if $2 =~ /unittest/;
+    $data =~ s[(\bwarning\(([^\)]*)\)\s+<<.*?);$][convert($1,$2,'WARNING')]smige;
+    $data =~ s[(\berror\(([^\)]*)\)\s+<<.*?);$][convert($1,$2,'ERROR')]smige;
+    $data =~ s[(\bsevere\(([^\)]*)\)\s+<<.*?);$][convert($1,$2,'FATAL',$3)]smige;
     next unless $any_conversions;
-    $data =~ s[(#include[^\n]+\n(?:\s*\n|^#[^\n]+\n)*#include[^\n]+\n)][insert_include($1)]sem;
+    $data =~ s[(#include[^\n]+\n(?:\s*\n|^#[^\n]+\n)*#include[^\n]+\n)][insert_include($1,$unit_test)]sem;
     open($f, ">", $fn);
     $f->print($data);
 }
