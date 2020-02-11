@@ -61,6 +61,7 @@ sub convert {
             warn $part;
         }
     }
+
     my $attribute_name_counts={};
     # categorize logged things
     foreach my $part (@parts) {
