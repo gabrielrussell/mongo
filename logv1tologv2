@@ -39,7 +39,7 @@ sub convert {
 
     my @parts = split(m/\s*\<\<\s*/s,$1 );
     shift @parts;
-    #print "$fn -> $2 -> $1 -> @parts\n";
+
     my $attributes = [];
 
     # handle the magical Tee logstreamBuilder modifiers
@@ -49,9 +49,17 @@ sub convert {
         push(@options, "logv2::LogTag::$tag");
     }
 
-    # just toss out a terminal endl
-    if (@parts && $parts[-1] =~ /\bendl$/) {
+    # just toss out a terminal endl or newline string or char
+    if (@parts and $parts[-1] =~ /\bendl$/
+        || $parts[-1] =~ /^\s*'\\n'\s*$/
+        || $parts[-1] =~ /^\s*"\\n"\s*$/) {
         pop(@parts);
+    }
+
+    foreach my $part (@parts) {
+        if ($part =~ /" \+/ or $part =~ /\+ "/) {
+            warn $part;
+        }
     }
 
     # categorize logged things
@@ -63,7 +71,7 @@ sub convert {
             next;
         } elsif ($part =~ /\bendl$/) {
             $message .= "\\n";
-        } elsif ($part =~ /^\s*'(.)'\s*$/s) {
+        } elsif ($part =~ /^\s*'(\\?.)'\s*$/s) {
             $message .= $1;
         } elsif ($part =~ /^\s*"(.*)"\s*$/s) {
             my $quoted_piece = $1;
@@ -72,9 +80,15 @@ sub convert {
             $message .= $quoted_piece;
         } else {
             $attr_name = $part;
+            $attr_name =~ s[toBSON][];
+            $attr_name =~ s[redact][];
+            $attr_name =~ s[toString][];
             $attr_name =~ s[^(\W|_)+][]g;
             $attr_name =~ s[(\W+|_)$][]g;
             $attr_name =~ s[(\W|_)+][_]g;
+            if ($attr_name =~ m[^\d]) {
+                $attr_name = "_$attr_name";
+            }
             push(@$attributes, [ $attr_name, $part ]);
             $message .= "{$attr_name}";
         }
@@ -104,8 +118,17 @@ sub convert {
         $output .= "_OPTIONS";
     }
     push(@params,"\"$message\"");
+    $attribute_name_counts = {};
+    $attribute_name_numbers = {};
     foreach (@$attributes) {
         my ($attr_name, $part) = @$_;
+        $attribute_name_counts->{$attr_name}++;
+    }
+    foreach (@$attributes) {
+        my ($attr_name, $part) = @$_;
+        if ($attribute_name_counts->{$attr_name} > 1) {
+            $attr_name = $attr_name . $attribute_name_numbers->{$attr_name}++;
+        }
         push(@params, "\"$attr_name\"_attr = $part");
     }
     $output .= "(" . join(", ",@params) . ");";
