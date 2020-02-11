@@ -61,7 +61,7 @@ sub convert {
             warn $part;
         }
     }
-
+    my $attribute_name_counts={};
     # categorize logged things
     foreach my $part (@parts) {
         if ($part =~ /\bboolalpha$/) {
@@ -88,6 +88,9 @@ sub convert {
             $attr_name =~ s[(\W|_)+][_]g;
             if ($attr_name =~ m[^\d]) {
                 $attr_name = "_$attr_name";
+            }
+            if ($attribute_name_counts->{$attr_name}++ > 0) {
+                $attr_name = $attr_name . $attribute_name_counts->{$attr_name};
             }
             push(@$attributes, [ $attr_name, $part ]);
             $message .= "{$attr_name}";
@@ -122,13 +125,6 @@ sub convert {
     $attribute_name_numbers = {};
     foreach (@$attributes) {
         my ($attr_name, $part) = @$_;
-        $attribute_name_counts->{$attr_name}++;
-    }
-    foreach (@$attributes) {
-        my ($attr_name, $part) = @$_;
-        if ($attribute_name_counts->{$attr_name} > 1) {
-            $attr_name = $attr_name . $attribute_name_numbers->{$attr_name}++;
-        }
         push(@params, "\"$attr_name\"_attr = $part");
     }
     $output .= "(" . join(", ",@params) . ");";
