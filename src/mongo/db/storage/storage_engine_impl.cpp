@@ -998,7 +998,7 @@ void StorageEngineImpl::TimestampMonitor::startup() {
                 }
             } catch (const ExceptionFor<ErrorCodes::InterruptedAtShutdown>& ex) {
                 // If we're interrupted at shutdown, it's fine to give up on future notifications
-                log() << "Timestamp monitor is stopping due to: " + ex.reason();
+                log() << "Timestamp monitor is stopping due to: " << ex.reason();
                 return;
             }
         },

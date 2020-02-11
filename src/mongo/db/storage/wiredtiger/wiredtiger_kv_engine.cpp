@@ -1027,7 +1027,7 @@ void WiredTigerKVEngine::_openWiredTiger(const std::string& path, const std::str
         return;
     }
 
-    severe() << "Failed to salvage WiredTiger metadata: " + wtRCToStatus(ret).reason();
+    severe() << "Failed to salvage WiredTiger metadata: " << wtRCToStatus(ret).reason();
     fassertFailedNoTrace(50947);
 }
 
@@ -1469,8 +1469,8 @@ Status WiredTigerKVEngine::recoverOrphanedIdent(OperationContext* opCtx,
     boost::filesystem::path tmpFile{*identFilePath};
     tmpFile += ".tmp";
 
-    log() << "Renaming data file " + identFilePath->string() + " to temporary file " +
-            tmpFile.string();
+    log() << "Renaming data file " << identFilePath->string() << " to temporary file "
+          << tmpFile.string();
     auto status = fsyncRename(identFilePath.get(), tmpFile);
     if (!status.isOK()) {
         return status;
@@ -1483,11 +1483,11 @@ Status WiredTigerKVEngine::recoverOrphanedIdent(OperationContext* opCtx,
         return status;
     }
 
-    log() << "Moving orphaned data file back as " + identFilePath->string();
+    log() << "Moving orphaned data file back as " << identFilePath->string();
 
     boost::filesystem::remove(*identFilePath, ec);
     if (ec) {
-        return {ErrorCodes::UnknownError, "Error deleting empty data file: " + ec.message()};
+        return {ErrorCodes::UnknownError, "Error deleting empty data file: " << ec.message()};
     }
     status = fsyncParentDirectory(*identFilePath);
     if (!status.isOK()) {
@@ -1499,7 +1499,7 @@ Status WiredTigerKVEngine::recoverOrphanedIdent(OperationContext* opCtx,
         return status;
     }
 
-    log() << "Salvaging ident " + ident;
+    log() << "Salvaging ident " << ident;
 
     WiredTigerSession sessionWrapper(_conn);
     WT_SESSION* session = sessionWrapper.getSession();

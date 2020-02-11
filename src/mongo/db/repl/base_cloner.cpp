@@ -249,11 +249,11 @@ BaseCloner::AfterStageBehavior BaseCloner::runStageWithRetries(BaseClonerStage* 
             lastError = e.toStatus();
             if (!stage->isTransientError(lastError)) {
                 log() << "Non-retryable error occured during cloner " << getClonerName()
-                      << " stage " + stage->getName() << ": " << lastError;
+                      << " stage " << stage->getName() << ": " << lastError;
                 throw;
             }
-            LOG(1) << "Transient error occured during cloner " << getClonerName()
-                   << " stage " + stage->getName() << ": " << lastError;
+            LOG(1) << "Transient error occured during cloner " << getClonerName() << " stage "
+                   << stage->getName() << ": " << lastError;
         }
     }
 }
