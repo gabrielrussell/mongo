@@ -361,7 +361,6 @@ src/mongo/db/s/transaction_coordinator_util.cpp
 src/mongo/db/s/txn_two_phase_commit_cmds.cpp
 src/mongo/db/s/wait_for_majority_service.cpp
 src/mongo/db/system_index.cpp
-src/mongo/dbtests/commandtests.cpp
 src/mongo/dbtests/framework_options.cpp
 src/mongo/dbtests/jsobjtests.cpp
 src/mongo/dbtests/jsontests.cpp
@@ -491,7 +490,6 @@ src/mongo/util/net/ssl_manager_windows.cpp
 src/mongo/util/net/ssl_options_server.cpp
 src/mongo/util/ntservice.cpp
 src/mongo/util/options_parser/options_parser.cpp
-src/mongo/util/perfctr_collect_test.cpp
 src/mongo/util/periodic_runner_impl.cpp
 src/mongo/util/platform_init.cpp
 src/mongo/util/processinfo.cpp
