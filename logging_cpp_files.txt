@@ -389,7 +389,6 @@ src/mongo/platform/random_test.cpp
 src/mongo/platform/shared_library_posix.cpp
 src/mongo/platform/shared_library_windows.cpp
 src/mongo/platform/source_location_test.cpp
-src/mongo/rpc/metadata/client_metadata.cpp
 src/mongo/rpc/op_msg.cpp
 src/mongo/rpc/op_msg_integration_test.cpp
 src/mongo/rpc/op_msg_test.cpp
@@ -507,3 +506,4 @@ src/mongo/util/stacktrace_threads.cpp
 src/mongo/util/version.cpp
 src/mongo/watchdog/watchdog.cpp
 src/mongo/watchdog/watchdog_test.cpp
+./src/mongo/db/repl/topology_coordinator.cpp

@@ -15,6 +15,9 @@ sub convert {
     return "$expression;" if ($expression =~ /str::stream\(\)/);
     return "$expression;" if ($expression =~ /std::hex/);
     return "$expression;" if ($expression =~ /\[.?\]\(\)/);
+    return "$expression;" if ($expression =~ /\"_format\(/);
+    return "$expression;" if ($expression =~ /_debug\.report/);
+
 
     $any_conversions = 1;
 

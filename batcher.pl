@@ -88,13 +88,13 @@ sub patch {
         }
         next unless @files;
         print (join(", ",@files)."\n\n");
-        #run(qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
-        #run(qw(git commit -m xxx));
-        run(".",qw(git  --git-dir src/mongo/db/modules/enterprise/.git --work-tree src/mongo/db/modules/enterprise/ cifa));
+        run(".",qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
+        run(".",qw(git commit -m xxx));
+        run("src/mongo/db/modules/enterprise",qw(git cifa));
         run(".",qw(git cifa));
         run(".","./logv1tologv2",@files); 
         run(".",qw(buildscripts/clang_format.py format));
-        run(".",qw(evergreen patch -p mongodb-mongo-master  --yes -a required -f), "-d", "structured logging auto-conversion of $reviewer");
+        run(".",qw(evergreen patch -p mongodb-mongo-master --yes -a required -f), "-d", "structured logging auto-conversion for review by $reviewer");
     }
 }
 
@@ -117,4 +117,5 @@ sub upload {
 }
 
 my $filter = shift;
-upload($filter);
+#upload($filter);
+patch($filter);
