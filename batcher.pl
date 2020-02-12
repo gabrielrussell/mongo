@@ -73,7 +73,7 @@ sub run {
 sub patch {
     my $filter = shift;
     foreach my $reviewer (sort keys %$tickets) {
-        next unless $reviewer =~ m/$filter/;
+        next unless !$reviewer or $reviewer =~ m/$filter/;
         print("REVIEWER $reviewer\n");
         my @files;
         foreach my $batch (sort keys %$batch_reviewers) {
