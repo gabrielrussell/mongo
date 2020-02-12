@@ -89,7 +89,7 @@ sub patch {
         next unless @files;
         print (join(", ",@files)."\n\n");
         run(".",qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
-        run(".",qw(git commit -m xxx));
+        try_run(".",qw(git commit -m xxx));
         run("src/mongo/db/modules/enterprise",qw(git cifa));
         run(".",qw(git cifa));
         run(".","./logv1tologv2",@files); 
