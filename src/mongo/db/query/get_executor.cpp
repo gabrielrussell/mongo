@@ -87,6 +87,7 @@
 #include "mongo/db/server_options.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/storage/storage_options.h"
+#include "mongo/logv2/log.h"
 #include "mongo/scripting/engine.h"
 #include "mongo/util/log.h"
 #include "mongo/util/str.h"
@@ -186,9 +187,14 @@ IndexEntry indexEntryFromIndexCatalogEntry(OperationContext* opCtx,
                 multikeyPathSet = accessMethod->getMultikeyPathSet(opCtx, &mkAccessStats);
             }
 
-            LOG(2) << "Multikey path metadata range index scan stats: { index: "
-                   << desc->indexName() << ", numSeeks: " << mkAccessStats.keysExamined
-                   << ", keysExamined: " << mkAccessStats.keysExamined << "}";
+            LOGV2_DEBUG(23922,
+                        2,
+                        "Multikey path metadata range index scan stats: {{ index: "
+                        "{desc_indexName}, numSeeks: {mkAccessStats_keysExamined}, keysExamined: "
+                        "{mkAccessStats_keysExamined2}}}",
+                        "desc_indexName"_attr = desc->indexName(),
+                        "mkAccessStats_keysExamined"_attr = mkAccessStats.keysExamined,
+                        "mkAccessStats_keysExamined2"_attr = mkAccessStats.keysExamined);
         }
     }
 
@@ -358,8 +364,11 @@ StatusWith<PrepareExecutionResult> prepareExecution(OperationContext* opCtx,
     // This can happen as we're called by internal clients as well.
     if (nullptr == collection) {
         const string& ns = canonicalQuery->ns();
-        LOG(2) << "Collection " << ns << " does not exist."
-               << " Using EOF plan: " << redact(canonicalQuery->toStringShort());
+        LOGV2_DEBUG(23923,
+                    2,
+                    "Collection {ns} does not exist. Using EOF plan: {canonicalQuery_Short}",
+                    "ns"_attr = ns,
+                    "canonicalQuery_Short"_attr = redact(canonicalQuery->toStringShort()));
         root = std::make_unique<EOFStage>(opCtx);
         return PrepareExecutionResult(std::move(canonicalQuery), nullptr, std::move(root));
     }
@@ -380,7 +389,10 @@ StatusWith<PrepareExecutionResult> prepareExecution(OperationContext* opCtx,
 
     // If we have an _id index we can use an idhack plan.
     if (descriptor && IDHackStage::supportsQuery(collection, *canonicalQuery)) {
-        LOG(2) << "Using idhack: " << redact(canonicalQuery->toStringShort());
+        LOGV2_DEBUG(23924,
+                    2,
+                    "Using idhack: {canonicalQuery_Short}",
+                    "canonicalQuery_Short"_attr = redact(canonicalQuery->toStringShort()));
 
         root = std::make_unique<IDHackStage>(opCtx, canonicalQuery.get(), ws, descriptor);
 
@@ -473,7 +485,11 @@ StatusWith<PrepareExecutionResult> prepareExecution(OperationContext* opCtx,
                 auto querySolution = std::move(statusWithQs.getValue());
                 if ((plannerParams.options & QueryPlannerParams::IS_COUNT) &&
                     turnIxscanIntoCount(querySolution.get())) {
-                    LOG(2) << "Using fast count: " << redact(canonicalQuery->toStringShort());
+                    LOGV2_DEBUG(23925,
+                                2,
+                                "Using fast count: {canonicalQuery_Short}",
+                                "canonicalQuery_Short"_attr =
+                                    redact(canonicalQuery->toStringShort()));
                 }
 
                 auto root =
@@ -499,7 +515,10 @@ StatusWith<PrepareExecutionResult> prepareExecution(OperationContext* opCtx,
 
     if (internalQueryPlanOrChildrenIndependently.load() &&
         SubplanStage::canUseSubplanning(*canonicalQuery)) {
-        LOG(2) << "Running query as sub-queries: " << redact(canonicalQuery->toStringShort());
+        LOGV2_DEBUG(23926,
+                    2,
+                    "Running query as sub-queries: {canonicalQuery_Short}",
+                    "canonicalQuery_Short"_attr = redact(canonicalQuery->toStringShort()));
 
         root = std::make_unique<SubplanStage>(
             opCtx, collection, ws, plannerParams, canonicalQuery.get());
@@ -524,8 +543,13 @@ StatusWith<PrepareExecutionResult> prepareExecution(OperationContext* opCtx,
                 auto root =
                     StageBuilder::build(opCtx, collection, *canonicalQuery, *solutions[i], ws);
 
-                LOG(2) << "Using fast count: " << redact(canonicalQuery->toStringShort())
-                       << ", planSummary: " << Explain::getPlanSummary(root.get());
+                LOGV2_DEBUG(23927,
+                            2,
+                            "Using fast count: {canonicalQuery_Short}, planSummary: "
+                            "{Explain_getPlanSummary_root_get}",
+                            "canonicalQuery_Short"_attr = redact(canonicalQuery->toStringShort()),
+                            "Explain_getPlanSummary_root_get"_attr =
+                                Explain::getPlanSummary(root.get()));
 
                 return PrepareExecutionResult(
                     std::move(canonicalQuery), std::move(solutions[i]), std::move(root));
@@ -537,9 +561,12 @@ StatusWith<PrepareExecutionResult> prepareExecution(OperationContext* opCtx,
         // Only one possible plan.  Run it.  Build the stages from the solution.
         auto root = StageBuilder::build(opCtx, collection, *canonicalQuery, *solutions[0], ws);
 
-        LOG(2) << "Only one plan is available; it will be run but will not be cached. "
-               << redact(canonicalQuery->toStringShort())
-               << ", planSummary: " << Explain::getPlanSummary(root.get());
+        LOGV2_DEBUG(23928,
+                    2,
+                    "Only one plan is available; it will be run but will not be cached. "
+                    "{canonicalQuery_Short}, planSummary: {Explain_getPlanSummary_root_get}",
+                    "canonicalQuery_Short"_attr = redact(canonicalQuery->toStringShort()),
+                    "Explain_getPlanSummary_root_get"_attr = Explain::getPlanSummary(root.get()));
 
         return PrepareExecutionResult(
             std::move(canonicalQuery), std::move(solutions[0]), std::move(root));
@@ -731,8 +758,11 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorDelete(
     if (!collection) {
         // Treat collections that do not exist as empty collections. Return a PlanExecutor which
         // contains an EOF stage.
-        LOG(2) << "Collection " << nss.ns() << " does not exist."
-               << " Using EOF stage: " << redact(request->getQuery());
+        LOGV2_DEBUG(23929,
+                    2,
+                    "Collection {nss_ns} does not exist. Using EOF stage: {request_getQuery}",
+                    "nss_ns"_attr = nss.ns(),
+                    "request_getQuery"_attr = redact(request->getQuery()));
         return PlanExecutor::make(
             opCtx, std::move(ws), std::make_unique<EOFStage>(opCtx), nullptr, policy, nss);
     }
@@ -759,7 +789,10 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorDelete(
 
         if (descriptor && CanonicalQuery::isSimpleIdQuery(unparsedQuery) &&
             request->getProj().isEmpty() && hasCollectionDefaultCollation) {
-            LOG(2) << "Using idhack: " << redact(unparsedQuery);
+            LOGV2_DEBUG(23930,
+                        2,
+                        "Using idhack: {unparsedQuery}",
+                        "unparsedQuery"_attr = redact(unparsedQuery));
 
             auto idHackStage = std::make_unique<IDHackStage>(
                 opCtx, unparsedQuery["_id"].wrap(), ws.get(), descriptor);
@@ -877,8 +910,11 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorUpdate(
     // we are an explain. If the collection doesn't exist, we're not an explain, and the upsert flag
     // is true, we expect the caller to have created the collection already.
     if (!collection) {
-        LOG(2) << "Collection " << nss.ns() << " does not exist."
-               << " Using EOF stage: " << redact(request->getQuery());
+        LOGV2_DEBUG(23931,
+                    2,
+                    "Collection {nss_ns} does not exist. Using EOF stage: {request_getQuery}",
+                    "nss_ns"_attr = nss.ns(),
+                    "request_getQuery"_attr = redact(request->getQuery()));
         return PlanExecutor::make(
             opCtx, std::move(ws), std::make_unique<EOFStage>(opCtx), nullptr, policy, nss);
     }
@@ -903,9 +939,10 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorUpdate(
 
             if (descriptor && CanonicalQuery::isSimpleIdQuery(unparsedQuery) &&
                 request->getProj().isEmpty() && hasCollectionDefaultCollation) {
-                LOG(2) << "Using idhack: " << redact(unparsedQuery);
-
-                // Working set 'ws' is discarded. InternalPlanner::updateWithIdHack() makes its own
+                LOGV2_DEBUG(23932,
+                            2,
+                            "Using idhack: {unparsedQuery}",
+                            "unparsedQuery"_attr = redact(unparsedQuery));
                 // WorkingSet.
                 return InternalPlanner::updateWithIdHack(opCtx,
                                                          collection,
@@ -1501,8 +1538,13 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorForS
     auto root =
         StageBuilder::build(opCtx, collection, *parsedDistinct->getQuery(), *soln, ws.get());
 
-    LOG(2) << "Using fast distinct: " << redact(parsedDistinct->getQuery()->toStringShort())
-           << ", planSummary: " << Explain::getPlanSummary(root.get());
+    LOGV2_DEBUG(23933,
+                2,
+                "Using fast distinct: {parsedDistinct_getQuery_Short}, planSummary: "
+                "{Explain_getPlanSummary_root_get}",
+                "parsedDistinct_getQuery_Short"_attr =
+                    redact(parsedDistinct->getQuery()->toStringShort()),
+                "Explain_getPlanSummary_root_get"_attr = Explain::getPlanSummary(root.get()));
 
     return PlanExecutor::make(parsedDistinct->releaseQuery(),
                               std::move(ws),
@@ -1542,8 +1584,14 @@ getExecutorDistinctFromIndexSolutions(OperationContext* opCtx,
             auto root = StageBuilder::build(
                 opCtx, collection, *parsedDistinct->getQuery(), *currentSolution, ws.get());
 
-            LOG(2) << "Using fast distinct: " << redact(parsedDistinct->getQuery()->toStringShort())
-                   << ", planSummary: " << Explain::getPlanSummary(root.get());
+            LOGV2_DEBUG(23934,
+                        2,
+                        "Using fast distinct: {parsedDistinct_getQuery_Short}, planSummary: "
+                        "{Explain_getPlanSummary_root_get}",
+                        "parsedDistinct_getQuery_Short"_attr =
+                            redact(parsedDistinct->getQuery()->toStringShort()),
+                        "Explain_getPlanSummary_root_get"_attr =
+                            Explain::getPlanSummary(root.get()));
 
             return PlanExecutor::make(parsedDistinct->releaseQuery(),
                                       std::move(ws),

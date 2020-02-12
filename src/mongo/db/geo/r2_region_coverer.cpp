@@ -35,6 +35,7 @@
 
 #include "mongo/db/geo/r2_region_coverer.h"
 #include "mongo/db/geo/shapes.h"
+#include "mongo/logv2/log.h"
 #include "mongo/util/log.h"
 
 namespace mongo {
@@ -108,9 +109,10 @@ void R2RegionCoverer::getCovering(const R2Region& region, vector<GeoHash>* cover
         Candidate* candidate = _candidateQueue->top().second;  // Owned
         _candidateQueue->pop();
         // REDACT?? I think this may have User info, but I'm not sure how to redact
-        LOG(3) << "Pop: " << redact(candidate->cell.toString());
-
-        // Try to expand this cell into its children
+        LOGV2_DEBUG(23884,
+                    3,
+                    "Pop: {candidate_cell}",
+                    "candidate_cell"_attr = redact(candidate->cell.toString()));
         if (candidate->cell.getBits() < _minLevel || candidate->numChildren == 1 ||
             (int)_results->size() + (int)_candidateQueue->size() + candidate->numChildren <=
                 _maxCells) {
@@ -123,7 +125,10 @@ void R2RegionCoverer::getCovering(const R2Region& region, vector<GeoHash>* cover
             candidate->isTerminal = true;
             addCandidate(candidate);
         }
-        LOG(3) << "Queue: " << _candidateQueue->size();
+        LOGV2_DEBUG(23885,
+                    3,
+                    "Queue: {candidateQueue_size}",
+                    "candidateQueue_size"_attr = _candidateQueue->size());
     }
 
     _region = nullptr;
@@ -185,7 +190,11 @@ void R2RegionCoverer::addCandidate(Candidate* candidate) {
                          numTerminals);
         _candidateQueue->push(make_pair(priority, candidate));  // queue owns candidate
         // REDACT??
-        LOG(3) << "Push: " << redact(candidate->cell.toString()) << " (" << priority << ") ";
+        LOGV2_DEBUG(23886,
+                    3,
+                    "Push: {candidate_cell} ({priority}) ",
+                    "candidate_cell"_attr = redact(candidate->cell.toString()),
+                    "priority"_attr = priority);
     }
 }
 
