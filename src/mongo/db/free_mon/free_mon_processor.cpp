@@ -46,6 +46,7 @@
 #include "mongo/db/free_mon/free_mon_storage.h"
 #include "mongo/db/service_context.h"
 #include "mongo/idl/idl_parser.h"
+#include "mongo/logv2/log.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/log.h"
 
@@ -259,9 +260,11 @@ void FreeMonProcessor::run() {
         // Stop the queue
         _queue.stop();
 
-        warning() << "Uncaught exception in '" << exceptionToStatus()
-                  << "' in free monitoring subsystem. Shutting down the "
-                     "free monitoring subsystem.";
+        LOGV2_WARNING(22484,
+                      "Uncaught exception in '{exceptionToStatus}' in free monitoring subsystem. "
+                      "Shutting down the "
+                      "free monitoring subsystem.",
+                      "exceptionToStatus"_attr = exceptionToStatus());
     }
 }
 
@@ -600,7 +603,7 @@ void FreeMonProcessor::doAsyncRegisterComplete(
 
     Status s = validateRegistrationResponse(resp);
     if (!s.isOK()) {
-        warning() << "Free Monitoring registration halted due to " << s;
+        LOGV2_WARNING(22485, "Free Monitoring registration halted due to {s}", "s"_attr = s);
 
         // Disable on any error
         _state->setState(StorageStateEnum::disabled);
@@ -646,9 +649,9 @@ void FreeMonProcessor::doAsyncRegisterComplete(
     // Notify waiters
     notifyPendingRegisters(Status::OK());
 
-    log() << "Free Monitoring is Enabled. Frequency: " << resp.getReportingInterval() << " seconds";
-
-    // Enqueue next metrics upload immediately to deliver a good experience
+    LOGV2(22480,
+          "Free Monitoring is Enabled. Frequency: {resp_getReportingInterval} seconds",
+          "resp_getReportingInterval"_attr = resp.getReportingInterval());
     enqueue(FreeMonMessage::createNow(FreeMonMessageType::MetricsSend));
 }
 
@@ -666,14 +669,16 @@ void FreeMonProcessor::doAsyncRegisterFail(
 
     if (!_registrationRetry->incrementError()) {
         // We have exceeded our retry
-        warning() << "Free Monitoring is abandoning registration after excess retries";
+        LOGV2_WARNING(22486, "Free Monitoring is abandoning registration after excess retries");
         return;
     }
 
-    LOG(1) << "Free Monitoring Registration Failed with status '" << msg->getPayload()
-           << "', retrying in " << _registrationRetry->getNextDuration();
-
-    // Enqueue a register retry
+    LOGV2_DEBUG(22481,
+                1,
+                "Free Monitoring Registration Failed with status '{msg_getPayload}', retrying in "
+                "{registrationRetry_getNextDuration}",
+                "msg_getPayload"_attr = msg->getPayload(),
+                "registrationRetry_getNextDuration"_attr = _registrationRetry->getNextDuration());
     enqueue(FreeMonRegisterCommandMessage::createWithDeadline(
         _tags, _registrationRetry->getNextDeadline(client)));
 }
@@ -688,7 +693,7 @@ void FreeMonProcessor::doCommandUnregister(
 
     writeState(client);
 
-    log() << "Free Monitoring is Disabled";
+    LOGV2(22482, "Free Monitoring is Disabled");
 
     msg->setStatus(Status::OK());
 }
@@ -778,7 +783,7 @@ void FreeMonProcessor::doAsyncMetricsComplete(
 
     Status s = validateMetricsResponse(resp);
     if (!s.isOK()) {
-        warning() << "Free Monitoring metrics uploading halted due to " << s;
+        LOGV2_WARNING(22487, "Free Monitoring metrics uploading halted due to {s}", "s"_attr = s);
 
         // Disable free monitoring on validation errors
         _state->setState(StorageStateEnum::disabled);
@@ -851,14 +856,16 @@ void FreeMonProcessor::doAsyncMetricsFail(
 
     if (!_metricsRetry->incrementError()) {
         // We have exceeded our retry
-        warning() << "Free Monitoring is abandoning metrics upload after excess retries";
+        LOGV2_WARNING(22488, "Free Monitoring is abandoning metrics upload after excess retries");
         return;
     }
 
-    LOG(1) << "Free Monitoring Metrics upload failed with status " << msg->getPayload()
-           << ", retrying in " << _metricsRetry->getNextDuration();
-
-    // Enqueue next metrics upload
+    LOGV2_DEBUG(22483,
+                1,
+                "Free Monitoring Metrics upload failed with status {msg_getPayload}, retrying in "
+                "{metricsRetry_getNextDuration}",
+                "msg_getPayload"_attr = msg->getPayload(),
+                "metricsRetry_getNextDuration"_attr = _metricsRetry->getNextDuration());
     enqueue(FreeMonMessage::createWithDeadline(FreeMonMessageType::MetricsSend,
                                                _metricsRetry->getNextDeadline(client)));
 }
@@ -948,9 +955,11 @@ void FreeMonProcessor::doNotifyOnUpsert(
         // Stop the queue
         _queue.stop();
 
-        warning() << "Uncaught exception in '" << exceptionToStatus()
-                  << "' in free monitoring op observer. Shutting down the "
-                     "free monitoring subsystem.";
+        LOGV2_WARNING(22489,
+                      "Uncaught exception in '{exceptionToStatus}' in free monitoring op observer. "
+                      "Shutting down the "
+                      "free monitoring subsystem.",
+                      "exceptionToStatus"_attr = exceptionToStatus());
     }
 }
 

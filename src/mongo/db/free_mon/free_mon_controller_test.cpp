@@ -62,6 +62,7 @@
 #include "mongo/db/service_context_d_test_fixture.h"
 #include "mongo/executor/network_interface_mock.h"
 #include "mongo/executor/thread_pool_task_executor_test_fixture.h"
+#include "mongo/logv2/log.h"
 #include "mongo/rpc/object_check.h"
 #include "mongo/unittest/barrier.h"
 #include "mongo/unittest/temp_dir.h"
@@ -245,7 +246,7 @@ public:
 
     Future<FreeMonRegistrationResponse> sendRegistrationAsync(
         const FreeMonRegistrationRequest& req) final {
-        log() << "Sending Registration ...";
+        LOGV2(22477, "Sending Registration ...");
 
         _registers.addAndFetch(1);
 
@@ -291,7 +292,7 @@ public:
 
 
     Future<FreeMonMetricsResponse> sendMetricsAsync(const FreeMonMetricsRequest& req) final {
-        log() << "Sending Metrics ...";
+        LOGV2(22478, "Sending Metrics ...");
 
         _metrics.addAndFetch(1);
 
@@ -508,8 +509,7 @@ TEST(FreeMonRetryTest, TestRegistration) {
     // If jitter is large as possible, we'd expect trueMin increments before false.
     const auto trueMin = characterizeJitter(Seconds{9}, Seconds{119});
 
-    // unittest::log() << "trueMin:" << trueMin;
-    // unittest::log() << "trueMax:" << trueMax;
+    // LOGV2(22479, "trueMin:{trueMin}", "trueMin"_attr = trueMin);
 
     for (int j = 0; j < 30; j++) {
         // std::cout << "j: " << j << "\n";
