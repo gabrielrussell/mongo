@@ -33,6 +33,7 @@
 
 #include "mongo/transport/service_executor_reserved.h"
 
+#include "mongo/logv2/log.h"
 #include "mongo/stdx/thread.h"
 #include "mongo/transport/service_entry_point_utils.h"
 #include "mongo/transport/service_executor_gen.h"
@@ -78,7 +79,7 @@ Status ServiceExecutorReserved::start() {
 }
 
 Status ServiceExecutorReserved::_startWorker() {
-    log() << "Starting new worker thread for " << _name << " service executor";
+    LOGV2(21696, "Starting new worker thread for {name} service executor", "name"_attr = _name);
     return launchServiceWorkerThread([this] {
         stdx::unique_lock<Latch> lk(_mutex);
         _numRunningWorkerThreads.addAndFetch(1);
@@ -115,7 +116,9 @@ Status ServiceExecutorReserved::_startWorker() {
             if (launchReplacement) {
                 auto threadStartStatus = _startWorker();
                 if (!threadStartStatus.isOK()) {
-                    warning() << "Could not start new reserve worker thread: " << threadStartStatus;
+                    LOGV2_WARNING(21699,
+                                  "Could not start new reserve worker thread: {threadStartStatus}",
+                                  "threadStartStatus"_attr = threadStartStatus);
                 }
             }
 
@@ -134,13 +137,14 @@ Status ServiceExecutorReserved::_startWorker() {
             }
         }
 
-        LOG(3) << "Exiting worker thread in " << _name << " service executor";
+        LOGV2_DEBUG(
+            21697, 3, "Exiting worker thread in {name} service executor", "name"_attr = _name);
     });
 }
 
 
 Status ServiceExecutorReserved::shutdown(Milliseconds timeout) {
-    LOG(3) << "Shutting down reserved executor";
+    LOGV2_DEBUG(21698, 3, "Shutting down reserved executor");
 
     stdx::unique_lock<Latch> lock(_mutex);
     _stillRunning.store(false);

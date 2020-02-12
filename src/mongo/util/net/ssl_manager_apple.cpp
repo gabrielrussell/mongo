@@ -43,6 +43,7 @@
 #include "mongo/base/status_with.h"
 #include "mongo/crypto/sha1_block.h"
 #include "mongo/crypto/sha256_block.h"
+#include "mongo/logv2/log.h"
 #include "mongo/platform/random.h"
 #include "mongo/util/base64.h"
 #include "mongo/util/concurrency/mutex.h"
@@ -527,8 +528,9 @@ StatusWith<std::vector<std::string>> extractSubjectAlternateNames(::CFDictionary
         if (swCIDRValue.isOK()) {
             swNameStr = swCIDRValue.getValue().toString();
             if (san == kDNS) {
-                warning() << "You have an IP Address in the DNS Name field on your "
-                             "certificate. This formulation is deprecated.";
+                LOGV2_WARNING(21826,
+                              "You have an IP Address in the DNS Name field on your "
+                              "certificate. This formulation is deprecated.");
             }
         }
         ret.push_back(swNameStr.getValue());
@@ -1448,11 +1450,11 @@ Future<SSLPeerInfo> SSLManagerApple::parseAndValidatePeerCertificate(
     const auto badCert = [&](StringData msg, bool warn = false) -> Future<SSLPeerInfo> {
         constexpr StringData prefix = "SSL peer certificate validation failed: "_sd;
         if (warn) {
-            warning() << prefix << msg;
+            LOGV2_WARNING(21827, "{prefix}{msg}", "prefix"_attr = prefix, "msg"_attr = msg);
             return Future<SSLPeerInfo>::makeReady(SSLPeerInfo(sniName));
         } else {
             std::string m = str::stream() << prefix << msg << "; connection rejected";
-            error() << m;
+            LOGV2_ERROR(21830, "{m}", "m"_attr = m);
             return Status(ErrorCodes::SSLHandshakeFailed, m);
         }
     };
@@ -1540,9 +1542,10 @@ Future<SSLPeerInfo> SSLManagerApple::parseAndValidatePeerCertificate(
         return swPeerSubjectName.getStatus();
     }
     const auto peerSubjectName = std::move(swPeerSubjectName.getValue());
-    LOG(2) << "Accepted TLS connection from peer: " << peerSubjectName;
-
-    // Server side.
+    LOGV2_DEBUG(21825,
+                2,
+                "Accepted TLS connection from peer: {peerSubjectName}",
+                "peerSubjectName"_attr = peerSubjectName);
     if (remoteHost.empty()) {
         const auto exprThreshold = tlsX509ExpirationWarningThresholdDays;
         if (exprThreshold > 0) {
@@ -1563,7 +1566,7 @@ Future<SSLPeerInfo> SSLManagerApple::parseAndValidatePeerCertificate(
 
         // If client and server certificate are the same, log a warning.
         if (_sslConfiguration.serverSubjectName() == peerSubjectName) {
-            warning() << "Client connecting with server's own TLS certificate";
+            LOGV2_WARNING(21828, "Client connecting with server's own TLS certificate");
         }
 
         // If this is an SSL server context (on a mongod/mongos)
@@ -1635,9 +1638,9 @@ Future<SSLPeerInfo> SSLManagerApple::parseAndValidatePeerCertificate(
     if (!sanMatch && !cnMatch) {
         const auto msg = certErr.str();
         if (_allowInvalidCertificates || _allowInvalidHostnames || isUnixDomainSocket(remoteHost)) {
-            warning() << msg;
+            LOGV2_WARNING(21829, "{msg}", "msg"_attr = msg);
         } else {
-            error() << msg;
+            LOGV2_ERROR(21831, "{msg}", "msg"_attr = msg);
             return Status(ErrorCodes::SSLHandshakeFailed, msg);
         }
     }
