@@ -38,6 +38,7 @@
 #include "mongo/bson/generator_extended_relaxed_2_0_0.h"
 #include "mongo/bson/generator_legacy_strict.h"
 #include "mongo/db/json.h"
+#include "mongo/logv2/log.h"
 #include "mongo/util/allocator.h"
 #include "mongo/util/hex.h"
 #include "mongo/util/log.h"
@@ -115,8 +116,10 @@ BSONObj BSONObj::copy() const {
         // Only for unowned objects, the size is validated in the constructor, so it is an error for
         // the size to ever be invalid. This means that the unowned memory we are reading has
         // changed, and we must exit immediately to avoid further undefined behavior.
-        severe() << "BSONObj::copy() - size " << size
-                 << " of unowned BSONObj is invalid and differs from previously validated size.";
+        LOGV2_FATAL(20837,
+                    "BSONObj::copy() - size {size} of unowned BSONObj is invalid and differs from "
+                    "previously validated size.",
+                    "size"_attr = size);
         fassertFailed(31322);
     }
     auto storage = SharedBuffer::allocate(size);
@@ -125,8 +128,11 @@ BSONObj BSONObj::copy() const {
     // that the memory we are reading has changed, and we must exit immediately to avoid further
     // undefined behavior.
     if (int sizeAfter = objsize(); sizeAfter != size) {
-        severe() << "BSONObj::copy() - size " << sizeAfter
-                 << " differs from previously observed size " << size;
+        LOGV2_FATAL(
+            20838,
+            "BSONObj::copy() - size {sizeAfter} differs from previously observed size {size}",
+            "sizeAfter"_attr = sizeAfter,
+            "size"_attr = size);
         fassertFailed(31323);
     }
     memcpy(storage.get(), objdata(), size);
