@@ -7,6 +7,8 @@
 (function() {
 "use strict";
 
+load("jstests/libs/logv2_helpers.js");
+
 let conn = MongoRunner.runMongod();
 let testDB = conn.getDB('test');
 
@@ -62,7 +64,11 @@ let bgBuild = startParallelShell(function() {
     assert.commandWorked(db.hybrid.createIndex({i: 1}, {background: true}));
 }, conn.port);
 
-checkLog.contains(conn, "Hanging before index build of i=1");
+if (isJsonLogNoConn()) {
+    checkLog.containsJson(conn, 20386, {"where": "before", "i": 1});
+} else {
+    checkLog.contains(conn, "Hanging before index build of i=1");
+}
 
 // Phase 1: Collection scan and external sort
 // Insert documents while doing the bulk build.
@@ -74,7 +80,11 @@ turnFailPointOn("hangAfterIndexBuildDumpsInsertsFromBulk");
 
 // Wait for the bulk insert to complete.
 turnFailPointOff("hangBeforeIndexBuildOf");
-checkLog.contains(conn, "Hanging after dumping inserts from bulk builder");
+if (isJsonLogNoConn()) {
+    checkLog.containsJson(conn, 20665);
+} else {
+    checkLog.contains(conn, "Hanging after dumping inserts from bulk builder");
+}
 
 // Phase 2: First drain
 // Do some updates, inserts and deletes after the bulk builder has finished.
@@ -92,13 +102,21 @@ assert.eq(totalDocs, testDB.hybrid.count());
 turnFailPointOff("hangAfterIndexBuildDumpsInsertsFromBulk");
 
 // Ensure the operation yields during the drain, then attempt some operations.
-checkLog.contains(conn, "Hanging index build during drain yield");
+if (isJsonLogNoConn()) {
+    checkLog.containsJson(conn, 20690);
+} else {
+    checkLog.contains(conn, "Hanging index build during drain yield");
+}
 assert.commandWorked(testDB.hybrid.insert({i: "during yield"}));
 assert.commandWorked(testDB.hybrid.remove({i: "during yield"}));
 turnFailPointOff("hangDuringIndexBuildDrainYield");
 
 // Wait for first drain to finish.
-checkLog.contains(conn, "Hanging after index build first drain");
+if (isJsonLogNoConn()) {
+    checkLog.containsJson(conn, 20666);
+} else {
+    checkLog.contains(conn, "Hanging after index build first drain");
+}
 
 // Phase 3: Second drain
 // Enable pause after second drain.
@@ -112,7 +130,11 @@ assert.eq(totalDocs, testDB.hybrid.count());
 turnFailPointOff("hangAfterIndexBuildFirstDrain");
 
 // Wait for second drain to finish.
-checkLog.contains(conn, "Hanging after index build second drain");
+if (isJsonLogNoConn()) {
+    checkLog.containsJson(conn, 20666);
+} else {
+    checkLog.contains(conn, "Hanging after index build second drain");
+}
 
 // Phase 4: Final drain and commit.
 // Add inserts that must be consumed in the final drain.
