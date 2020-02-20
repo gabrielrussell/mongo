@@ -1,7 +1,12 @@
 #!/usr/bin/perl
 use warnings;
 use Data::Dumper;
-my $log_id = 20100;
+
+use NDBM_File;
+use Fcntl;
+
+tie(%counter, 'NDBM_File', 'counter.ndbm', O_RDWR|O_CREAT, 0666) or die "Couldn't tie NDBM file 'filename': $!; aborting";
+
 my $any_conversions = 0;
 my $all_log_lines = 0;
 my $severities = {};
@@ -11,13 +16,14 @@ sub convert {
     my $expression = shift(@_);
     my $argument = shift(@_);
     my $macro = shift(@_);
+
     $severities->{$macro}++;
+
     return "$expression;" if ($expression =~ /str::stream\(\)/);
     return "$expression;" if ($expression =~ /std::hex/);
     return "$expression;" if ($expression =~ /\[.?\]\(\)/);
     return "$expression;" if ($expression =~ /\"_format\(/);
     return "$expression;" if ($expression =~ /_debug\.report/);
-
 
     $any_conversions = 1;
 
@@ -25,7 +31,7 @@ sub convert {
     my @options;
     my @params;
 
-    push (@params,$log_id++);
+    push (@params,$counter{"log_id"}++);
     $all_log_lines++;
 
     #my $assert_value;
@@ -170,8 +176,8 @@ foreach my $fn (@ARGV) {
     warn $fn;
     open($f, "<", $fn);
     my $data = join('',<$f>);
-    $data =~ s[(((?:unitte.t::|::mongo::|mongo::|mongo::unittest::|::mongo::unittest::)?)\blog\(([^\)]*)\)\s+<<.*?);(?:\s+//[^\n]+)?$][convert($1,$3,'')]smige;
-    $unit_test = 1 if $2 =~ /unittest/;
+    $data =~ s[(((?:unitte.t::|::mongo::|mongo::|mongo::unittest::|::mongo::unittest::)?)\blog\(([^\)]*)\)\s+<<.*?);(?: *//[^\n]+)?$][convert($1,$3,'')]smige;
+    $unit_test = 1 if $2 and $2 =~ /unittest/;
     $data =~ s[(\bwarning\(([^\)]*)\)\s+<<.*?);$][convert($1,$2,'WARNING')]smige;
     $data =~ s[(\berror\(([^\)]*)\)\s+<<.*?);$][convert($1,$2,'ERROR')]smige;
     $data =~ s[(\bsevere\(([^\)]*)\)\s+<<.*?);$][convert($1,$2,'FATAL',$3)]smige;
@@ -183,3 +189,4 @@ foreach my $fn (@ARGV) {
 
 $severities->{"all"} = $all_log_lines;
 print Dumper(\$severities);
+untie %counter;

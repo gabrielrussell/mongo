@@ -3,6 +3,7 @@
 use strict;
 use Text::Glob qw(match_glob);
 use File::pushd;
+use Carp;
 
 my $batch_reviewers = {};
 my $found_batches = {};
@@ -88,13 +89,23 @@ sub patch {
         }
         next unless @files;
         print (join(", ",@files)."\n\n");
-        run(".",qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
-        try_run(".",qw(git commit -m xxx));
-        run("src/mongo/db/modules/enterprise",qw(git cifa));
-        run(".",qw(git cifa));
+        #run(".",qw(git add logging_cpp_files.txt batcher.pl logv1tologv2 run.sh));
+        #try_run(".",qw(git commit -m xxx));
+        #run("src/mongo/db/modules/enterprise",qw(git cifa));
+        #run(".",qw(git cifa));
+        run(".",qw(git checkout),$tickets->{$reviewer});
+        run(".",qw(git reset --hard origin/master));
+        run("src/mongo/db/modules/enterprise",qw(git checkout),$tickets->{$reviewer});
+        run("src/mongo/db/modules/enterprise",qw(git reset --hard origin/master));
         run(".","./logv1tologv2",@files); 
         run(".",qw(buildscripts/clang_format.py format));
-        run(".",qw(evergreen patch -p mongodb-mongo-master --yes -a required -f), "-d", "structured logging auto-conversion for review by $reviewer");
+        try_run(".",qw(/home/gabriel/git/kernel-tools/codereview/upload.py --git_no_find_copies -y),"-r", $reviewer, "-m", "structured logging auto-conversion for ".$reviewer);
+        try_run("src/mongo/db/modules/enterprise",qw(/home/gabriel/git/kernel-tools/codereview/upload.py --git_no_find_copies -y),"-r", $reviewer, "-m", "structured logging auto-conversion for ".$reviewer." (enterprise)" );
+        run(".",qw(git add -u));
+        run("src/mongo/db/modules/enterprise",qw(git add -u));
+        try_run(".",qw(git commit -m),$tickets->{$reviewer}. " automatic conversion of structured logs");
+        try_run("src/mongo/db/modules/enterprise",qw(git commit -m),$tickets->{$reviewer}. " automatic conversion of structured logs");
+        #run(".",qw(evergreen patch -p mongodb-mongo-master --yes -a required -f), "-d", "structured logging auto-conversion for review by $reviewer");
     }
 }
 
