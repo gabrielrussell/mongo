@@ -694,8 +694,7 @@ public:
         rsDelayHeartbeatResponse.execute(
             [&](const BSONObj& data) { sleepsecs(data["delay"].numberInt()); });
 
-        LOG_FOR_HEARTBEATS(2) << "Received heartbeat request from " << cmdObj.getStringField("from")
-                              << ", " << cmdObj;
+        LOGV2_DEBUG_OPTIONS(24095, 2, {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationHeartbeats)}, "Received heartbeat request from {cmdObj_getStringField_from}, {cmdObj}", "cmdObj_getStringField_from"_attr = cmdObj.getStringField("from"), "cmdObj"_attr = cmdObj);
 
         Status status = Status(ErrorCodes::InternalError, "status not set in heartbeat code");
         /* we don't call ReplSetCommand::check() here because heartbeat
@@ -708,15 +707,13 @@ public:
         ReplSetHeartbeatArgsV1 args;
         uassertStatusOK(args.initialize(cmdObj));
 
-        LOG_FOR_HEARTBEATS(2) << "Processing heartbeat request from "
-                              << cmdObj.getStringField("from") << ", " << cmdObj;
+        LOGV2_DEBUG_OPTIONS(24096, 2, {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationHeartbeats)}, "Processing heartbeat request from {cmdObj_getStringField_from}, {cmdObj}", "cmdObj_getStringField_from"_attr = cmdObj.getStringField("from"), "cmdObj"_attr = cmdObj);
         ReplSetHeartbeatResponse response;
         status = ReplicationCoordinator::get(opCtx)->processHeartbeatV1(args, &response);
         if (status.isOK())
             response.addToBSON(&result);
 
-        LOG_FOR_HEARTBEATS(2) << "Generated heartbeat response to  "
-                              << cmdObj.getStringField("from") << ", " << response;
+        LOGV2_DEBUG_OPTIONS(24097, 2, {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationHeartbeats)}, "Generated heartbeat response to  {cmdObj_getStringField_from}, {response}", "cmdObj_getStringField_from"_attr = cmdObj.getStringField("from"), "response"_attr = response);
         uassertStatusOK(status);
         return true;
     }

@@ -2030,8 +2030,7 @@ void TransactionParticipant::Participant::_setNewTxnNumber(OperationContext* opC
             "Cannot change transaction number while the session has a prepared transaction",
             !o().txnState.isInSet(TransactionState::kPrepared));
 
-    LOG_FOR_TRANSACTION(4) << "New transaction started with txnNumber: " << txnNumber
-                           << " on session with lsid " << _sessionId().getId();
+    LOGV2_DEBUG_OPTIONS(23984, 4, {logComponentV1toV2(::mongo::logger::LogComponent::kTransaction)}, "New transaction started with txnNumber: {txnNumber} on session with lsid {sessionId_getId}", "txnNumber"_attr = txnNumber, "sessionId_getId"_attr = _sessionId().getId());
 
     // Abort the existing transaction if it's not prepared, committed, or aborted.
     if (o().txnState.isInProgress()) {

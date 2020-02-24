@@ -177,7 +177,7 @@ void openCatalog(OperationContext* opCtx, const MinVisibleTimestampMap& minVisib
     auto databaseHolder = DatabaseHolder::get(opCtx);
     std::vector<std::string> databasesToOpen = storageEngine->listDatabases();
     for (auto&& dbName : databasesToOpen) {
-        LOG_FOR_RECOVERY(1) << "openCatalog: dbholder reopening database " << dbName;
+        LOGV2_DEBUG_OPTIONS(23992, 1, {logComponentV1toV2(::mongo::logger::LogComponent::kStorageRecovery)}, "openCatalog: dbholder reopening database {dbName}", "dbName"_attr = dbName);
         auto db = databaseHolder->openDb(opCtx, dbName);
         invariant(db, str::stream() << "failed to reopen database " << dbName);
         for (auto&& collNss :
