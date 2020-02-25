@@ -31,8 +31,8 @@
 
 #include "mongo/util/log_and_backoff.h"
 
-#include "mongo/util/log.h"
 #include "mongo/logv2/log.h"
+#include "mongo/util/log.h"
 #include "mongo/util/time_support.h"
 
 namespace mongo {
@@ -41,8 +41,12 @@ void logAndBackoff(logger::LogComponent logComponent,
                    logger::LogSeverity logLevel,
                    size_t numAttempts,
                    StringData message) {
-    LOGV2_DEBUG_OPTIONS(23508, logLevel.toInt(), mongo::logv2::LogOptions{logComponentV1toV2(logComponent)},
-            "{message}. Retrying, attempt: {numAttempts}", "message"_attr = message, "numAttempts"_attr = numAttempts);
+    LOGV2_DEBUG_OPTIONS(23508,
+                        logLevel.toInt(),
+                        mongo::logv2::LogOptions{logComponentV1toV2(logComponent)},
+                        "{message}. Retrying, attempt: {numAttempts}",
+                        "message"_attr = message,
+                        "numAttempts"_attr = numAttempts);
 
     if (numAttempts < 4) {
         // no-op

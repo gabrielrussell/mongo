@@ -821,7 +821,13 @@ HeartbeatResponseAction TopologyCoordinator::processHeartbeatResponse(
     }
 
     if (hbStats.failed()) {
-        LOGV2_OPTIONS(23974, {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationHeartbeats)}, "Heartbeat to {target} failed after {kMaxHeartbeatRetries} retries, response status: {hbResponse_getStatus}", "target"_attr = target, "kMaxHeartbeatRetries"_attr = kMaxHeartbeatRetries, "hbResponse_getStatus"_attr = hbResponse.getStatus());
+        LOGV2_OPTIONS(23974,
+                      {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationHeartbeats)},
+                      "Heartbeat to {target} failed after {kMaxHeartbeatRetries} retries, response "
+                      "status: {hbResponse_getStatus}",
+                      "target"_attr = target,
+                      "kMaxHeartbeatRetries"_attr = kMaxHeartbeatRetries,
+                      "hbResponse_getStatus"_attr = hbResponse.getStatus());
     }
 
     if (hbResponse.isOK() && hbResponse.getValue().hasConfig()) {
@@ -1303,16 +1309,46 @@ HeartbeatResponseAction TopologyCoordinator::_updatePrimaryFromHBDataV1(
         if (!catchupTakeoverDisabled &&
             (_memberData.at(primaryIndex).getLastAppliedOpTime() <
              _memberData.at(_selfIndex).getLastAppliedOpTime())) {
-            LOGV2_DEBUG_OPTIONS(23975, 2, {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)}, "I can take over the primary due to fresher data. Current primary index: {primaryIndex} in term {memberData_at_primaryIndex_getTerm}. Current primary optime: {memberData_at_primaryIndex_getLastAppliedOpTime} My optime: {memberData_at_selfIndex_getLastAppliedOpTime}", "primaryIndex"_attr = primaryIndex, "memberData_at_primaryIndex_getTerm"_attr = _memberData.at(primaryIndex).getTerm(), "memberData_at_primaryIndex_getLastAppliedOpTime"_attr = _memberData.at(primaryIndex).getLastAppliedOpTime(), "memberData_at_selfIndex_getLastAppliedOpTime"_attr = _memberData.at(_selfIndex).getLastAppliedOpTime());
-            LOGV2_DEBUG_OPTIONS(23976, 4, {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)}, "{getReplSetStatusString}", "getReplSetStatusString"_attr = _getReplSetStatusString());
+            LOGV2_DEBUG_OPTIONS(
+                23975,
+                2,
+                {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)},
+                "I can take over the primary due to fresher data. Current primary index: "
+                "{primaryIndex} in term {memberData_at_primaryIndex_getTerm}. Current primary "
+                "optime: {memberData_at_primaryIndex_getLastAppliedOpTime} My optime: "
+                "{memberData_at_selfIndex_getLastAppliedOpTime}",
+                "primaryIndex"_attr = primaryIndex,
+                "memberData_at_primaryIndex_getTerm"_attr = _memberData.at(primaryIndex).getTerm(),
+                "memberData_at_primaryIndex_getLastAppliedOpTime"_attr =
+                    _memberData.at(primaryIndex).getLastAppliedOpTime(),
+                "memberData_at_selfIndex_getLastAppliedOpTime"_attr =
+                    _memberData.at(_selfIndex).getLastAppliedOpTime());
+            LOGV2_DEBUG_OPTIONS(
+                23976,
+                4,
+                {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)},
+                "{getReplSetStatusString}",
+                "getReplSetStatusString"_attr = _getReplSetStatusString());
 
             scheduleCatchupTakeover = true;
         }
 
         if (_rsConfig.getMemberAt(primaryIndex).getPriority() <
             _rsConfig.getMemberAt(_selfIndex).getPriority()) {
-            LOGV2_DEBUG_OPTIONS(23977, 2, {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)}, "I can take over the primary due to higher priority. Current primary index: {primaryIndex} in term {memberData_at_primaryIndex_getTerm}", "primaryIndex"_attr = primaryIndex, "memberData_at_primaryIndex_getTerm"_attr = _memberData.at(primaryIndex).getTerm());
-            LOGV2_DEBUG_OPTIONS(23978, 4, {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)}, "{getReplSetStatusString}", "getReplSetStatusString"_attr = _getReplSetStatusString());
+            LOGV2_DEBUG_OPTIONS(
+                23977,
+                2,
+                {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)},
+                "I can take over the primary due to higher priority. Current primary index: "
+                "{primaryIndex} in term {memberData_at_primaryIndex_getTerm}",
+                "primaryIndex"_attr = primaryIndex,
+                "memberData_at_primaryIndex_getTerm"_attr = _memberData.at(primaryIndex).getTerm());
+            LOGV2_DEBUG_OPTIONS(
+                23978,
+                4,
+                {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)},
+                "{getReplSetStatusString}",
+                "getReplSetStatusString"_attr = _getReplSetStatusString());
 
             schedulePriorityTakeover = true;
         }
@@ -1326,7 +1362,15 @@ HeartbeatResponseAction TopologyCoordinator::_updatePrimaryFromHBDataV1(
         // Otherwise, prefer to schedule a catchup takeover over a priority takeover
         if (scheduleCatchupTakeover && schedulePriorityTakeover &&
             _rsConfig.calculatePriorityRank(currentNodePriority) == 0) {
-            LOGV2_DEBUG_OPTIONS(23979, 2, {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)}, "I can take over the primary because I have a higher priority, the highest priority in the replica set, and fresher data. Current primary index: {primaryIndex} in term {memberData_at_primaryIndex_getTerm}", "primaryIndex"_attr = primaryIndex, "memberData_at_primaryIndex_getTerm"_attr = _memberData.at(primaryIndex).getTerm());
+            LOGV2_DEBUG_OPTIONS(
+                23979,
+                2,
+                {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)},
+                "I can take over the primary because I have a higher priority, the highest "
+                "priority in the replica set, and fresher data. Current primary index: "
+                "{primaryIndex} in term {memberData_at_primaryIndex_getTerm}",
+                "primaryIndex"_attr = primaryIndex,
+                "memberData_at_primaryIndex_getTerm"_attr = _memberData.at(primaryIndex).getTerm());
             return HeartbeatResponseAction::makePriorityTakeoverAction();
         }
         if (scheduleCatchupTakeover) {
@@ -2977,9 +3021,19 @@ void TopologyCoordinator::processReplSetRequestVotes(const ReplSetRequestVotesAr
         }
     }
 
-    LOGV2_OPTIONS(23980, {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)}, "Received vote request: {args}", "args"_attr = args.toString());
-    LOGV2_OPTIONS(23981, {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)}, "Sending vote response: {response}", "response"_attr = response->toString());
-    LOGV2_DEBUG_OPTIONS(23982, 4, {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)}, "{getReplSetStatusString}", "getReplSetStatusString"_attr = _getReplSetStatusString());
+    LOGV2_OPTIONS(23980,
+                  {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)},
+                  "Received vote request: {args}",
+                  "args"_attr = args.toString());
+    LOGV2_OPTIONS(23981,
+                  {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)},
+                  "Sending vote response: {response}",
+                  "response"_attr = response->toString());
+    LOGV2_DEBUG_OPTIONS(23982,
+                        4,
+                        {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationElection)},
+                        "{getReplSetStatusString}",
+                        "getReplSetStatusString"_attr = _getReplSetStatusString());
 }
 
 void TopologyCoordinator::loadLastVote(const LastVote& lastVote) {

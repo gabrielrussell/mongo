@@ -842,8 +842,14 @@ void WiredTigerRecordStore::checkSize(OperationContext* opCtx) {
         //
         // We mark a RecordStore as needing size adjustment iff its size is accurate at the current
         // time but not as of the top of the oplog.
-        LOGV2_DEBUG_OPTIONS(23983, 2, {logComponentV1toV2(::mongo::logger::LogComponent::kStorageRecovery)}, "Record store was empty; setting count metadata to zero but marking "
-                               "record store as needing size adjustment during recovery. ns: {isTemp_temp_ns}, ident: {ident}", "isTemp_temp_ns"_attr = (isTemp() ? "(temp)" : ns()), "ident"_attr = _ident);
+        LOGV2_DEBUG_OPTIONS(23983,
+                            2,
+                            {logComponentV1toV2(::mongo::logger::LogComponent::kStorageRecovery)},
+                            "Record store was empty; setting count metadata to zero but marking "
+                            "record store as needing size adjustment during recovery. ns: "
+                            "{isTemp_temp_ns}, ident: {ident}",
+                            "isTemp_temp_ns"_attr = (isTemp() ? "(temp)" : ns()),
+                            "ident"_attr = _ident);
         sizeRecoveryState(getGlobalServiceContext())
             .markCollectionAsAlwaysNeedsSizeAdjustment(_ident);
         _sizeInfo->dataSize.store(0);

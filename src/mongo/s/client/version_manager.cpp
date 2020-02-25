@@ -147,7 +147,15 @@ bool setShardVersion(OperationContext* opCtx,
         cmd = ssv.toBSON();
     }
 
-    LOGV2_DEBUG(20218, 1, "setShardVersion  {shardId} {serverAddress}  {ns}  {cmd} {manager}", "shardId"_attr = shardId, "serverAddress"_attr = conn->getServerAddress(), "ns"_attr = ns, "cmd"_attr = cmd, "manager"_attr = manager ? StringData{ItoA{manager->getSequenceNumber()}} : StringData{} );
+    LOGV2_DEBUG(20218,
+                1,
+                "setShardVersion  {shardId} {serverAddress}  {ns}  {cmd} {manager}",
+                "shardId"_attr = shardId,
+                "serverAddress"_attr = conn->getServerAddress(),
+                "ns"_attr = ns,
+                "cmd"_attr = cmd,
+                "manager"_attr =
+                    manager ? StringData{ItoA{manager->getSequenceNumber()}} : StringData{});
 
     return conn->runCommand("admin", cmd, result, 0);
 }
@@ -392,7 +400,11 @@ bool checkShardVersion(OperationContext* opCtx,
 
     const int maxNumTries = 7;
     if (tryNumber < maxNumTries) {
-        LOGV2_DEBUG(20162, tryNumber < (maxNumTries / 2) ? 1 : 0, "going to retry checkShardVersion shard: {shard} {result}", "shard"_attr = shard->toString(), "result"_attr = result);
+        LOGV2_DEBUG(20162,
+                    tryNumber < (maxNumTries / 2) ? 1 : 0,
+                    "going to retry checkShardVersion shard: {shard} {result}",
+                    "shard"_attr = shard->toString(),
+                    "result"_attr = result);
         sleepmillis(10 * tryNumber);
         // use the original connection and get a fresh versionable connection
         // since conn can be invalidated (or worse, freed) after the failure

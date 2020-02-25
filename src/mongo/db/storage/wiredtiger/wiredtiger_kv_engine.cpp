@@ -510,12 +510,26 @@ public:
                     _wiredTigerKVEngine->clearIndividuallyCheckpointedIndexesList();
                     invariantWTOK(s->checkpoint(s, "use_timestamp=false"));
                 } else if (stableTimestamp < initialDataTimestamp) {
-                    LOGV2_DEBUG_OPTIONS(23985, 2, {logComponentV1toV2(::mongo::logger::LogComponent::kStorageRecovery)}, "Stable timestamp is behind the initial data timestamp, skipping "
-                           "a checkpoint. StableTimestamp: {stableTimestamp} InitialDataTimestamp: {initialDataTimestamp}", "stableTimestamp"_attr = stableTimestamp.toString(), "initialDataTimestamp"_attr = initialDataTimestamp.toString());
+                    LOGV2_DEBUG_OPTIONS(
+                        23985,
+                        2,
+                        {logComponentV1toV2(::mongo::logger::LogComponent::kStorageRecovery)},
+                        "Stable timestamp is behind the initial data timestamp, skipping "
+                        "a checkpoint. StableTimestamp: {stableTimestamp} InitialDataTimestamp: "
+                        "{initialDataTimestamp}",
+                        "stableTimestamp"_attr = stableTimestamp.toString(),
+                        "initialDataTimestamp"_attr = initialDataTimestamp.toString());
                 } else {
                     auto oplogNeededForRollback = _wiredTigerKVEngine->getOplogNeededForRollback();
 
-                    LOGV2_DEBUG_OPTIONS(23986, 2, {logComponentV1toV2(::mongo::logger::LogComponent::kStorageRecovery)}, "Performing stable checkpoint. StableTimestamp: {stableTimestamp}, OplogNeededForRollback: {oplogNeededForRollback}", "stableTimestamp"_attr = stableTimestamp, "oplogNeededForRollback"_attr = toString(oplogNeededForRollback));
+                    LOGV2_DEBUG_OPTIONS(
+                        23986,
+                        2,
+                        {logComponentV1toV2(::mongo::logger::LogComponent::kStorageRecovery)},
+                        "Performing stable checkpoint. StableTimestamp: {stableTimestamp}, "
+                        "OplogNeededForRollback: {oplogNeededForRollback}",
+                        "stableTimestamp"_attr = stableTimestamp,
+                        "oplogNeededForRollback"_attr = toString(oplogNeededForRollback));
 
                     UniqueWiredTigerSession session = _sessionCache->getSession();
                     WT_SESSION* s = session->getSession();
@@ -893,7 +907,10 @@ WiredTigerKVEngine::WiredTigerKVEngine(const std::string& canonicalName,
         std::uint64_t tmp;
         fassert(50758, NumberParser().base(16)(buf, &tmp));
         _recoveryTimestamp = Timestamp(tmp);
-        LOGV2_OPTIONS(23987, {logComponentV1toV2(::mongo::logger::LogComponent::kStorageRecovery)}, "WiredTiger recoveryTimestamp. Ts: {recoveryTimestamp}", "recoveryTimestamp"_attr = _recoveryTimestamp);
+        LOGV2_OPTIONS(23987,
+                      {logComponentV1toV2(::mongo::logger::LogComponent::kStorageRecovery)},
+                      "WiredTiger recoveryTimestamp. Ts: {recoveryTimestamp}",
+                      "recoveryTimestamp"_attr = _recoveryTimestamp);
     }
 
     _sessionCache.reset(new WiredTigerSessionCache(this));
@@ -1077,7 +1094,13 @@ void WiredTigerKVEngine::cleanShutdown() {
         _checkpointThread->shutdown();
         LOGV2(22323, "Finished shutting down checkpoint thread");
     }
-    LOGV2_DEBUG_OPTIONS(23988, 2, {logComponentV1toV2(::mongo::logger::LogComponent::kStorageRecovery)}, "Shutdown timestamps. StableTimestamp: {stableTimestamp_load} Initial data timestamp: {initialDataTimestamp_load}", "stableTimestamp_load"_attr = _stableTimestamp.load(), "initialDataTimestamp_load"_attr = _initialDataTimestamp.load());
+    LOGV2_DEBUG_OPTIONS(23988,
+                        2,
+                        {logComponentV1toV2(::mongo::logger::LogComponent::kStorageRecovery)},
+                        "Shutdown timestamps. StableTimestamp: {stableTimestamp_load} Initial data "
+                        "timestamp: {initialDataTimestamp_load}",
+                        "stableTimestamp_load"_attr = _stableTimestamp.load(),
+                        "initialDataTimestamp_load"_attr = _initialDataTimestamp.load());
 
     _sizeStorer.reset();
     _sessionCache->shuttingDown();
@@ -2130,11 +2153,18 @@ StatusWith<Timestamp> WiredTigerKVEngine::recoverToStableTimestamp(OperationCont
                           << ", Stable timestamp: " << stableTS.toString());
     }
 
-    LOGV2_DEBUG_OPTIONS(23989, 2, {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationRollback)}, "WiredTiger::RecoverToStableTimestamp syncing size storer to disk.");
+    LOGV2_DEBUG_OPTIONS(23989,
+                        2,
+                        {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationRollback)},
+                        "WiredTiger::RecoverToStableTimestamp syncing size storer to disk.");
     syncSizeInfo(true);
 
     if (!_ephemeral) {
-        LOGV2_DEBUG_OPTIONS(23990, 2, {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationRollback)}, "WiredTiger::RecoverToStableTimestamp shutting down journal and checkpoint threads.");
+        LOGV2_DEBUG_OPTIONS(
+            23990,
+            2,
+            {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationRollback)},
+            "WiredTiger::RecoverToStableTimestamp shutting down journal and checkpoint threads.");
         // Shutdown WiredTigerKVEngine owned accesses into the storage engine.
         if (_durable) {
             _journalFlusher->shutdown();
@@ -2145,7 +2175,12 @@ StatusWith<Timestamp> WiredTigerKVEngine::recoverToStableTimestamp(OperationCont
     const Timestamp stableTimestamp(_stableTimestamp.load());
     const Timestamp initialDataTimestamp(_initialDataTimestamp.load());
 
-    LOGV2_OPTIONS(23991, {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationRollback)}, "Rolling back to the stable timestamp. StableTimestamp: {stableTimestamp} Initial Data Timestamp: {initialDataTimestamp}", "stableTimestamp"_attr = stableTimestamp, "initialDataTimestamp"_attr = initialDataTimestamp);
+    LOGV2_OPTIONS(23991,
+                  {logComponentV1toV2(::mongo::logger::LogComponent::kReplicationRollback)},
+                  "Rolling back to the stable timestamp. StableTimestamp: {stableTimestamp} "
+                  "Initial Data Timestamp: {initialDataTimestamp}",
+                  "stableTimestamp"_attr = stableTimestamp,
+                  "initialDataTimestamp"_attr = initialDataTimestamp);
     int ret = _conn->rollback_to_stable(_conn, nullptr);
     if (ret) {
         return {ErrorCodes::UnrecoverableRollbackError,
