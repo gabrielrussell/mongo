@@ -1,0 +1,18 @@
+#!/usr/bin/perl
+my $last=0;
+while(<>) {
+    chomp;
+    if ($_ == $last) {
+        print "!! ";
+    } elsif ($_ != $last+1) {
+        if ($last +1 == $_-1) {
+            print "-> ",$last+1,"\n";
+        } else {
+            print "-> ",$last+1,"-",$_-1,"\n";
+        }
+    }
+
+    print $_,"\n";
+    
+    $last = $_;
+}
