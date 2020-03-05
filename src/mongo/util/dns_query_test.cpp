@@ -26,9 +26,11 @@
  *    exception statement from all source files in the program, then also delete
  *    it in the license file.
  */
-#include "mongo/util/dns_query.h"
+#define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kTest
 
+#include "mongo/logv2/log.h"
 #include "mongo/unittest/unittest.h"
+#include "mongo/util/dns_query.h"
 
 using namespace std::literals::string_literals;
 
@@ -82,11 +84,14 @@ TEST(MongoDnsQuery, basic) {
     for (const auto& test : tests) {
         try {
             const auto witness = getFirstARecord(test.dns);
-            std::cout << "Resolved " << test.dns << " to: " << witness << std::endl;
+            LOGV2(23512,
+                  "Resolved {dns} to: {witness}",
+                  "dns"_attr = test.dns,
+                  "witness"_attr = witness);
 
             const bool resolution = (witness == test.ip);
             if (!resolution)
-                std::cerr << "Warning: Did not correctly resolve " << test.dns << std::endl;
+                LOGV2(23513, "Warning: Did not correctly resolve {dns}", "dns"_attr = test.dns);
             resolution_count += resolution;
         }
         // Failure to resolve is okay, but not great -- print a warning
@@ -148,12 +153,12 @@ TEST(MongoDnsQuery, srvRecords) {
         std::sort(begin(witness), end(witness));
 
         for (const auto& entry : witness) {
-            std::cout << "Entry: " << entry << std::endl;
+            LOGV2(23514, "Entry: {entry}", "entry"_attr = entry);
         }
 
         for (std::size_t i = 0; i < witness.size() && i < expected.size(); ++i) {
-            std::cout << "Expected: " << expected.at(i) << std::endl;
-            std::cout << "Witness:  " << witness.at(i) << std::endl;
+            LOGV2(23510, "Expected: {expected}", "expected"_attr = expected.at(i));
+            LOGV2(23511, "Witness:  {witness}", "witness"_attr = witness.at(i));
             ASSERT_EQ(witness.at(i), expected.at(i));
         }
 
