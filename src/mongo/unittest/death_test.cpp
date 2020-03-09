@@ -30,6 +30,8 @@
 
 #include "mongo/platform/basic.h"
 
+#include <stdio.h>
+
 #include "mongo/unittest/death_test.h"
 
 #ifndef _WIN32
@@ -79,18 +81,20 @@ void DeathTestBase::_doTest() {
     checkSyscall(child = fork());
     if (child) {
         checkSyscall(close(pipes[1]));
-        char buf[1000];
+        char *buf = 0;
         std::ostringstream os;
-        ssize_t bytesRead;
+        size_t bytesRead;
+        FILE *pf = fdopen(pipes[0],"r");
         LOGV2(24135, "========== Beginning of interleaved output of death test ==========");
-        while (0 < (bytesRead = read(pipes[0], buf, sizeof(buf)))) {
-            std::cout.write(buf, bytesRead);
+        while(getline(&buf, &bytesRead, pf) != -1) {
+            LOGV2(0,"death test child output","buf"_attr = std::string{buf,bytesRead});
             invariant(std::cout);
             os.write(buf, bytesRead);
             invariant(os);
         }
+        free(buf);// todo RIAA this
         LOGV2(24136, "========== End of interleaved output of death test ==========");
-        checkSyscall(bytesRead);
+        //checkSyscall(bytesRead);
         pid_t pid;
         int stat;
         while (child != (pid = waitpid(child, &stat, 0))) {
@@ -135,6 +139,7 @@ void DeathTestBase::_doTest() {
 
     try {
         auto test = _doMakeTest();
+        LOGV2(23515, "Running DeathTest in child");
         test->run();
     } catch (const TestAssertionFailureException& tafe) {
         LOGV2(24137, "Caught test exception while expecting death: {tafe}", "tafe"_attr = tafe);

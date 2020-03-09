@@ -569,6 +569,7 @@ icuEnv.CppUnitTest(
         'dns_name_test.cpp',
         'dns_query_test.cpp',
         'duration_test.cpp',
+
         'errno_util_test.cpp',
         'fail_point_test.cpp',
         'future_test_edge_cases.cpp',
@@ -584,6 +585,7 @@ icuEnv.CppUnitTest(
         'icu_test.cpp',
         'invalidating_lru_cache_test.cpp',
         'interruptible_test.cpp',
+        
         'itoa_test.cpp',
         'latch_analyzer_test.cpp' if get_option('use-diagnostic-latches') == 'on' else [],
         'lockable_adapter_test.cpp',
@@ -597,6 +599,7 @@ icuEnv.CppUnitTest(
         'producer_consumer_queue_test.cpp',
         'progress_meter_test.cpp',
         'read_through_cache_test.cpp',
+        
         'registry_list_test.cpp',
         'represent_as_test.cpp',
         'safe_num_test.cpp',
