@@ -47,6 +47,11 @@
 #include "mongo/util/str_escape.h"
 #include "mongo/util/time_support.h"
 
+#ifdef LOGV2_DEBUG_FIELDS
+#include "mongo/platform/process_id.h"
+#include "sys/types.h"
+#endif
+
 #include <fmt/format.h>
 
 namespace mongo::logv2 {
@@ -247,11 +252,21 @@ void JSONFormatter::operator()(boost::log::record_view const& rec,
     };
     fmt::format_to(buffer,
                    R"("}},)"              // close timestamp
+#ifdef LOGV2_DEBUG_FIELDS
+                   R"("{}":{},)"          // pid
+                   R"("{}":{},)"          // tid
+#endif
                    R"("{}":"{}"{: <{}})"  // severity with padding for the comma
                    R"("{}":"{}"{: <{}})"  // component with padding for the comma
                    R"("{}":{},)"          // id
                    R"("{}":"{}",)"        // context
                    R"("{}":")",           // message
+#ifdef LOGV2_DEBUG_FIELDS
+                    constants::kPidFieldName,
+                    ProcessId::getCurrent().asLongLong(),
+                    constants::kTidFieldName,
+                    gettid(),
+#endif
                    // severity, left align the comma and add padding to create fixed column width
                    constants::kSeverityFieldName,
                    severity,

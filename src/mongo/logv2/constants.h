@@ -50,6 +50,12 @@ constexpr StringData kTruncatedFieldName = "truncated"_sd;
 constexpr StringData kTruncatedSizeFieldName = "size"_sd;
 constexpr StringData kTagsFieldName = "tags"_sd;
 
+#ifdef LOGV2_DEBUG_FIELDS
+constexpr StringData kPidFieldName = "pid"_sd;
+constexpr StringData kTidFieldName = "tid"_sd;
+#endif
+
+
 // String to be used when logging empty boost::optional with the text formatter
 constexpr StringData kNullOptionalString = "(nothing)"_sd;
 
