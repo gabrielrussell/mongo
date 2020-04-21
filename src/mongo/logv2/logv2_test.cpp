@@ -31,6 +31,7 @@
 
 #include "mongo/platform/basic.h"
 
+#include <fmt/format.h>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -70,6 +71,8 @@
 
 namespace mongo::logv2 {
 namespace {
+
+using namespace fmt::literals;
 
 using constants::kAttributesFieldName;
 using constants::kComponentFieldName;
@@ -363,6 +366,15 @@ TEST_F(LogV2Test, Basic) {
         LOGV2(4638203, "mismatch {name}", "not_name"_attr = 1);
         ASSERT(StringData(lines.back()).startsWith("Exception during log"_sd));
     }
+
+    // Test that a format string can be shared with fmt::format
+    auto foo = 4, bar = 5;
+    static constexpr char errStr[] = "foo {foo} bar {bar}";
+    static char formattedErr[] = "foo 4 bar 5";
+    LOGV2(23120, errStr, "foo"_attr = foo, "bar"_attr = bar);
+    ASSERT_EQUALS(lines.back(), formattedErr);
+    auto s = Status(ErrorCodes::BadValue, fmt::format(errStr, "foo"_a = foo, "bar"_a = bar));
+    ASSERT_EQUALS(s.reason(), formattedErr);
 }
 
 class LogV2TypesTest : public LogV2Test {
