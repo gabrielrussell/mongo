@@ -79,7 +79,6 @@ public:
             int ret = statfs(params.dbpath.c_str(), &fs_stats);
 
             if (ret == 0 && fs_stats.f_type == EXT4_SUPER_MAGIC) {
-                LOGV2_OPTIONS(22296, {logv2::LogTag::kStartupWarnings}, "");
                 LOGV2_OPTIONS(
                     22297,
                     {logv2::LogTag::kStartupWarnings},
@@ -98,7 +97,6 @@ public:
         ProcessInfo p;
         if (p.supported()) {
             if (cacheMB > memoryThresholdPercentage * p.getMemSizeMB()) {
-                LOGV2_OPTIONS(22299, {logv2::LogTag::kStartupWarnings}, "");
                 LOGV2_OPTIONS(22300,
                               {logv2::LogTag::kStartupWarnings},
                               "** WARNING: The configured WiredTiger cache size is more than "

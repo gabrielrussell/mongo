@@ -1015,7 +1015,20 @@ shellHelper.show = function(what) {
                 }
                 print("Server has startup warnings: ");
                 for (var i = 0; i < res.log.length; i++) {
-                    print(res.log[i]);
+                    var logOut;
+                    try {
+                        var parsedLog = JSON.parse(res.log[i])
+                        logOut = parsedLog.c + ":\t" + parsedLog.msg + "\n";
+                        if (parsedLog.attr) {
+                            for (var attr in parsedLog.attr) {
+                                logOut += parsedLog.c + ":\t\t" + attr + ":\t" +
+                                    parsedLog.attr[attr] + "\n";
+                            }
+                        }
+                    } catch {
+                        logOut = res.log[i];
+                    }
+                    print(logOut);
                 }
                 return "";
             } else if (res.errmsg == "no such cmd: getLog") {
