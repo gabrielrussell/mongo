@@ -862,6 +862,8 @@ shellHelper.show = function(what) {
     what = args[0];
     args = args.splice(1);
 
+    var messageIndent = "        ";
+
     if (what == "profile") {
         if (db.system.profile.count() == 0) {
             print("db.system.profile is empty");
@@ -1013,15 +1015,17 @@ shellHelper.show = function(what) {
                 if (res.log.length == 0) {
                     return "";
                 }
-                print("Server has startup warnings: ");
+                print("---");
+                print("The server generated these startup warnings when booting: ");
                 for (var i = 0; i < res.log.length; i++) {
                     var logOut;
                     try {
                         var parsedLog = JSON.parse(res.log[i])
-                        logOut = parsedLog.c + ": " + parsedLog.msg + "\n";
+                        var linePrefix =  messageIndent + parsedLog.t["$date"] + ": ";
+                        logOut = linePrefix + parsedLog.msg + "\n";
                         if (parsedLog.attr) {
                             for (var attr in parsedLog.attr) {
-                                logOut += parsedLog.c + ":         " + attr + ": " +
+                                logOut += linePrefix + messageIndent + attr + ": " +
                                     parsedLog.attr[attr] + "\n";
                             }
                         }
@@ -1030,6 +1034,7 @@ shellHelper.show = function(what) {
                     }
                     print(logOut);
                 }
+                print("---");
                 return "";
             } else if (res.errmsg == "no such cmd: getLog") {
                 // Don't print if the command is not available
@@ -1103,15 +1108,15 @@ shellHelper.show = function(what) {
                 } else if (freemonStatus.state === 'undecided') {
                     print(
                         "---\n" +
-                        "Enable MongoDB's free cloud-based monitoring service, which will then receive and display\n" +
-                        "metrics about your deployment (disk utilization, CPU, operation statistics, etc).\n" +
+                        messageIndent +  "Enable MongoDB's free cloud-based monitoring service, which will then receive and display\n" +
+                        messageIndent +  "metrics about your deployment (disk utilization, CPU, operation statistics, etc).\n" +
                         "\n" +
-                        "The monitoring data will be available on a MongoDB website with a unique URL accessible to you\n" +
-                        "and anyone you share the URL with. MongoDB may use this information to make product\n" +
-                        "improvements and to suggest MongoDB products and deployment options to you.\n" +
+                        messageIndent +  "The monitoring data will be available on a MongoDB website with a unique URL accessible to you\n" +
+                        messageIndent +  "and anyone you share the URL with. MongoDB may use this information to make product\n" +
+                        messageIndent +  "improvements and to suggest MongoDB products and deployment options to you.\n" +
                         "\n" +
-                        "To enable free monitoring, run the following command: db.enableFreeMonitoring()\n" +
-                        "To permanently disable this reminder, run the following command: db.disableFreeMonitoring()\n" +
+                        messageIndent +  "To enable free monitoring, run the following command: db.enableFreeMonitoring()\n" +
+                        messageIndent +  "To permanently disable this reminder, run the following command: db.disableFreeMonitoring()\n" +
                         "---\n");
                 }
             }
