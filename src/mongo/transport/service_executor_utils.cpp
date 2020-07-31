@@ -112,10 +112,14 @@ Status launchServiceWorkerThread(unique_function<void()> task) noexcept {
         pthread_t thread;
         auto ctx = std::make_unique<unique_function<void()>>(std::move(task));
         ThreadSafetyContext::getThreadSafetyContext()->onThreadCreate();
+
+        std::string pthread_create_ewd;
         int failed = pthread_create(&thread, &attrs, runFunc, ctx.get());
+        if (failed)
+            pthread_create_ewd = errnoWithDescription(errno);
 
         pthread_attr_destroy(&attrs);
-        uassert(4850900, "pthread_create failed: {}"_format(errnoWithDescription(failed)), !failed);
+        uassert(4850900, "pthread_create failed: {}"_format(pthread_create_ewd), !failed);
 
         ctx.release();
 #endif
