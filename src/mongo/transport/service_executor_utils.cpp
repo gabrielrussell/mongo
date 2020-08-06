@@ -74,6 +74,7 @@ Status launchServiceWorkerThread(unique_function<void()> task) noexcept {
 #else
         pthread_attr_t attrs;
         pthread_attr_init(&attrs);
+        ON_BLOCK_EXIT([&attrs] { pthread_attr_destroy(&attrs); });
         pthread_attr_setdetachstate(&attrs, PTHREAD_CREATE_DETACHED);
 
         static const rlim_t kStackSize =
@@ -113,13 +114,16 @@ Status launchServiceWorkerThread(unique_function<void()> task) noexcept {
         auto ctx = std::make_unique<unique_function<void()>>(std::move(task));
         ThreadSafetyContext::getThreadSafetyContext()->onThreadCreate();
 
-        std::string pthread_create_ewd;
-        int failed = pthread_create(&thread, &attrs, runFunc, ctx.get());
-        if (failed)
-            pthread_create_ewd = errnoWithDescription(errno);
-
-        pthread_attr_destroy(&attrs);
-        uassert(4850900, "pthread_create failed: {}"_format(pthread_create_ewd), !failed);
+        auto failed = pthread_create(&thread, &attrs, runFunc, ctx.get());
+        if (failed) {
+            auto saved_errno = errno;
+            LOGV2_ERROR_OPTIONS(4850900,
+                                {logv2::UserAssertAfterLog()},
+                                "pthread_create failed",
+                                "pthread_create failed code:\"{}\" error:\"{}\"",
+                                "code"_attr = failed,
+                                "error"_attr = errnoWithDescription(saved_errno));
+        }
 
         ctx.release();
 #endif
