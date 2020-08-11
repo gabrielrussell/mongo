@@ -42,6 +42,7 @@
 #include "mongo/transport/service_executor.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/debug_util.h"
+#include "mongo/util/scopeguard.h"
 #include "mongo/util/thread_safety_context.h"
 
 #if !defined(_WIN32)
@@ -74,7 +75,7 @@ Status launchServiceWorkerThread(unique_function<void()> task) noexcept {
 #else
         pthread_attr_t attrs;
         pthread_attr_init(&attrs);
-        ON_BLOCK_EXIT([&attrs] { pthread_attr_destroy(&attrs); });
+        ScopeGuard attrsGuard{[&attrs] { pthread_attr_destroy(&attrs); }};
         pthread_attr_setdetachstate(&attrs, PTHREAD_CREATE_DETACHED);
 
         static const rlim_t kStackSize =
@@ -115,15 +116,21 @@ Status launchServiceWorkerThread(unique_function<void()> task) noexcept {
         ThreadSafetyContext::getThreadSafetyContext()->onThreadCreate();
 
         auto failed = pthread_create(&thread, &attrs, runFunc, ctx.get());
-        if (failed) {
-            auto saved_errno = errno;
+        if (failed > 0) {
             LOGV2_ERROR_OPTIONS(4850900,
                                 {logv2::UserAssertAfterLog()},
                                 "pthread_create failed",
-                                "pthread_create failed code:\"{}\" error:\"{}\"",
+                                "pthread_create failed: error:\"{}\"",
+                                "error"_attr = errnoWithDescription(failed));
+        } else if (failed < 0) {
+            auto savedErrno = errno;
+            LOGV2_ERROR_OPTIONS(4850901,
+                                {logv2::UserAssertAfterLog()},
+                                "pthread_create failed with a negative return code",
+                                "pthread_create failed with a negative return code: \"{}\", errno: \"{}\"",
                                 "code"_attr = failed,
-                                "error"_attr = errnoWithDescription(saved_errno));
-        }
+                                "errno"_attr = errnoWithDescription(savedErrno));
+        } // else success
 
         ctx.release();
 #endif
